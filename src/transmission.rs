@@ -3,7 +3,7 @@ use std::{process::Stdio, time::Duration};
 use nix::{sys::signal, unistd::Pid};
 use relm4::{
     component::{AsyncComponent, AsyncComponentParts},
-    gtk::{gio, prelude::SettingsExt},
+    gtk::{gio, glib, prelude::SettingsExt},
 };
 use transmission_client::{
     Client, Encryption, SessionMutator, Torrent, TorrentFiles, TorrentMutator,
@@ -36,15 +36,10 @@ pub(crate) enum TransmissionInput {
 
 impl Drop for Transmission {
     fn drop(&mut self) {
-        // Send SIGINT to the transmission-daemon process
-        if let Some(transmission_process) = self.transmission_process.as_mut() {
-            signal::kill(
-                Pid::from_raw(transmission_process.id() as i32),
-                signal::SIGTERM,
-            )
-            .unwrap();
-
-            transmission_process.wait().unwrap();
+        if let Some(mut transmission_process) = self.transmission_process.take() {
+            // Let the daemon flush settings and torrent state before reaping it.
+            let _ = signal::kill(Pid::from_raw(transmission_process.id() as i32), signal::SIGTERM);
+            let _ = transmission_process.wait();
         }
     }
 }
@@ -65,10 +60,20 @@ impl AsyncComponent for Transmission {
     ) -> AsyncComponentParts<Self> {
         let tr_client = Client::default();
 
-        let transmission_daemon = match std::process::Command::new("transmission-daemon")
-            .stdout(Stdio::piped())
+        let config_dir = glib::user_config_dir().join("torrential");
+        let download_dir = glib::user_special_dir(glib::UserDirectory::Downloads)
+            .unwrap_or_else(|| glib::home_dir().join("Downloads"));
+        let transmission_daemon = match std::fs::create_dir_all(&config_dir)
+            .and_then(|_| std::fs::create_dir_all(&download_dir))
+            .and_then(|_| std::process::Command::new("transmission-daemon")
+            // The output is not consumed. A pipe could fill and block the daemon.
+            .stdout(Stdio::null())
             .arg("--foreground")
-            .spawn()
+            .arg("--config-dir").arg(&config_dir)
+            .arg("--download-dir").arg(&download_dir)
+            .arg("--rpc-bind-address").arg("127.0.0.1")
+            .arg("--no-auth")
+            .spawn())
         {
             Ok(process) => Some(process),
             Err(e) => {
@@ -89,7 +94,16 @@ impl AsyncComponent for Transmission {
             }
         };
 
-        if let Ok(session) = tr_client.session().await {
+        // The child needs time to bind its RPC socket before the first request.
+        let mut initial_session = tr_client.session().await;
+        for _ in 0..20 {
+            if initial_session.is_ok() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            initial_session = tr_client.session().await;
+        }
+        if let Ok(session) = initial_session {
             let settings = gio::Settings::new("com.github.davidmhewitt.torrential.settings");
 
             match settings.set_int("max-downloads", session.download_queue_size) {
