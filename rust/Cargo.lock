@@ -839,6 +839,9 @@ dependencies = [
  "bitflags",
  "smithay",
  "tracing-subscriber",
+ "wayland-backend",
+ "wayland-scanner",
+ "wayland-server",
 ]
 
 [[package]]
