@@ -1,3 +1,5 @@
+use gtk::gdk::prelude::DisplayExt;
+use crate::fl;
 use gtk::prelude::{
     BoxExt, DialogExt, EditableExt, EntryExt, GtkWindowExt, OrientableExt, WidgetExt,
 };
@@ -6,6 +8,7 @@ use relm4::ComponentSender;
 use relm4::SimpleComponent;
 
 pub struct MagnetDialogModel {
+    add_button: gtk::Widget,
     magnet_link: String,
     visible: bool,
 }
@@ -14,6 +17,7 @@ pub struct MagnetDialogModel {
 pub enum MagnetDialogInput {
     Open,
     Close,
+    ClipboardText(String),
     UpdateMagnetLink(String),
     Submit,
 }
@@ -35,11 +39,10 @@ impl SimpleComponent for MagnetDialogModel {
         granite::Dialog {
             #[watch]
             set_visible: model.visible,
-            set_title: Some("Add Magnet Link"),
+            set_title: Some(&fl!("magnet-dialog-title")),
             set_modal: true,
-            set_default_width: 400,
-            set_default_height: 150,
-
+            set_default_width: 460,
+            
             connect_response[sender] => move |_, response_type| {
                 if response_type == gtk::ResponseType::Ok {
                     sender.input(MagnetDialogInput::Submit);
@@ -50,19 +53,32 @@ impl SimpleComponent for MagnetDialogModel {
 
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
-                set_margin_bottom: 12,
-                set_margin_start: 12,
-                set_margin_end: 12,
-                set_margin_top: 12,
-                set_spacing: 10,
+                set_margin_bottom: 6,
+                set_margin_start: 18,
+                set_margin_end: 18,
+                set_margin_top: 6,
+                set_spacing: 12,
 
                 gtk::Label {
-                    set_text: "Enter magnet link:",
+                    set_text: &fl!("magnet-dialog-title"),
                     set_halign: gtk::Align::Start,
+                    add_css_class: granite::STYLE_CLASS_H2_LABEL,
                 },
 
+                gtk::Label {
+                    set_text: &fl!("magnet-dialog-label"),
+                    set_halign: gtk::Align::Start,
+                    add_css_class: "dim-label",
+                },
+
+                #[name = "magnet_entry"]
                 gtk::Entry {
-                    set_placeholder_text: Some("magnet:?xt=urn:btih:..."),
+                    set_placeholder_text: Some("magnet:?xt=urn:btih:…"),
+                    set_input_purpose: gtk::InputPurpose::Url,
+                    set_activates_default: false,
+                    set_hexpand: true,
+                    #[watch]
+                    set_text: &model.magnet_link,
                     connect_text_notify[sender] => move |entry| {
                         sender.input(MagnetDialogInput::UpdateMagnetLink(entry.text().to_string()));
                     },
@@ -79,16 +95,18 @@ impl SimpleComponent for MagnetDialogModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> relm4::ComponentParts<Self> {
+        root.add_button(&fl!("magnet-dialog-cancel"), gtk::ResponseType::Cancel.into());
+        let add_button = root.add_button(&fl!("magnet-dialog-add"), gtk::ResponseType::Ok.into());
+        add_button.add_css_class("suggested-action");
+        add_button.set_sensitive(false);
+
         let model = MagnetDialogModel {
+            add_button,
             magnet_link: String::new(),
             visible: false,
         };
 
         let widgets = view_output!();
-
-        // Add buttons to the root dialog
-        root.add_button("Cancel", gtk::ResponseType::Cancel.into());
-        root.add_button("Add", gtk::ResponseType::Ok.into());
 
         relm4::ComponentParts { model, widgets }
     }
@@ -98,16 +116,35 @@ impl SimpleComponent for MagnetDialogModel {
             MagnetDialogInput::Open => {
                 self.visible = true;
                 self.magnet_link.clear();
+                self.add_button.set_sensitive(false);
+
+                // A magnet link already on the clipboard is almost certainly what they came to add.
+                let clipboard = gtk::gdk::Display::default().unwrap().clipboard();
+                let sender = sender.clone();
+                gtk::glib::spawn_future_local(async move {
+                    if let Ok(Some(text)) = clipboard.read_text_future().await {
+                        if is_magnet(&text) {
+                            sender.input(MagnetDialogInput::ClipboardText(text.trim().to_string()));
+                        }
+                    }
+                });
+            }
+            MagnetDialogInput::ClipboardText(text) => {
+                if self.magnet_link.is_empty() {
+                    self.add_button.set_sensitive(true);
+                    self.magnet_link = text;
+                }
             }
             MagnetDialogInput::Close => {
                 self.visible = false;
                 sender.output(MagnetDialogOutput::Close).unwrap();
             }
             MagnetDialogInput::UpdateMagnetLink(link) => {
+                self.add_button.set_sensitive(is_magnet(&link));
                 self.magnet_link = link;
             }
             MagnetDialogInput::Submit => {
-                if !self.magnet_link.is_empty() {
+                if is_magnet(&self.magnet_link) {
                     sender
                         .output(MagnetDialogOutput::AddMagnet(self.magnet_link.clone()))
                         .unwrap();
@@ -116,4 +153,8 @@ impl SimpleComponent for MagnetDialogModel {
             }
         }
     }
+}
+
+fn is_magnet(text: &str) -> bool {
+    text.trim_start().starts_with("magnet:?")
 }
