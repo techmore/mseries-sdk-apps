@@ -69,6 +69,15 @@ impl SimpleComponent for PreferencesWindowModel {
                         attach[0, 1, 2, 1] = &gtk::Button {
                             set_margin_start: 12,
                             set_hexpand: true,
+                            set_tooltip_text: Some(&fl!("open-folder")),
+                            connect_clicked => move |_| {
+                                let file = gtk::gio::File::for_path(download_folder());
+                                gtk::FileLauncher::new(Some(&file)).launch(
+                                    None::<&gtk::Window>,
+                                    None::<&gtk::gio::Cancellable>,
+                                    |_| {},
+                                );
+                            },
                             #[wrap(Some)]
                             set_child = &gtk::Box {
                                 set_orientation: gtk::Orientation::Horizontal,
@@ -79,7 +88,10 @@ impl SimpleComponent for PreferencesWindowModel {
                                 },
 
                                 gtk::Label {
-                                    set_label: "/home/user/Downloads",
+                                    set_label: &download_folder().to_string_lossy(),
+                                    set_ellipsize: gtk::pango::EllipsizeMode::Middle,
+                                    set_halign: gtk::Align::Start,
+                                    set_hexpand: true,
                                 },
                             }
                         },
@@ -272,4 +284,10 @@ impl SimpleComponent for PreferencesWindowModel {
             }
         }
     }
+}
+
+/// Where the daemon saves downloads (mirrors the choice made when it is started).
+fn download_folder() -> std::path::PathBuf {
+    gtk::glib::user_special_dir(gtk::glib::UserDirectory::Downloads)
+        .unwrap_or_else(|| gtk::glib::home_dir().join("Downloads"))
 }
