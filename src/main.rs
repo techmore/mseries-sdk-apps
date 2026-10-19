@@ -442,6 +442,14 @@ impl SimpleComponent for App {
 
         widgets.setup_drop_target(&sender);
 
+        // Closing the window must end the process the same way Quit does. Left to GTK, the
+        // hidden dialogs keep the application alive after the daemon has already been stopped,
+        // and the orphaned process spins.
+        widgets.main_window.connect_close_request(|_| {
+            relm4::main_application().quit();
+            gtk::glib::Propagation::Stop
+        });
+
         widgets.load_window_size();
 
         ComponentParts {
