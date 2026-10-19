@@ -2,7 +2,6 @@
 //! Builds a few Granite widgets in an unmapped window, so it needs a display
 //! (run it under Xvfb or a nested compositor, never on the owner's screen).
 
-
 use granite::prelude::PlaceholderExt;
 use gtk::prelude::*;
 
