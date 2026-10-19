@@ -840,6 +840,7 @@ dependencies = [
  "smithay",
  "tracing-subscriber",
  "wayland-backend",
+ "wayland-client",
  "wayland-scanner",
  "wayland-server",
 ]
