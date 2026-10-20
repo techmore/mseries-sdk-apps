@@ -4,6 +4,7 @@ import time
 import unittest
 from pathlib import Path
 from messages import Messages, Gtk, GLib, Gdk
+from messages_widgets import photo_frame
 
 
 def settle(seconds=.25):
@@ -13,6 +14,33 @@ def settle(seconds=.25):
         while context.pending():
             context.iteration(False)
         time.sleep(.01)
+
+
+def walk(widget):
+    yield widget
+    child = widget.get_first_child()
+    while child:
+        yield from walk(child)
+        child = child.get_next_sibling()
+
+
+def with_class(widget, css):
+    return [w for w in walk(widget) if w.has_css_class(css)]
+
+
+def msg(body, when, outgoing=False, sender='', handle=''):
+    return dict(handle=handle or body, body=body, timestamp=when, outgoing=outgoing, sender=sender)
+
+
+def run_inline(app):
+    """Run worker tasks on the calling thread, mirroring the real error contract."""
+    def task(work, completed):
+        try:
+            value, error = work(), None
+        except Exception as exc:
+            value, error = None, str(exc)
+        completed(value, error)
+    app.task = task
 
 
 @unittest.skipUnless(os.environ.get('DISPLAY'), 'Requires isolated X display')
@@ -202,6 +230,263 @@ class MessagesUI(unittest.TestCase):
         dialog.close();settle()
         self.assertIsNone(self.app.pin_state['snapshot'])
 
+    # --- Native experience -------------------------------------------------
+
+    def test_stylesheet_parses_cleanly_on_this_toolkit(self):
+        self.assertEqual(self.app.css_errors, [])
+
+    def test_every_theme_colour_the_stylesheet_uses_resolves(self):
+        import re
+        from messages_style import build_style
+        context = self.app.window.get_style_context()
+        names = sorted(set(re.findall(r'@([A-Za-z_]+)', build_style())))
+        self.assertIn('accent_bg_color', names)
+        missing = [n for n in names if not context.lookup_color(n)[0]]
+        self.assertEqual(missing, [], 'GTK silently ignores unknown colours, so check them explicitly')
+
+    def test_avatars_never_expand_so_every_row_aligns(self):
+        app = self.app
+        left = set()
+        for key in ('demo', 'jordan', 'family', 'sam'):
+            slot, portrait = app.avatars[key]
+            self.assertFalse(slot.get_hexpand(), key)
+            ok, bounds = portrait.compute_bounds(app.rows[key])
+            self.assertTrue(ok)
+            left.add(round(bounds.get_x()))
+        self.assertEqual(len(left), 1, 'avatars start at the same x in every row: %s' % left)
+
+    def test_unread_dot_only_on_unread_conversations(self):
+        app = self.app
+        self.assertTrue(with_class(app.rows['jordan'], 'ms-unread')[0].get_visible())
+        self.assertFalse(with_class(app.rows['sam'], 'ms-unread')[0].get_visible())
+
+    def test_rows_show_preview_with_you_prefix_and_group_glyph(self):
+        app = self.app
+        previews = {k: with_class(app.rows[k], 'ms-preview')[0].get_label() for k in ('sam', 'jordan')}
+        self.assertEqual(previews['sam'], 'You: Sounds good, thanks!')
+        self.assertEqual(previews['jordan'], 'Save me a seat?')
+        self.assertTrue(any(isinstance(w, Gtk.Image) for w in walk(app.avatars['family'][1])), 'groups use a people glyph')
+
+    def test_conversation_groups_bubbles_into_runs_with_one_tail(self):
+        app = self.app
+        app.threads['demo']['messages'] = [
+            msg('one', '2026-01-05T09:00:00'), msg('two', '2026-01-05T09:01:00'),
+            msg('three', '2026-01-05T09:02:00', True), msg('four', '2026-01-05T09:03:00', True),
+            msg('five', '2026-01-05T15:00:00')]
+        app.rendered = None
+        app.show_conversation();settle()
+        self.assertEqual(len(with_class(app.messages, 'ms-stamp')), 2, 'a heading at the start and after the long silence')
+        by_text = {b.get_text(): b for b in with_class(app.messages, 'ms-bubble')}
+        self.assertTrue(by_text['one'].has_css_class('ms-first') and by_text['two'].has_css_class('ms-last'))
+        self.assertTrue(by_text['three'].has_css_class('ms-outgoing') and by_text['four'].has_css_class('ms-last'))
+        self.assertTrue(by_text['five'].has_css_class('ms-single'))
+
+    def test_message_text_is_literal_and_only_safe_urls_become_links(self):
+        app = self.app
+        body = '<b>not bold</b> & https://example.com/a'
+        app.threads['demo']['messages'] = [msg(body, '2026-01-05T09:00:00')]
+        app.rendered = None
+        app.show_conversation();settle()
+        bubble = with_class(app.messages, 'ms-bubble')[0]
+        self.assertEqual(bubble.get_text(), body)
+        self.assertIn('<a href="https://example.com/a">', bubble.get_label())
+        self.assertNotIn('<b>', bubble.get_label(), 'markup in a message must be escaped')
+
+    def test_send_button_and_placeholder_follow_the_draft(self):
+        app = self.app
+        app.editor.get_buffer().set_text('');settle(.3)
+        self.assertFalse(app.composer.send_revealer.get_reveal_child())
+        self.assertTrue(app.composer.placeholder.get_visible())
+        app.editor.get_buffer().set_text('Hello');settle(.3)
+        self.assertTrue(app.composer.send_revealer.get_reveal_child())
+        self.assertFalse(app.composer.placeholder.get_visible())
+        self.assertTrue(app.composer.revealer.get_reveal_child(), 'keyboard hint appears with a draft')
+
+    def test_sending_shows_a_dimmed_bubble_then_hands_over_to_the_backend_echo(self):
+        from unittest.mock import patch
+        app = self.app
+        queued = []
+        app.task = lambda work, completed: queued.append((work, completed))
+        app.editor.get_buffer().set_text('Right behind you')
+        app.send_message();settle()
+        bubble = [b for b in with_class(app.messages, 'ms-bubble') if b.get_text() == 'Right behind you']
+        self.assertEqual(len(bubble), 1)
+        self.assertTrue(bubble[0].has_css_class('ms-sending'))
+        self.assertEqual(app.composer.face.get_visible_child_name(), 'busy')
+        self.assertFalse(app.send.get_sensitive(), 'no duplicate sends while pending')
+        self.assertEqual(app.send_status.get_text(), 'Sending…')
+        # The phone accepts the message: bubble stays, no longer dimmed.
+        work, completed = queued[0]
+        with patch('messages.BackendClient') as backend:
+            backend.return_value.send_to_thread.return_value = 'transfer'
+            app.fixture = False
+            try:
+                value, error = work(), None
+            finally:
+                app.fixture = True
+        app.refresh = lambda *_a: True
+        completed(value, error);settle()
+        bubble = [b for b in with_class(app.messages, 'ms-bubble') if b.get_text() == 'Right behind you']
+        self.assertEqual(len(bubble), 1)
+        self.assertFalse(bubble[0].has_css_class('ms-sending'))
+        self.assertEqual(app.model.drafts.get('demo', ''), '')
+        self.assertEqual(app.send_status.get_text(), 'Sent through your iPhone')
+        # BlueFerry history now contains it: exactly one bubble, never two.
+        app.threads['demo']['messages'].append(msg('Right behind you', '2026-01-05T09:00:00', True))
+        app.show_conversation();settle()
+        self.assertEqual(sum(b.get_text() == 'Right behind you' for b in with_class(app.messages, 'ms-bubble')), 1)
+        self.assertEqual(app.outbox.entries, [])
+
+    def test_failed_send_removes_the_pending_bubble_and_keeps_the_draft(self):
+        app = self.app
+        run_inline(app)
+        app.editor.get_buffer().set_text('Will fail')
+        app.send_message();settle()
+        self.assertEqual(app.model.drafts['demo'], 'Will fail')
+        self.assertEqual(app.outbox.entries, [])
+        self.assertFalse([b for b in with_class(app.messages, 'ms-bubble') if b.get_text() == 'Will fail'])
+        self.assertIn('Could not send', app.send_status.get_text())
+        self.assertEqual(app.composer.face.get_visible_child_name(), 'icon')
+
+    def test_new_message_while_scrolled_up_offers_jump_to_latest(self):
+        app = self.app
+        app.threads['demo']['messages'] = [msg('filler %d ' % i + 'word ' * 20, '2026-01-05T09:%02d:00' % i) for i in range(40)]
+        app.rendered = None
+        app.show_conversation();settle(.5)
+        adjustment = app.message_scroll.get_vadjustment()
+        self.assertGreater(adjustment.get_upper(), adjustment.get_page_size() * 2)
+        adjustment.set_value(0);settle()
+        app.threads['demo']['messages'] = app.threads['demo']['messages'] + [msg('fresh arrival', '2026-01-05T10:30:00')]
+        app.show_conversation();settle(.3)
+        self.assertTrue(app.jump.get_visible())
+        app.jump.emit('clicked');settle(.4)
+        self.assertFalse(app.jump.get_visible())
+        self.assertGreaterEqual(adjustment.get_value() + adjustment.get_page_size(), adjustment.get_upper() - 80)
+
+    def test_empty_search_explains_itself_and_recovers(self):
+        app = self.app
+        self.assertFalse(app.empty_list.get_visible())
+        app.search.set_text('zzz-nothing');app.filter_rows()
+        self.assertTrue(app.empty_list.get_visible())
+        self.assertEqual(app.empty_list.title.get_label(), 'No Results')
+        app.search.set_text('');app.filter_rows()
+        self.assertFalse(app.empty_list.get_visible())
+
+    def test_heading_hides_until_a_conversation_is_open(self):
+        app = self.app
+        self.assertTrue(app.heading.get_visible())
+        app.go_back();settle()
+        self.assertFalse(app.heading.get_visible())
+        self.assertEqual(app.stack.get_visible_child_name(), 'welcome')
+
+    def test_welcome_pane_does_not_force_a_tall_window(self):
+        minimum = self.app.window.get_child().measure(Gtk.Orientation.VERTICAL, -1)[0]
+        self.assertLessEqual(minimum, 420, 'the window must still fit its 420px minimum height')
+
+    def test_retry_connection_is_offered_when_offline_and_reconnects_in_place(self):
+        from unittest.mock import patch
+        app = self.app
+        run_inline(app)
+        app.refresh = lambda *_a: True
+        app.loaded(None, 'Backend unavailable')
+        self.assertTrue(app.notice.box.get_visible())
+        self.assertTrue(app.notice.retry.get_visible())
+        app.fixture = False
+        try:
+            with patch('connection.reconnect_existing', return_value={'map': True}) as reconnect:
+                app.retry_connection()
+        finally:
+            app.fixture = True
+        reconnect.assert_called_once()
+        self.assertFalse(app.retrying)
+        app.loaded((dict(map=True), list(app.threads.values()), [], '', app.inbox_request_epoch), None)
+        self.assertFalse(app.notice.box.get_visible())
+        self.assertEqual(app.connection.get_label(), 'iPhone connected · Messages ready')
+
+    def test_failed_retry_keeps_the_retry_button_and_explains(self):
+        from unittest.mock import patch
+        app = self.app
+        run_inline(app)
+        app.refresh = lambda *_a: True
+        app.loaded(None, 'Backend unavailable')
+        app.fixture = False
+        try:
+            with patch('connection.reconnect_existing', side_effect=RuntimeError('The saved Bluetooth pairing is missing.')):
+                app.retry_connection()
+        finally:
+            app.fixture = True
+        self.assertIn('Could not reconnect', app.notice.text.get_label())
+        self.assertIn('pairing is missing', app.notice.text.get_tooltip_text())
+        self.assertTrue(app.notice.retry.get_visible() and app.notice.retry.get_sensitive())
+
+    def test_shortcuts_are_registered_and_new_message_opens_the_sheet(self):
+        app = self.app
+        for name in ('new-message', 'search', 'refresh', 'back'):
+            self.assertIsNotNone(app.lookup_action(name), name)
+            self.assertTrue(app.get_accels_for_action('app.' + name), name)
+        app.lookup_action('new-message').activate(None);settle(.3)
+        sheets = [t for t in Gtk.Window.list_toplevels() if t is not app.window and t.get_title() == 'New Message']
+        self.assertEqual(len(sheets), 1)
+        sheets[0].close();settle()
+
+    def test_new_message_sheet_lists_recents_and_enter_starts_a_typed_address(self):
+        app = self.app
+        app.new_message();settle(.3)
+        sheet = next(t for t in Gtk.Window.list_toplevels() if t is not app.window and t.get_title() == 'New Message')
+        rows = [w for w in walk(sheet) if isinstance(w, Gtk.ListBoxRow)]
+        self.assertGreaterEqual(len(rows), 3, 'recent conversations appear before typing')
+        self.assertNotIn('Family', [r.contact[0] for r in rows], 'groups are not offered as recipients')
+        entry = next(w for w in walk(sheet) if isinstance(w, Gtk.SearchEntry))
+        entry.set_text('+15550100199');settle(.3)
+        entry.emit('activate');settle(.4)
+        self.assertEqual(app.model.selected, 'new:+15550100199')
+        self.assertFalse(sheet.is_visible())
+
+    def test_new_message_sheet_keyboard_down_enters_results_and_escape_closes(self):
+        app = self.app
+        app.new_message();settle(.3)
+        sheet = next(t for t in Gtk.Window.list_toplevels() if t is not app.window and t.get_title() == 'New Message')
+        entry = next(w for w in walk(sheet) if isinstance(w, Gtk.SearchEntry))
+        first = next(w for w in walk(sheet) if isinstance(w, Gtk.ListBoxRow))
+        controllers = lambda widget: [c for c in widget.observe_controllers() if isinstance(c, Gtk.EventControllerKey)]
+        self.assertTrue(any(c.emit('key-pressed', Gdk.KEY_Down, 0, 0) for c in controllers(entry)), 'Down is handled in the entry')
+        self.assertTrue(first.is_selected())
+        self.assertTrue(any(c.emit('key-pressed', Gdk.KEY_Escape, 0, 0) for c in controllers(sheet)), 'Escape is handled by the sheet')
+        settle(.2)
+        self.assertFalse(sheet.is_visible())
+
+    def test_every_bubble_carries_its_full_time_as_a_tooltip(self):
+        app = self.app
+        app.threads['demo']['messages'] = [msg('hello', '2026-01-05T09:00:00')]
+        app.rendered = None
+        app.show_conversation();settle()
+        self.assertIn('9:00 AM', with_class(app.messages, 'ms-bubble')[0].get_tooltip_text())
+
+    def test_new_message_to_a_known_contact_reuses_their_conversation(self):
+        app = self.app
+        app.new_message();settle(.3)
+        sheet = next(t for t in Gtk.Window.list_toplevels() if t is not app.window and t.get_title() == 'New Message')
+        row = next(r for r in walk(sheet) if isinstance(r, Gtk.ListBoxRow) and getattr(r, 'contact', ('',))[0] == 'Jordan Lee')
+        results = row.get_parent()
+        results.emit('row-activated', row);settle(.4)
+        self.assertEqual(app.model.selected, 'jordan')
+
+    def test_non_square_photo_is_cropped_to_a_square_not_squashed(self):
+        import gi
+        gi.require_version('GdkPixbuf', '2.0')
+        from gi.repository import GdkPixbuf
+        wide = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 400, 100)
+        wide.fill(0x3689e6ff)
+        _ok, data = wide.save_to_bufferv('png', [], [])
+        frame = photo_frame(bytes(data), 44)
+        self.assertEqual(frame.measure(Gtk.Orientation.HORIZONTAL, -1)[1], 44)
+        self.assertEqual(frame.measure(Gtk.Orientation.VERTICAL, -1)[1], 44)
+        texture = frame.get_first_child().get_paintable()
+        self.assertEqual((texture.get_intrinsic_width(), texture.get_intrinsic_height()), (88, 88))
+        self.assertIsNone(photo_frame(b'', 44))
+        self.assertIsNone(photo_frame(b'\x00' * 64, 44))
+
+
     def test_theme_screenshots(self):
         destination = os.environ.get('MSERIES_MESSAGES_SCREENSHOTS')
         if not destination:
@@ -221,6 +506,131 @@ class MessagesUI(unittest.TestCase):
         self.app.window.set_default_size(480, 680)
         settle(.4)
         ImageGrab.grab(bbox=(0, 0, self.app.window.get_width(), self.app.window.get_height()), xdisplay=os.environ['DISPLAY']).save(out/'messages-narrow.png')
+
+
+@unittest.skipUnless(os.environ.get('DISPLAY'), 'Requires isolated X display')
+class LiveDataPath(unittest.TestCase):
+    """The real refresh/merge/read path, fed realistic BlueFerry objects by a fake client.
+
+    Fixture mode skips refresh(), merge_inbox() and mark-as-read entirely, so
+    this is the only place those are exercised together with the new views.
+    """
+
+    def setUp(self):
+        from unittest.mock import patch
+        from blueferry.models import BackendStatus, Thread
+
+        class FakeClient:
+            read = []
+            fail = False
+
+            def status(self):
+                if FakeClient.fail:
+                    raise RuntimeError('daemon unavailable')
+                return BackendStatus(daemon=True, map=True, contacts=2)
+
+            extra = False
+
+            def threads(self):
+                messages = [dict(handle='h0', body='Earlier', timestamp='2026-10-19T10:00:00', outgoing=True, read=True),
+                            dict(handle='h1', body='Read this https://example.com/doc', timestamp='2026-10-20T10:00:00', outgoing=False, read=False)]
+                if FakeClient.extra:
+                    messages.append(dict(handle='h2', body='One more thing', timestamp='2026-10-20T10:01:00', outgoing=False, read=False))
+                return [Thread.from_dict(dict(key='t1', name='Pat Doe', is_group=False, recipients=['+15550100150'],
+                                              reply_ready=True, last_ts='2026-10-20T10:00:00', messages=messages))]
+
+            def recent(self, folder, limit):
+                return [dict(handle='inbox1', sender='+15550100151', contact_name='Casey Phone', body='Only on the phone',
+                             timestamp='2026-10-20T09:00:00', read=False)]
+
+            def contact_photo(self, address):
+                return b''
+
+            def mark_thread_read(self, key):
+                FakeClient.read.append(key)
+                return 1
+
+        FakeClient.read, FakeClient.fail, FakeClient.extra = [], False, False
+        self.client = FakeClient
+        self.patches = [patch('messages.BackendClient', FakeClient), patch('messages.get_system_bus', side_effect=RuntimeError('no bus'))]
+        for item in self.patches:
+            item.start()
+        self.app = Messages(fixture=False)
+        self.app.set_application_id('io.elementary.mseries.Messages.Test' + self._testMethodName.replace('_', ''))
+        self.app.register()
+        # Keep the private pin keyring out of the picture entirely.
+        self.app.load_pins = lambda: None
+        self.app.activate()
+        self.wait(lambda: 'inbox:+15550100151' in self.app.threads)
+
+    def tearDown(self):
+        self.app.window.close()
+        self.app.quit()
+        for item in self.patches:
+            item.stop()
+        settle(.05)
+
+    def wait(self, condition, seconds=4):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end and not condition():
+            settle(.05)
+        self.assertTrue(condition(), 'timed out waiting for the backend snapshot')
+
+    def test_backend_and_phone_inbox_merge_into_native_rows(self):
+        app = self.app
+        self.assertEqual(app.connection.get_label(), 'iPhone connected · Messages ready')
+        self.assertEqual(set(app.rows), {'t1', 'inbox:+15550100151'})
+        self.assertTrue(with_class(app.rows['t1'], 'ms-unread')[0].get_visible(), 'unread comes from message read flags')
+        self.assertEqual(with_class(app.rows['inbox:+15550100151'], 'ms-contact-name')[0].get_label(), 'Casey Phone')
+        self.assertFalse(app.empty_list.get_visible())
+
+    def test_opening_an_unread_thread_marks_it_read_and_renders_its_link(self):
+        app = self.app
+        app.list.select_row(app.rows['t1']);settle(.3)
+        self.wait(lambda: self.client.read == ['t1'])
+        bubbles = with_class(app.messages, 'ms-bubble')
+        self.assertEqual([b.get_text() for b in bubbles], ['Earlier', 'Read this https://example.com/doc'])
+        self.assertIn('<a href="https://example.com/doc">', bubbles[1].get_label())
+        self.assertTrue(bubbles[0].has_css_class('ms-outgoing') and bubbles[1].has_css_class('ms-incoming'))
+
+    def test_message_arriving_in_an_open_focused_conversation_is_marked_read_once(self):
+        app = self.app
+        app.window.is_active = lambda: True
+        app.list.select_row(app.rows['t1']);settle(.3)
+        self.wait(lambda: self.client.read == ['t1'])
+        self.client.extra = True
+        app.refresh(True)
+        self.wait(lambda: self.client.read == ['t1', 't1'])
+        app.refresh(True);settle(.6)
+        self.assertEqual(self.client.read, ['t1', 't1'], 'the same newest message is not marked twice')
+
+    def test_unfocused_window_does_not_mark_arrivals_read(self):
+        app = self.app
+        app.window.is_active = lambda: False
+        app.list.select_row(app.rows['t1']);settle(.3)
+        self.wait(lambda: self.client.read == ['t1'])
+        self.client.extra = True
+        app.refresh(True);settle(.8)
+        self.assertEqual(self.client.read, ['t1'], 'only the explicit open counts while unfocused')
+
+    def test_phone_only_conversation_is_readable_but_never_marked_read(self):
+        app = self.app
+        app.list.select_row(app.rows['inbox:+15550100151']);settle(.4)
+        self.assertEqual(self.client.read, [])
+        self.assertEqual([b.get_text() for b in with_class(app.messages, 'ms-bubble')], ['Only on the phone'])
+
+    def test_daemon_failure_keeps_conversations_and_offers_retry(self):
+        app = self.app
+        self.client.fail = True
+        app.refresh(True)
+        self.wait(lambda: app.connection_state == 'offline')
+        self.assertEqual(set(app.rows), {'t1', 'inbox:+15550100151'}, 'last known conversations stay on screen')
+        self.assertTrue(app.notice.retry.get_visible())
+        self.assertFalse(app.send.get_sensitive())
+        self.client.fail = False
+        app.refresh(True)
+        self.wait(lambda: app.connection_state == 'ready')
+        self.assertFalse(app.notice.box.get_visible())
 
 
 if __name__ == '__main__':
