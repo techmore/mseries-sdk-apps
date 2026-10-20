@@ -19,7 +19,7 @@ from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Granite, Gtk, Pango
 from blueferry.client import BackendClient
 from blueferry.bus import get_system_bus
 from blueferry.recipients import validate_recipient
-from messages_model import ConversationState, merge_inbox
+from messages_model import ConversationState, merge_inbox, contact_index, resolve_contact_names
 from message_pins import PinStore, profile_key, read_snapshot, suggested_matches, matched_state, ordered_keys, effective_choices
 
 _ = gettext.gettext
@@ -29,7 +29,9 @@ STYLE = '''
 .ms-status { padding: 8px 14px; border-top: 1px solid alpha(@theme_fg_color, .12); }
 .ms-row { padding: 12px; }
 .ms-avatar { border-radius: 99px; background: alpha(@theme_selected_bg_color,.18); padding: 12px; }
-.ms-contact-name { font-size: 1.15em; font-weight: 600; }
+.ms-contact-name { font-size: 1.4em; font-weight: 600; }
+.ms-favorite-name { font-size: 1.1em; font-weight: 600; }
+.ms-unread-dot { color: #3689e6; font-size: 11px; }
 .ms-photo { border-radius: 99px; min-width: 42px; min-height: 42px; }
 .ms-bubble { border-radius: 16px; padding: 12px 16px; background: alpha(@theme_fg_color,.08); }
 .ms-outgoing { background: alpha(@theme_selected_bg_color,.25); color: @theme_fg_color; border: 1px solid alpha(@theme_selected_bg_color,.35); }
@@ -56,6 +58,14 @@ def label(text='', css=None, **kwargs):
 def clear(box):
     while box.get_first_child():
         box.remove(box.get_first_child())
+
+
+def unread_marker(thread):
+    slot = Gtk.Box(width_request=8, valign=Gtk.Align.CENTER)
+    dot = label('●', 'ms-unread-dot', visible=bool(thread.get('unread_count')), tooltip_text=_('Unread message'))
+    dot.update_property([Gtk.AccessibleProperty.LABEL], [_('Unread message')])
+    slot.append(dot)
+    return slot
 
 
 class Messages(Gtk.Application):
@@ -90,6 +100,9 @@ class Messages(Gtk.Application):
         self.pin_profile = None
         self.pin_store = None
         self.pin_pending = False
+        self.contact_names = {}
+        self.contact_revision = None
+        self.contacts_pending = False
 
     def do_activate(self):
         if self.get_active_window():
@@ -297,7 +310,7 @@ class Messages(Gtk.Application):
             stamp = datetime.now().astimezone().strftime('%X') if recent is not None else self.checked_text
             self.checked_text = stamp
             self.connection.set_tooltip_text(_('Recent iPhone inbox checked at %s. Up to 200 messages exposed by the phone; full iCloud history is not available.') % stamp)
-        combined = merge_inbox(threads, self.inbox)
+        combined = resolve_contact_names(merge_inbox(threads, self.inbox), self.contact_names)
         # A phone-only/new conversation acquires a canonical backend identity
         # after the first live event. Move the draft without changing its route.
         for key, thread in self.threads.items():
@@ -314,10 +327,36 @@ class Messages(Gtk.Application):
                     combined.append(thread)
         self.threads = {t['key']: t for t in combined}
         self.load_pins()
+        self.load_contact_names(force=recent is not None)
         self.update_pin_note()
         self.populate()
         self.show_conversation()
         self.load_photos()
+
+    def load_contact_names(self, force=False):
+        if self.fixture or self.contacts_pending:
+            return
+        revision = (self.pin_profile, self.status.get('contacts'), self.status.get('contact_photo_revision'))
+        if not force and revision == self.contact_revision:
+            return
+        self.contacts_pending = True
+        def load():
+            client = BackendClient()
+            records = []
+            for offset in range(0, 10000, 150):
+                page = client.list_contacts(offset, 150)
+                records.extend(page)
+                if len(page) < 150:
+                    break
+            return contact_index(records)
+        def loaded(index, error):
+            self.contacts_pending = False
+            if error or revision[0] != self.pin_profile:
+                return
+            self.contact_names, self.contact_revision = index, revision
+            resolve_contact_names(self.threads.values(), index)
+            self.populate();self.show_conversation()
+        self.task(load, loaded)
 
     def photo_widget(self, data):
         try:
@@ -362,8 +401,9 @@ class Messages(Gtk.Application):
                 address = (thread.get('recipients') or [''])[0]
                 data = photos.get(address)
                 if data and (photo := self.photo_widget(data)):
+                    previous = old.get_prev_sibling()
                     content.remove(old)
-                    content.insert_child_after(photo, None)
+                    content.insert_child_after(photo, previous)
                     registry = self.favorite_avatars if content.has_css_class('ms-favorite-content') else self.avatars
                     registry[key] = (content, photo)
             self.load_photos()
@@ -391,6 +431,7 @@ class Messages(Gtk.Application):
                 is_pinned = row.is_pinned = key in pinned
                 content = Gtk.Box(spacing=12)
                 content.add_css_class('ms-row')
+                content.append(unread_marker(thread))
                 avatar = label((thread['name'] or '?')[0].upper(), 'ms-avatar')
                 address = (thread.get('recipients') or [''])[0]
                 if not thread.get('is_group') and (data := self.photo_cache.get(address)):
@@ -422,8 +463,11 @@ class Messages(Gtk.Application):
                     portrait = label((thread['name'] or '?')[0].upper(), 'ms-favorite-avatar')
                     if not thread.get('is_group') and (data := self.photo_cache.get(address)):
                         portrait = self.photo_widget(data) or portrait
-                    tile.append(portrait)
-                    tile.append(label(thread['name'], xalign=.5, ellipsize=Pango.EllipsizeMode.END, max_width_chars=7))
+                    portrait_row = Gtk.Box(spacing=4, halign=Gtk.Align.CENTER)
+                    portrait_row.add_css_class('ms-favorite-content')
+                    portrait_row.append(unread_marker(thread));portrait_row.append(portrait)
+                    tile.append(portrait_row)
+                    tile.append(label(thread['name'], 'ms-favorite-name', xalign=.5, ellipsize=Pango.EllipsizeMode.END, max_width_chars=7))
                     button.set_child(tile)
                     def choose(_button, identity=key):
                         self.list.unselect_all()
@@ -431,7 +475,7 @@ class Messages(Gtk.Application):
                         self.sync_favorite_selection()
                     button.connect('clicked', choose)
                     self.favorite_buttons[key] = button
-                    self.favorite_avatars[key] = (tile, portrait)
+                    self.favorite_avatars[key] = (portrait_row, portrait)
             if self.model.selected in self.rows:
                 self.list.select_row(self.rows[self.model.selected])
         self.filter_rows()

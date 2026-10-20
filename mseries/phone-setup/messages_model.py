@@ -2,6 +2,34 @@
 from copy import deepcopy
 from dataclasses import dataclass
 from blueferry.recipients import validate_recipient
+from blueferry.events import canonical_address
+
+
+def contact_index(records):
+    result = {}
+    for name, phones, emails in records:
+        if not name.strip():
+            continue
+        for address in [*phones, *emails]:
+            if key := canonical_address(address):
+                result.setdefault(key, set()).add(name.strip())
+    return result
+
+
+def resolve_contact_names(threads, index):
+    """Presentation only: never alter thread identities, groups or recipients."""
+    for thread in threads:
+        if thread.get('is_group') or len(thread.get('recipients', [])) != 1:
+            continue
+        key = canonical_address(thread['recipients'][0])
+        names = index.get(key, set())
+        if not names and key and key.startswith('phone:'):
+            digits = key[6:]
+            alternate = '1'+digits if len(digits)==10 else digits[1:] if len(digits)==11 and digits.startswith('1') else ''
+            names = index.get('phone:'+alternate, set()) if alternate else set()
+        if len(names) == 1:
+            thread['name'] = next(iter(names))
+    return threads
 
 
 def address_key(address):
@@ -36,6 +64,8 @@ def merge_inbox(threads, inbox):
         thread['messages'].append(dict(handle=raw.get('handle', ''), body=raw.get('body', ''),
                                        timestamp=raw.get('timestamp', ''), outgoing=False,
                                        read=raw.get('read', False), sender=raw.get('sender', '')))
+        if raw.get('read') is False:
+            thread['unread_count'] = thread.get('unread_count', 0) + 1
         if raw.get('handle'):
             handles.add(raw['handle'])
     for thread in result.values():

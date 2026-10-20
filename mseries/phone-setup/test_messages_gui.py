@@ -41,6 +41,20 @@ class MessagesUI(unittest.TestCase):
         self.assertTrue(app.editor.grab_focus())
         self.assertTrue(app.send.get_sensitive())
 
+    def test_unread_marker_stays_left_of_avatar_in_list_and_favorites(self):
+        app=self.app
+        app.threads['demo']['unread_count']=1
+        app.populate()
+        parent,avatar=app.avatars['demo']
+        self.assertTrue(avatar.get_prev_sibling().get_first_child().get_visible())
+        app.pin_state=dict(version=1,snapshot=None,choices=['demo'])
+        app.populate()
+        parent,avatar=app.favorite_avatars['demo']
+        self.assertTrue(avatar.get_prev_sibling().get_first_child().get_visible())
+        app.threads['demo']['unread_count']=0;app.populate()
+        parent,avatar=app.favorite_avatars['demo']
+        self.assertFalse(avatar.get_prev_sibling().get_first_child().get_visible())
+
     def test_offline_retains_conversations_and_disables_send(self):
         app = self.app
         app.editor.get_buffer().set_text('Keep offline')
