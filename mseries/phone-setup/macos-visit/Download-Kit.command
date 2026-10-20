@@ -9,7 +9,7 @@ destination="$HOME/Downloads/MSeries-Mac-Visit"
 mkdir "$destination"
 cd "$destination"
 base="https://raw.githubusercontent.com/techmore/ElementaryOS_MSeries/$revision/mseries/phone-setup/macos-visit"
-for name in Save-Hardware-Code.command Prepare-Optional-VM.command README.md; do
+for name in Save-Hardware-Code.command Prepare-Optional-VM.command Export-Message-Pins.command Export-Message-Pins.js README.md; do
   curl --fail --location --retry 3 "$base/$name" -o "$name"
 done
 curl --fail --location --retry 3 'https://github.com/OpenBubbles/Mac-Hardware-Info/releases/download/v1.2.0/Mac.Hardware.Info.zip' -o Mac.Hardware.Info.zip

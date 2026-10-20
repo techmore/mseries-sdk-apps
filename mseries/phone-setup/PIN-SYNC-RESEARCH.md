@@ -10,6 +10,46 @@ found. Public projects expose private Apple interfaces on macOS or jailbroken
 iOS. Our current BlueFerry connection does not import or export iPhone pins.
 No phone pin data was read or changed during this investigation.
 
+## Implemented snapshot path and remaining owner qualification
+
+The owner selected the private macOS framework path. `macos-visit/Export-Message-Pins.js`
+now implements an original JXA/Foundation reader with runtime return-signature
+checks and a permission-aware read of Apple's local pin cache. It does not call
+the void fetch selector or extra synchronization/migration methods. Native
+Messages has an ordered import/review interface, explicit group matching,
+re-import identity retention, snapshot provenance and app-owned phone-scoped
+keyring persistence. This is an initial snapshot implementation, not live sync.
+
+Linux qualification: 12 matching/import model tests, 8 existing message model
+tests, 14 private GTK interaction/render checks and a real isolated Secret
+Service round trip passed. Light/dark/narrow fixture screenshots were inspected.
+The installer staged the update while leaving the running Messages PID and
+working MAP session unchanged; the current window loads it at next launch.
+
+The earlier interpretation of `process_supported=false` as a decisive read gate
+was too strong. The private implementation gates controller initialization, but
+has a distinct local configuration getter; Beeper's current Mac client reads the
+same pin data from preferences. The adapter now tries the getter, then the
+canonical `~/Library/Preferences/com.apple.messages.pinning.plist`, extracting
+only `pD` and its ordered `pP` identifiers. The `pT` Apple modification time and
+supported configuration version are checked; a missing/inaccessible cache does
+not become an empty successful export. Normal macOS file permissions are
+respected, without Beeper's alternate-case preference-domain workaround.
+
+macOS qualification at `4d878a07d4f70aa5ee0641af4a1179763aecb0e4`:
+[Actions run](https://github.com/techmore/ElementaryOS_MSeries/actions/runs/39462452180)
+passes on macOS 15 ARM, macOS 26 ARM and macOS 26 Intel. Tests exercise actual
+Foundation binary-plist reads, ordered/empty data, denied/missing reads,
+JSON export/readback and mode 0600. Apple-documented bridged NSError handling
+fixed a real failure-path crash; an explicit nil check prevents parsing nil data.
+No-account probes report configuration version 2 and a missing cache (Cocoa 260),
+with the unsupported standalone role retained as diagnostic information.
+**All three runners report SIP disabled by their image configuration.** These
+checks do not prove a signed-in owner export, owner Full Disk Access, SIP-enabled
+execution or cross-OS NAS transfer. The helper itself makes no SIP, signing or
+privacy-setting changes. Real owner export/import and live pin sync remain
+unqualified; no real pins, account secrets or Apple implementation code enter Git.
+
 ## Apple documentation and public implementations
 
 | Source | Evidence and limit |
@@ -30,6 +70,16 @@ It is reverse-engineered interface evidence, not current iOS 27/macOS 27
 runtime qualification or an Apple-supported API contract.
 
 Public repository checks:
+
+- **Beeper platform-imessage**, MIT licensed, revision
+  [`79383860ff40b5c146b209bd438b33e05b0a6d22`](https://github.com/beeper/platform-imessage/blob/79383860ff40b5c146b209bd438b33e05b0a6d22/src/IMessage/Sources/IMessage/Defaults.swift):
+  its pin reader identifies the `com.apple.messages.pinning` domain and `pD` →
+  `pP` dictionary path. The source notes privacy protection on Sonoma and uses
+  an alternate-case domain workaround. We use the factual schema reference,
+  retain normal file-access checks and do not copy that workaround or code.
+  [SetShot's FDA-gated domain list](https://github.com/adamengst/setshot-app/blob/0cea2d2b54a4d4d63d3acfd9e2ea3a21afcf6c24/SetShot/Services/DiffEngine.swift)
+  independently includes the canonical pin domain. Neither source qualifies the
+  owner's current Mac; a real denied read is reported with its observed status.
 
 - **webMessages**, revision
   [`67ab65de818ac6bf6b3216b55fc451106976fdbc`](https://github.com/Pandoks/webMessages/tree/67ab65de818ac6bf6b3216b55fc451106976fdbc):

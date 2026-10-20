@@ -1,5 +1,43 @@
 # One macOS visit: collect everything
 
+## Apple Messages pin export candidate
+
+The small `Export-Message-Pins.command` / `.js` pair reads Apple's pin configuration
+through the private IMCore getter or its canonical local preferences cache. It is independent of the large VM collector: the JSON can go
+to a mounted private NAS folder, and no guest image or external drive is needed
+for pins. No Homebrew/Xcode tools, Apple Account password collection, signing
+overrides or SIP changes are performed.
+
+**Actual owner export remains unverified.** The reader passes binary-plist,
+ordered/empty, missing/denied, private JSON write/readback and permissions checks
+on ARM macOS 15/26 and Intel macOS 26. The no-account runners have no pin cache;
+the standalone process-role flag is diagnostic, not an automatic read failure.
+Their images have SIP disabled, so these checks do not establish SIP-enabled
+owner access. The helper makes no SIP changes. A real access-denied result gives
+the standard Terminal Full Disk Access instruction; no privacy setting is changed
+automatically. Messages must be signed in to your Apple Account and have the
+same visible pins as your phone. That check happens entirely on the Mac.
+
+For a coordinated diagnostic on an already available Mac, the pinned small kit
+can be downloaded without fetching Machine Lab files:
+
+```sh
+curl --fail --location 'https://raw.githubusercontent.com/techmore/ElementaryOS_MSeries/4d878a07d4f70aa5ee0641af4a1179763aecb0e4/mseries/phone-setup/macos-visit/Download-Message-Pins.command' -o "$HOME/Downloads/Download-Message-Pins.command"
+/bin/bash "$HOME/Downloads/Download-Message-Pins.command" 4d878a07d4f70aa5ee0641af4a1179763aecb0e4
+```
+
+It opens Messages and waits for you to confirm the visible pins match the phone.
+The read either creates a private `apple-message-pins.json` plus checksum, or
+fails with an access diagnosis. Only a verified export/checksum creates
+`MSeries-Message-Pins-COMPLETE.txt`. Existing exports are backed up before retrying.
+Pass an existing mounted NAS folder as the second argument to the download
+script to write there. Keep the JSON/checksum private and accessible from Linux;
+an export left only on encrypted macOS APFS is not transferred. On Linux use
+Messages → Import iPhone Pins and review the matches. Do not reboot solely
+because a diagnostic or fixture check passed.
+
+## Bubbles and Machine Lab collection
+
 **Use the new single guided collector** from the
 [parent download instructions](../README.md#download-the-macos-visit-kit).
 It combines the steps below, including Machine Lab provisioning and native GUI
@@ -35,8 +73,8 @@ The older individual steps below remain available for troubleshooting.
 # Manual collection reference
 
 This kit supports the ARM64 Bubbles build already installed on Linux. The native
-Connect iPhone/BlueFerry build is also installed, but Bluetooth message access is
-still denied. Exporting real Mac hardware is a separate Bubbles activation path.
+Connect iPhone/BlueFerry build is also installed and Bluetooth texts now work on
+the qualified desktop. Exporting real Mac hardware is a separate Bubbles activation path.
 No Apple Account password is needed during this export. No VM is needed by Bubbles.
 
 ## 1. Download on macOS
@@ -141,4 +179,4 @@ been syntax/lint checked on Linux, not executed on macOS. Research pin and limit
 Return to Linux and this chat. Open **Bubbles**, choose **Local Mac hardware**,
 import/paste the full export, and complete Apple Account login there. Keep the
 code/password out of chat. We will verify activation and message delivery then;
-this Mac visit does not resolve BlueFerry's separate Bluetooth authorization error.
+this hardware export is independent of the already working BlueFerry connection.

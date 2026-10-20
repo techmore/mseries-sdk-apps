@@ -20,6 +20,7 @@ from blueferry.client import BackendClient
 from blueferry.bus import get_system_bus
 from blueferry.recipients import validate_recipient
 from messages_model import ConversationState, merge_inbox
+from message_pins import PinStore, profile_key, read_snapshot, suggested_matches, matched_state, ordered_keys, effective_choices
 
 _ = gettext.gettext
 APP_ID = 'io.elementary.mseries.Messages'
@@ -36,6 +37,9 @@ STYLE = '''
 .ms-heading { padding: 12px 20px; border-bottom: 1px solid alpha(@theme_fg_color,.12); }
 .ms-time { font-size: .85em; opacity: .72; }
 .ms-notice { padding: 8px 20px; background: alpha(@theme_selected_bg_color,.10); }
+.ms-section { padding: 12px 12px 4px; font-weight: 600; opacity: .75; }
+.ms-pin-note { padding: 4px 14px 10px; }
+.ms-pin-row { border-bottom: 1px solid alpha(@theme_fg_color,.08); padding: 12px 0; }
 '''
 
 
@@ -77,6 +81,10 @@ class Messages(Gtk.Application):
         self.photo_revision = None
         self.photo_pending = False
         self.avatars = {}
+        self.pin_state = dict(version=1, snapshot=None, choices=[])
+        self.pin_profile = None
+        self.pin_store = None
+        self.pin_pending = False
 
     def do_activate(self):
         if self.get_active_window():
@@ -112,7 +120,7 @@ class Messages(Gtk.Application):
         refresh.update_property([Gtk.AccessibleProperty.LABEL], [_('Refresh iPhone Inbox')])
         header.pack_end(refresh)
         menu = Gio.Menu()
-        for text, action, method in [(_('Connect iPhone…'), 'setup', self.setup), (_('Advanced BlueFerry…'), 'advanced', self.advanced)]:
+        for text, action, method in [(_('Import iPhone Pins…'), 'import-pins', self.import_pins), (_('Review Imported Pins…'), 'review-pins', self.review_pins), (_('Connect iPhone…'), 'setup', self.setup), (_('Advanced BlueFerry…'), 'advanced', self.advanced)]:
             a = Gio.SimpleAction.new(action, None)
             a.connect('activate', method)
             self.add_action(a)
@@ -128,9 +136,13 @@ class Messages(Gtk.Application):
         self.search = Gtk.SearchEntry(placeholder_text=_('Search conversations'), margin_top=10, margin_bottom=10, margin_start=12, margin_end=12)
         self.search.connect('search-changed', lambda *_args: self.filter_rows())
         self.sidebar.append(self.search)
+        self.pin_note = label('', 'ms-pin-note', xalign=0, wrap=True, visible=False)
+        self.pin_note.add_css_class('dim-label')
+        self.sidebar.append(self.pin_note)
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
         self.list.add_css_class('navigation-sidebar')
         self.list.connect('row-selected', self.selected)
+        self.list.set_header_func(self.section_header)
         list_scroll = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER, child=self.list)
         self.sidebar.append(list_scroll)
         self.connection = label(_('Connecting to iPhone…'), xalign=0, wrap=True)
@@ -288,6 +300,8 @@ class Messages(Gtk.Application):
                 elif thread.get('new') or key in self.model.pending:
                     combined.append(thread)
         self.threads = {t['key']: t for t in combined}
+        self.load_pins()
+        self.update_pin_note()
         self.populate()
         self.show_conversation()
         self.load_photos()
@@ -315,7 +329,8 @@ class Messages(Gtk.Application):
             return
         # BlueFerry validates encoded size and image dimensions before returning
         # photos. Keep decoded textures in this process only, never in a new file.
-        wanted = {t['recipients'][0] for t in list(self.threads.values())[:40]
+        visible = [self.threads[key] for key in ordered_keys(self.threads, self.pin_state)[:40]]
+        wanted = {t['recipients'][0] for t in visible
                   if not t.get('is_group') and t.get('recipients') and t['recipients'][0] not in self.photo_cache}
         if not wanted:
             return
@@ -337,12 +352,14 @@ class Messages(Gtk.Application):
                     content.remove(old)
                     content.insert_child_after(photo, None)
                     self.avatars[key] = (content, photo)
+            self.load_photos()
         self.task(load, loaded)
 
     def populate(self):
-        order = [t['key'] for t in sorted(self.threads.values(), key=lambda t: t.get('last_ts', ''), reverse=True)]
+        order = ordered_keys(self.threads, self.pin_state)
+        pinned = set(effective_choices(self.threads, self.pin_state))
         # Avoid destroying focus/selection when a status poll changes nothing.
-        signatures = [(key, self.threads[key]['name'], self.threads[key].get('unread_count', 0), self.threads[key]['messages'][-1].get('body', '') if self.threads[key]['messages'] else '') for key in order]
+        signatures = [(key, self.threads[key]['name'], key in pinned, self.threads[key].get('unread_count', 0), self.threads[key]['messages'][-1].get('body', '') if self.threads[key]['messages'] else '') for key in order]
         if signatures != getattr(self, 'row_signature', None):
             self.row_signature = signatures
             self.list.unselect_all()
@@ -353,6 +370,7 @@ class Messages(Gtk.Application):
                 thread = self.threads[key]
                 row = Gtk.ListBoxRow()
                 row.key = key
+                is_pinned = row.is_pinned = key in pinned
                 content = Gtk.Box(spacing=12)
                 content.add_css_class('ms-row')
                 avatar = label((thread['name'] or '?')[0].upper(), 'ms-avatar')
@@ -370,12 +388,181 @@ class Messages(Gtk.Application):
                 last = thread['messages'][-1].get('body', '') if thread['messages'] else _('New conversation')
                 text.append(label(last.replace('\n', ' '), 'dim-label', xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=24))
                 content.append(text)
+                if is_pinned:
+                    pin_icon = Gtk.Image.new_from_icon_name('starred-symbolic')
+                    pin_icon.set_tooltip_text(_('Imported from Apple Messages · this computer keeps a snapshot'))
+                    content.append(pin_icon)
                 row.set_child(content)
                 self.rows[key] = row
                 self.list.append(row)
             if self.model.selected in self.rows:
                 self.list.select_row(self.rows[self.model.selected])
         self.filter_rows()
+
+    def section_header(self, row, before):
+        if row.is_pinned and (before is None or not before.is_pinned):
+            row.set_header(label(_('Pinned'), 'ms-section', xalign=0))
+        elif not row.is_pinned and before and before.is_pinned:
+            row.set_header(label(_('Messages'), 'ms-section', xalign=0))
+        else:
+            row.set_header(None)
+
+    def pin_notice(self, text):
+        self.pin_note.set_label(text)
+        self.pin_note.set_visible(bool(text))
+
+    def load_pins(self):
+        if self.fixture or self.pin_pending:
+            return
+        try:
+            profile = profile_key()
+        except ValueError:
+            return
+        if profile == self.pin_profile:
+            return
+        self.pin_profile = profile
+        self.pin_state = dict(version=1, snapshot=None, choices=[])
+        self.pin_pending = True
+        def load():
+            store = PinStore(profile)
+            return store, store.load()
+        def loaded(result, error):
+            self.pin_pending = False
+            if profile != self.pin_profile:
+                return
+            if error:
+                self.pin_store = None
+                self.pin_notice(_('Could not open saved pins. Import iPhone Pins to try again.'))
+                return
+            self.pin_store, self.pin_state = result
+            self.update_pin_note()
+            self.populate()
+            self.load_photos()
+        self.task(load, loaded)
+
+    def update_pin_note(self):
+        snapshot = self.pin_state.get('snapshot')
+        if not snapshot:
+            self.pin_notice('')
+            return
+        stamp = datetime.fromisoformat(snapshot['captured_at']).astimezone().strftime('%x %X')
+        missing = sum(key not in self.threads for key in effective_choices(self.threads, self.pin_state))
+        self.pin_notice((_('Pins from Mac · %s') % stamp) + (_(' · %d need matching') % missing if missing else ''))
+        self.pin_note.set_tooltip_text(_('This is the Mac’s exported pin order. Changes on your iPhone require a new export. Review Imported Pins to match missing conversations.'))
+        if snapshot.get('source_modified_at'):
+            modified = datetime.fromisoformat(snapshot['source_modified_at']).astimezone().strftime('%x %X')
+            self.pin_note.set_tooltip_text(self.pin_note.get_tooltip_text() + '\n' + (_('Apple pin settings last changed: %s') % modified))
+
+    def import_pins(self, *_args):
+        chooser = Gtk.FileDialog(title=_('Import iPhone Pins'))
+        file_filter = Gtk.FileFilter(name=_('Apple Messages pin export'))
+        file_filter.add_pattern('*.json')
+        chooser.set_default_filter(file_filter)
+        def selected(dialog, result):
+            try:
+                path = dialog.open_finish(result).get_path()
+            except GLib.Error:
+                return
+            if not path:
+                self.pin_notice(_('Choose a local pin export file.'))
+                return
+            def loaded(snapshot, error):
+                if error:
+                    self.pin_notice(_('Could not read that pin export. Use Export-Message-Pins on your Mac.'))
+                else:
+                    self.show_pin_review(snapshot)
+            self.task(lambda: read_snapshot(path), loaded)
+        chooser.open(self.window, None, selected)
+
+    def review_pins(self, *_args):
+        if self.pin_state.get('snapshot'):
+            self.show_pin_review(self.pin_state['snapshot'], effective_choices(self.threads, self.pin_state))
+        else:
+            self.import_pins()
+
+    def show_pin_review(self, snapshot, previous=None):
+        dialog = Gtk.Window(title=_('Import iPhone Pins'), transient_for=self.window, destroy_with_parent=True, modal=True, default_width=480, default_height=540)
+        header = Gtk.HeaderBar()
+        header.set_title_widget(label(_('Import iPhone Pins'), 'title'))
+        dialog.set_titlebar(header)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14, margin_top=18, margin_bottom=18, margin_start=20, margin_end=20)
+        box.append(label(_('Your people, in the same order.'), 'title-2', xalign=0, wrap=True))
+        box.append(label(_('Match the pins exported from Apple Messages. Groups need your selection. This imports a snapshot; it does not change your iPhone.'), 'dim-label', xalign=0, wrap=True, max_width_chars=48))
+        rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        box.append(Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER, child=rows))
+        keys = sorted(self.threads, key=lambda key: self.threads[key]['name'].casefold())
+        names = [_('Not matched yet')] + [self.threads[key]['name'] for key in keys]
+        choices = previous if previous is not None else suggested_matches(snapshot, self.threads, self.pin_state)
+        dropdowns = []
+        for index, pin in enumerate(snapshot['pins']):
+            row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            row.add_css_class('ms-pin-row')
+            row.append(label(_('%d. %s') % (index+1, pin['apple_identifier']), xalign=0, ellipsize=Pango.EllipsizeMode.MIDDLE, max_width_chars=40, tooltip_text=pin['apple_identifier']))
+            dropdown = Gtk.DropDown(model=Gtk.StringList.new(names), enable_search=True)
+            factory = Gtk.SignalListItemFactory()
+            factory.connect('setup', lambda _f, item: item.set_child(label(xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=34)))
+            factory.connect('bind', lambda _f, item: item.get_child().set_label(item.get_item().get_string()))
+            dropdown.set_factory(factory)
+            dropdown.set_selected(keys.index(choices[index])+1 if choices[index] in keys else 0)
+            dropdown.update_property([Gtk.AccessibleProperty.LABEL], [_('Conversation for pin %d') % (index+1)])
+            row.append(dropdown)
+            details = label('', 'dim-label', xalign=0, wrap=True, max_width_chars=42)
+            def describe_match(control, *_args, destination=details):
+                key = keys[control.get_selected()-1] if control.get_selected() else None
+                addresses = ', '.join(self.threads.get(key, {}).get('recipients', []))
+                destination.set_label(addresses or _('Choose a conversation, or leave this pin for later.'))
+                control.set_tooltip_text(self.threads.get(key, {}).get('name', '') + ('\n' + addresses if addresses else ''))
+            dropdown.connect('notify::selected', describe_match);describe_match(dropdown)
+            row.append(details);rows.append(row);dropdowns.append(dropdown)
+        if not snapshot['pins']:
+            rows.append(label(_('Apple Messages exported an empty pin list. Importing it clears this computer’s imported pins.'), xalign=0, wrap=True, max_width_chars=45))
+        error_label = label('', 'error', xalign=0, wrap=True, visible=False)
+        box.append(error_label)
+        actions = Gtk.Box(spacing=8, halign=Gtk.Align.END)
+        cancel = Gtk.Button(label=_('Cancel'));cancel.connect('clicked', lambda *_a: dialog.close());actions.append(cancel)
+        apply = Gtk.Button(label=_('Import Pins'));apply.add_css_class('suggested-action');actions.append(apply)
+        box.append(actions);dialog.set_child(box)
+        dialog.set_default_widget(apply)
+        keys_controller = Gtk.EventControllerKey()
+        def key_pressed(_c, key, _code, _mods):
+            if key == Gdk.KEY_Escape:
+                dialog.close();return True
+            return False
+        keys_controller.connect('key-pressed', key_pressed);dialog.add_controller(keys_controller)
+        state = dict(alive=True)
+        dialog.connect('close-request', lambda *_a: state.update(alive=False) or False)
+        def save(*_args):
+            try:
+                selected = [keys[d.get_selected()-1] if d.get_selected() else None for d in dropdowns]
+                new_state = matched_state(snapshot, selected, self.threads)
+                profile = 'fixture' if self.fixture else profile_key()
+            except ValueError as error:
+                error_label.set_label(str(error));error_label.set_visible(True);return
+            apply.set_sensitive(False)
+            def persist():
+                if self.fixture:
+                    return new_state
+                if profile_key() != profile:
+                    raise RuntimeError('The connected phone changed')
+                return PinStore(profile).save(new_state)
+            def saved(result, error):
+                if error:
+                    if state['alive']:
+                        error_label.set_label(_('Could not save pins in the desktop keyring. Your previous pins are kept.'))
+                        error_label.set_visible(True);apply.set_sensitive(True)
+                    return
+                if self.fixture or self.pin_profile == profile:
+                    self.pin_state = result
+                    self.update_pin_note();self.populate()
+                    self.load_photos()
+                if state['alive']:
+                    dialog.close()
+            self.task(persist, saved)
+        apply.connect('clicked', save)
+        dialog.present()
+        # Stable handles for private interaction probes, never real account data.
+        dialog.pin_controls = dropdowns, apply, error_label
+        return dialog
 
     def filter_rows(self):
         query = self.search.get_text().casefold()
