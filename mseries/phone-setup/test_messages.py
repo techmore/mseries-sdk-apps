@@ -1,7 +1,8 @@
 import unittest
 from datetime import datetime
 from messages_model import (AVATAR_TONES, ConversationState, Outbox, avatar_tone, conversation_preview,
-                            initials, layout_messages, merge_inbox, parse_timestamp, short_stamp)
+                            initials, layout_messages, merge_inbox, parse_timestamp, short_stamp,
+                            contact_index, resolve_contact_names)
 
 
 def thread(key='alice', **values):
@@ -51,6 +52,29 @@ class RoutingTests(unittest.TestCase):
 
 
 class SnapshotTests(unittest.TestCase):
+    def test_phonebook_names_use_unique_addresses_without_changing_routes(self):
+        index=contact_index([('Alice',['+1 (555) 010-0123'],[]),('Email Person',[],['PERSON@example.com'])])
+        rows=[thread(name='15550100123'),dict(key='email',name='person@example.com',recipients=['person@example.com'],messages=[])]
+        resolve_contact_names(rows,index)
+        self.assertEqual(rows[0]['name'],'Alice')
+        self.assertEqual(rows[0]['recipients'],['+15550100123'])
+        self.assertEqual(rows[1]['name'],'Email Person')
+
+    def test_ambiguous_contacts_groups_and_international_suffixes_are_not_guessed(self):
+        index=contact_index([('Alice',['15550100123'],[]),('Other',['15550100123'],[]),('International',['4415550100123'],[])])
+        rows=[thread(name='Number'),thread('group',name='Family',is_group=True)]
+        resolve_contact_names(rows,index)
+        self.assertEqual([r['name'] for r in rows],['Number','Family'])
+        self.assertEqual(resolve_contact_names([thread(name='Number')],contact_index([('International',['4415550100123'],[])]))[0]['name'],'Number')
+
+    def test_cached_nanp_contact_and_explicit_unread_snapshot(self):
+        rows=merge_inbox([], [dict(handle='fresh',sender='+15550100123',body='Fixture',read=False)])
+        resolve_contact_names(rows,contact_index([('Alice',['5550100123'],[])]))
+        self.assertEqual(rows[0]['name'],'Alice')
+        self.assertEqual(rows[0]['unread_count'],1)
+        read=merge_inbox([], [dict(handle='read',sender='+15550100123',body='Fixture',read=True)])
+        self.assertEqual(read[0].get('unread_count',0),0)
+
     def test_known_group_message_does_not_become_direct_thread(self):
         t = thread('group', is_group=True)
         t['messages'] = [dict(handle='123', body='Group', timestamp='2026-10-20')]

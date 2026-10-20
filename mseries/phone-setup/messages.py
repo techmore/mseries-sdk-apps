@@ -6,6 +6,7 @@ thread and decides what to show. Look and feel live in messages_style.py and
 messages_widgets.py; pure presentation logic lives in messages_model.py.
 """
 import argparse
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 import gettext
@@ -23,7 +24,8 @@ from gi.repository import Gdk, Gio, GLib, Granite, Gtk, Pango
 from blueferry.client import BackendClient
 from blueferry.bus import get_system_bus
 from blueferry.recipients import validate_recipient
-from messages_model import ConversationState, Outbox, layout_messages, merge_inbox
+from messages_model import ConversationState, Outbox, contact_index, layout_messages, merge_inbox, resolve_contact_names
+from message_media import load_preview, youtube_id
 from messages_style import build_style
 from messages_widgets import (AVATAR_PX, avatar, build_composer, build_notice, build_status, clear,
                               conversation_row, empty_state, favorite_tile, icon_for, identity_of,
@@ -48,6 +50,14 @@ class Messages(Gtk.Application):
                          flags=Gio.ApplicationFlags.NON_UNIQUE if fixture else Gio.ApplicationFlags.DEFAULT_FLAGS)
         self.fixture, self.dark, self.narrow = fixture, dark, narrow
         self.pool = ThreadPoolExecutor(max_workers=1)
+        # Link previews fetch over the network, so they never queue behind phone calls.
+        self.media_pool = ThreadPoolExecutor(max_workers=2)
+        self.media_cache = OrderedDict()
+        self.media_pending = {}
+        self.media_timers = set()
+        self.contact_names = {}
+        self.contact_revision = None
+        self.contacts_pending = False
         self.model = ConversationState()
         self.outbox = Outbox()
         self.threads = {}
@@ -367,7 +377,7 @@ class Messages(Gtk.Application):
             stamp = datetime.now().astimezone().strftime('%X') if recent is not None else self.checked_text
             self.checked_text = stamp
             self.status_bar.box.set_tooltip_text(_('Recent iPhone inbox checked at %s. Up to 200 messages exposed by the phone; full iCloud history is not available.') % stamp)
-        combined = merge_inbox(threads, self.inbox)
+        combined = resolve_contact_names(merge_inbox(threads, self.inbox), self.contact_names)
         # A phone-only/new conversation acquires a canonical backend identity
         # after the first live event. Move the draft without changing its route.
         for key, thread in self.threads.items():
@@ -385,10 +395,42 @@ class Messages(Gtk.Application):
                     combined.append(thread)
         self.threads = {t['key']: t for t in combined}
         self.load_pins()
+        self.load_contact_names(force=recent is not None)
         self.update_pin_note()
         self.populate()
         self.show_conversation()
         self.load_photos()
+
+    def load_contact_names(self, force=False):
+        """Page the cached phonebook so bare numbers show the person's name.
+
+        Presentation only: resolve_contact_names never changes a thread's
+        identity or recipients, and never guesses groups or ambiguous contacts.
+        """
+        if self.fixture or self.contacts_pending:
+            return
+        revision = (self.pin_profile, self.status.get('contacts'), self.status.get('contact_photo_revision'))
+        if not force and revision == self.contact_revision:
+            return
+        self.contacts_pending = True
+        def load():
+            client = BackendClient()
+            records = []
+            for offset in range(0, 10000, 150):
+                page = client.list_contacts(offset, 150)
+                records.extend(page)
+                if len(page) < 150:
+                    break
+            return contact_index(records)
+        def loaded(index, error):
+            self.contacts_pending = False
+            if error or revision[0] != self.pin_profile:
+                return
+            self.contact_names, self.contact_revision = index, revision
+            resolve_contact_names(self.threads.values(), index)
+            self.populate()
+            self.show_conversation()
+        self.task(load, loaded)
 
     def photo_widget(self, data, px=AVATAR_PX['m']):
         return photo_frame(data, px)
@@ -718,7 +760,8 @@ class Messages(Gtk.Application):
             # Messages sent from this window show at once, dimmed until the phone confirms.
             stamp = datetime.now().astimezone().isoformat(timespec='seconds')
             shown = list(thread['messages']) + [dict(body=e.body, outgoing=True, timestamp=stamp, sender='', _state=e.state) for e in pending]
-            render_messages(self.messages, layout_messages(shown, bool(thread.get('is_group'))))
+            self.stop_media_animation()
+            render_messages(self.messages, layout_messages(shown, bool(thread.get('is_group'))), self.media_card)
             if not shown:
                 self.messages.append(label(_('Say hello.'), 'dim-label', vexpand=True, valign=Gtk.Align.CENTER))
             if near_bottom or switching or self.force_scroll:
@@ -730,6 +773,113 @@ class Messages(Gtk.Application):
         if thread.get('unread_count') and self.window.is_active():
             self.mark_read(thread)
         self.update_composer()
+
+    # --- Link previews (images, GIFs, YouTube) -----------------------------
+    # Fetching is bounded and public-HTTPS only; see message_media.py.
+
+    def stop_media_animation(self):
+        for timer in self.media_timers:
+            GLib.source_remove(timer)
+        self.media_timers.clear()
+
+    def media_card(self, url, automatic=False):
+        """A preview card for one link. Sent links load at once; incoming ones ask first."""
+        video = bool(youtube_id(url))
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, halign=Gtk.Align.END if automatic else Gtk.Align.START, valign=Gtk.Align.START)
+        card.add_css_class('ms-media')
+        title = label(_('YouTube') if video else _('Image'), xalign=0)
+        card.append(title)
+        load = Gtk.Button(label=_('Load Preview'))
+        card.append(load)
+        card.append(Gtk.LinkButton(uri=url, label=_('Open YouTube') if video else _('Open Image')))
+
+        def completed(preview):
+            if not card.get_root():
+                return
+            if preview is None:
+                title.set_label(_('Preview unavailable · open the link to view it.'))
+                title.set_wrap(True)
+                title.set_max_width_chars(30)
+                load.set_sensitive(True)
+                return
+            adjustment = self.message_scroll.get_vadjustment()
+            bottom = adjustment.get_value() + adjustment.get_page_size() >= adjustment.get_upper() - 80
+            clear(card)
+            width, height = preview.size
+            picture = Gtk.Picture(can_shrink=True, content_fit=Gtk.ContentFit.CONTAIN, width_request=width, height_request=height)
+            picture.update_property([Gtk.AccessibleProperty.LABEL], [preview.title])
+            def frame(index):
+                picture.set_paintable(Gdk.MemoryTexture.new(width, height, Gdk.MemoryFormat.R8G8B8A8, GLib.Bytes.new(preview.frames[index]), width * 4))
+            frame(0)
+            card.append(picture)
+            card.append(label(preview.title, 'heading', xalign=0, wrap=True, max_width_chars=30))
+            source_width, source_height = preview.source_size
+            info = f'{source_width} × {source_height}'
+            if len(preview.frames) > 1:
+                info += ' · ' + _('%d frames') % len(preview.frames)
+            card.append(label(info, 'dim-label', xalign=0))
+            card.append(Gtk.LinkButton(uri=url, label=_('Watch on YouTube') if preview.kind == 'youtube' else _('Open Original')))
+            if len(preview.frames) > 1 and Gtk.Settings.get_default().props.gtk_enable_animations:
+                position = [0]
+                def schedule(delay):
+                    holder = {}
+                    def tick():
+                        self.media_timers.discard(holder['id'])
+                        if self.closed or not picture.get_root():
+                            return False
+                        if picture.get_mapped():
+                            position[0] = (position[0] + 1) % len(preview.frames)
+                            frame(position[0])
+                        schedule(preview.durations[position[0]] if picture.get_mapped() else 500)
+                        return False
+                    holder['id'] = GLib.timeout_add(delay, tick)
+                    self.media_timers.add(holder['id'])
+                schedule(preview.durations[0])
+            if bottom:
+                GLib.idle_add(self.scroll_bottom)
+
+        def start(*_args):
+            if url in self.media_cache:
+                self.media_cache.move_to_end(url)
+                GLib.idle_add(lambda: completed(self.media_cache.get(url)) or False)
+                return
+            if self.fixture:
+                title.set_label(_('Preview fixture · no network request'))
+                return
+            if url in self.media_pending:
+                self.media_pending[url].append(completed)
+                load.set_sensitive(False)
+                return
+            if len(self.media_pending) >= 6:
+                title.set_label(_('Other previews are loading. Try again shortly.'))
+                return
+            load.set_sensitive(False)
+            title.set_label(_('Loading preview…'))
+            self.media_pending[url] = [completed]
+            future = self.media_pool.submit(load_preview, url)
+            def fetched(result):
+                try:
+                    preview = result.result()
+                except Exception:
+                    preview = None
+                def deliver():
+                    callbacks = self.media_pending.pop(url, [])
+                    if self.closed:
+                        return False
+                    if preview:
+                        self.media_cache[url] = preview
+                        while len(self.media_cache) > 8 or sum(p.memory for p in self.media_cache.values()) > 24 * 1024 * 1024:
+                            self.media_cache.popitem(last=False)
+                    for callback in callbacks:
+                        callback(preview)
+                    return False
+                GLib.idle_add(deliver)
+            future.add_done_callback(fetched)
+
+        load.connect('clicked', start)
+        if url in self.media_cache or automatic or url in self.media_pending:
+            GLib.idle_add(lambda: start() or False)
+        return card
 
     def scroll_bottom(self, *_args):
         if not self.closed:
@@ -967,6 +1117,8 @@ class Messages(Gtk.Application):
         if self.sleep_watch:
             self.sleep_watch.remove()
         self.pool.shutdown(wait=False, cancel_futures=True)
+        self.media_pool.shutdown(wait=False, cancel_futures=True)
+        self.stop_media_animation()
         return False
 
     def sleep_changed(self, sleeping):

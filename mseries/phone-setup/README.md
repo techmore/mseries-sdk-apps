@@ -76,10 +76,19 @@ or where that data lives. Everything below is presentation; BlueFerry still
 owns sending, recipient checks, history and group safety.
 
 - **Conversation list.** Colour-coded initials (stable per person, every tone
-  at least 4.5:1 with white text), a people glyph for groups, name with a short
-  time (clock today, then Yesterday, weekday, date), a two-line preview that
-  starts with "You:" for your own last message, and an unread dot. Favourites
-  use larger avatars. An empty list says why: No Conversations or No Results.
+  at least 4.5:1 with white text), a people glyph for groups, a large name
+  (1.4em, bold while unread) with a short time (clock today, then Yesterday,
+  weekday, date), a two-line preview that starts with "You:" for your own last
+  message, and an accent-coloured unread dot immediately left of the avatar, in
+  the list and in favourites, as the owner asked. Bare numbers show the
+  person's name when the cached phonebook has exactly one match (see
+  `resolve_contact_names`); groups and ambiguous contacts are never guessed.
+  Favourites use larger avatars. An empty list says why: No Conversations or
+  No Results.
+- **Link previews.** Direct HTTPS image and GIF links and YouTube links get a
+  card under the bubble (see *Media-link previews* below). Sent links load at
+  once; incoming ones offer Load Preview. The card is built by the controller
+  because it owns the network pool and cache; `messages_widgets` only places it.
 - **Conversation.** Header with the contact's avatar and addresses. Bubbles from
   the same person within five minutes form a run with tight spacing and a tail
   on the last bubble. Centred time headings appear after a 30-minute silence or
@@ -119,9 +128,9 @@ tones); `messages_widgets.py` builds the widgets; `messages_style.py` holds the
 scoped stylesheet. The installer copies all four.
 
 Checked with the isolated fixture and Cairo rendering in light, dark and narrow
-layouts, with 27 model tests and 43 GTK tests (one screenshot test needs its
-environment variable and skips), including end-to-end tests that push realistic
-BlueFerry objects through the real refresh path. **Not verified:**
+layouts, with 30 model tests, 5 media tests and 45 GTK tests (one screenshot
+test needs its environment variable and skips), including end-to-end tests that
+push realistic BlueFerry objects through the real refresh path. **Not verified:**
 the redesign has not been run against the live phone, and the owner's open
 Messages window keeps the previous code until it is relaunched.
 
@@ -331,3 +340,32 @@ the failure but do not prove which iOS permission or policy caused it.
 18 native model/protocol/reconnect checks pass. The installed retry was exercised
 against the live phone: bond retained, message access still denied. This is
 not working text messaging; no end-to-end delivery is qualified.
+
+### Media-link previews
+
+Messages renders direct HTTPS JPEG/PNG/WebP images, animated GIFs, and YouTube
+thumbnail/title cards. Original image dimensions are shown; the YouTube dimensions
+refer to its thumbnail, and Watch on YouTube opens playback in the browser.
+Sent media links load automatically. Incoming links offer Load Preview unless
+already cached or loading. This does not add MAP attachment payloads.
+Downloads use validated public HTTPS endpoints, bounded sizes/decoded frames and
+an in-memory cache. No authentication cookies or private/LAN endpoints are used.
+Private rendering of the actual self-test assets passed: photo 500×477,
+GIF 400×400/44 frames with observed GTK frame advancement, YouTube thumbnail
+480×360. All three full text links were received back through the phone.
+
+### Native frontend integration prompt
+
+```text
+Continue our existing Messages app as an elementary GTK 4/Granite 7 frontend
+for BlueFerry. Reuse its backend and typed client APIs; preserve working pairing,
+message routing, contacts/photos, read state, history and send/retry behavior.
+Keep four favorite contacts per row with a separator, large readable names and
+blue unread dots left of avatars. Resolve names through unique cached phonebook
+identities; never guess group recipients or ambiguous contacts. Support bounded
+photo/GIF and YouTube link previews. Distinguish link previews from unsupported
+MAP attachments, and Mac-exported pin snapshots from live iPhone pin sync.
+Preserve drafts, focus, selection, light/dark themes and narrow layouts. Test the
+actual behavior before claiming parity. Commit/push coherent changes and open
+PRs against dev. Preserve the running Bluetooth, audio, kernel and panel setup.
+```

@@ -21,7 +21,8 @@ STYLE = '''
 .ms-list { background: transparent; }
 .ms-list > row { margin: 1px 8px; border-radius: 10px; }
 .ms-row { padding: 8px 6px; }
-.ms-contact-name { font-weight: 600; }
+.ms-contact-name { font-size: 1.4em; font-weight: 600; }
+.ms-unread-name { font-weight: 700; }
 .ms-row-time { font-size: .82em; opacity: .72; font-feature-settings: "tnum"; }
 .ms-preview { font-size: .92em; opacity: .74; }
 .ms-unread { min-width: 10px; min-height: 10px; border-radius: 99px; background: alpha(@theme_selected_bg_color,.9); background: ''' + _STRONG + '''; }
@@ -32,7 +33,7 @@ STYLE = '''
 .ms-pin-row { border-bottom: 1px solid alpha(@theme_fg_color,.08); padding: 12px 0; }
 .ms-favorite { padding: 6px 2px; border-radius: 12px; }
 .ms-favorite:checked { background: alpha(@theme_selected_bg_color,.18); }
-.ms-favorite-name { font-size: .9em; }
+.ms-favorite-name { font-size: 1.1em; font-weight: 600; }
 .ms-empty { padding: 36px 24px; opacity: .8; }
 .ms-status { padding: 8px 14px; border-top: 1px solid alpha(@theme_fg_color,.10); }
 .ms-dot { min-width: 8px; min-height: 8px; border-radius: 99px; background: alpha(@theme_fg_color,.45); }
@@ -59,6 +60,8 @@ STYLE = '''
 .ms-outgoing.ms-last, .ms-outgoing.ms-single { border-bottom-right-radius: 5px; }
 .ms-sending { opacity: .6; }
 .ms-caption { font-size: .82em; opacity: .72; margin: 2px 4px 0; }
+.ms-media { border-radius: 14px; padding: 10px; margin-top: 4px; background: alpha(@theme_fg_color,.06); border: 1px solid alpha(@theme_fg_color,.12); }
+.ms-media picture { border-radius: 8px; }
 .ms-jump { border-radius: 99px; padding: 5px 14px; margin: 0 0 12px; box-shadow: 0 1px 6px alpha(black,.35); }
 
 /* Composer */

@@ -14,6 +14,7 @@ gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gdk, GdkPixbuf, GLib, Gtk, Pango
 from blueferry.message_links import linkify_message
 from blueferry.time_display import format_message_timestamp
+from message_media import media_links
 from messages_model import avatar_tone, conversation_preview, initials, short_stamp
 
 _ = gettext.gettext
@@ -44,6 +45,19 @@ def icon_for(*names):
 
 def is_unread(thread):
     return bool(thread.get('unread_count') or thread.get('unread'))
+
+
+def unread_marker(thread):
+    """Fixed-width slot left of an avatar holding the unread dot.
+
+    The slot keeps its width when read, so avatars never shift as state changes.
+    """
+    slot = Gtk.Box(width_request=10, valign=Gtk.Align.CENTER, hexpand=False)
+    dot = Gtk.Box(valign=Gtk.Align.CENTER, visible=is_unread(thread), tooltip_text=_('Unread message'))
+    dot.add_css_class('ms-unread')
+    dot.update_property([Gtk.AccessibleProperty.LABEL], [_('Unread message')])
+    slot.append(dot)
+    return slot
 
 
 # --- Avatars --------------------------------------------------------------
@@ -137,24 +151,25 @@ def conversation_row(thread, now=None, photo=None):
     row = Gtk.ListBoxRow()
     content = Gtk.Box(spacing=12)
     content.add_css_class('ms-row')
-    slot = Gtk.Box(valign=Gtk.Align.CENTER, hexpand=False)
+    # The unread dot sits left of the avatar (owner's request); both live in one
+    # slot so a photo swapped in later lands right after the marker.
+    slot = Gtk.Box(spacing=6, valign=Gtk.Align.CENTER, hexpand=False)
+    slot.append(unread_marker(thread))
     portrait = avatar(name, identity_of(thread), 'm', thread.get('is_group'), photo)
     slot.append(portrait)
     content.append(slot)
 
     text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, hexpand=True, valign=Gtk.Align.CENTER)
     top = Gtk.Box(spacing=8)
-    top.append(label(name, 'ms-contact-name', xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.END))
-    top.append(label(stamp, 'ms-row-time', xalign=1))
-    bottom = Gtk.Box(spacing=8)
+    title = label(name, 'ms-contact-name', xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.END)
+    if unread:
+        title.add_css_class('ms-unread-name')
+    top.append(title)
+    top.append(label(stamp, 'ms-row-time', xalign=1, valign=Gtk.Align.BASELINE))
     snippet = label(preview, 'ms-preview', xalign=0, hexpand=True, wrap=True, lines=2,
                     ellipsize=Pango.EllipsizeMode.END, max_width_chars=26)
-    bottom.append(snippet)
-    dot = Gtk.Box(valign=Gtk.Align.CENTER, visible=unread, accessible_role=Gtk.AccessibleRole.PRESENTATION)
-    dot.add_css_class('ms-unread')
-    bottom.append(dot)
     text.append(top)
-    text.append(bottom)
+    text.append(snippet)
     content.append(text)
     row.set_child(content)
     spoken = [name, preview] + ([stamp] if stamp else []) + ([_('Unread')] if unread else [])
@@ -166,15 +181,11 @@ def favorite_tile(thread, photo=None):
     """Large avatar over a short name for the favourites grid."""
     name = thread.get('name') or '?'
     tile = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, halign=Gtk.Align.CENTER)
-    slot = Gtk.Box(halign=Gtk.Align.CENTER, hexpand=False)
+    slot = Gtk.Box(spacing=4, halign=Gtk.Align.CENTER, hexpand=False)
+    slot.append(unread_marker(thread))
     portrait = avatar(name, identity_of(thread), 'l', thread.get('is_group'), photo)
     slot.append(portrait)
-    overlay = Gtk.Overlay(child=slot, halign=Gtk.Align.CENTER)
-    if is_unread(thread):
-        dot = Gtk.Box(halign=Gtk.Align.END, valign=Gtk.Align.START, accessible_role=Gtk.AccessibleRole.PRESENTATION)
-        dot.add_css_class('ms-unread')
-        overlay.add_overlay(dot)
-    tile.append(overlay)
+    tile.append(slot)
     tile.append(label(name, 'ms-favorite-name', xalign=.5, ellipsize=Pango.EllipsizeMode.END, max_width_chars=8))
     return tile, slot, portrait
 
@@ -208,8 +219,12 @@ def set_markup_safely(widget, body):
         widget.set_text(body)
 
 
-def message_widget(item):
-    """A bubble (with optional sender name and caption) for one layout item."""
+def message_widget(item, media=None):
+    """A bubble (with optional sender name, media cards and caption) for one layout item.
+
+    `media(url, automatic)` returns a preview card for a link in the body; the
+    caller owns the network and cache side of that.
+    """
     message = item['message']
     outgoing = bool(message.get('outgoing'))
     sending = message.get('_state') == 'sending'
@@ -229,6 +244,9 @@ def message_widget(item):
     if when:
         bubble.set_tooltip_text(when)
     column.append(bubble)
+    if media is not None:
+        for url in media_links(message.get('body', '')):
+            column.append(media(url, outgoing))
     caption = _('Sending…') if sending else item['caption']
     if caption:
         column.append(label(caption, 'ms-caption', xalign=1 if outgoing else 0))
@@ -239,10 +257,10 @@ def stamp_widget(text):
     return label(text, 'ms-stamp', halign=Gtk.Align.CENTER)
 
 
-def render_messages(box, items):
+def render_messages(box, items, media=None):
     clear(box)
     for item in items:
-        box.append(stamp_widget(item['text']) if item['kind'] == 'stamp' else message_widget(item))
+        box.append(stamp_widget(item['text']) if item['kind'] == 'stamp' else message_widget(item, media))
 
 
 # --- Composer, banner, status ---------------------------------------------
