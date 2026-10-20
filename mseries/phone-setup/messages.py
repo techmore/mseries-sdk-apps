@@ -40,6 +40,9 @@ STYLE = '''
 .ms-section { padding: 12px 12px 4px; font-weight: 600; opacity: .75; }
 .ms-pin-note { padding: 4px 14px 10px; }
 .ms-pin-row { border-bottom: 1px solid alpha(@theme_fg_color,.08); padding: 12px 0; }
+.ms-favorite { padding: 4px; }
+.ms-favorite:checked { background: alpha(@theme_selected_bg_color,.18); }
+.ms-favorite-avatar { border-radius: 99px; background: alpha(@theme_selected_bg_color,.18); min-width: 42px; min-height: 42px; }
 '''
 
 
@@ -81,6 +84,8 @@ class Messages(Gtk.Application):
         self.photo_revision = None
         self.photo_pending = False
         self.avatars = {}
+        self.favorite_avatars = {}
+        self.favorite_buttons = {}
         self.pin_state = dict(version=1, snapshot=None, choices=[])
         self.pin_profile = None
         self.pin_store = None
@@ -142,8 +147,16 @@ class Messages(Gtk.Application):
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
         self.list.add_css_class('navigation-sidebar')
         self.list.connect('row-selected', self.selected)
-        self.list.set_header_func(self.section_header)
-        list_scroll = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER, child=self.list)
+        contacts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.favorites = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, visible=False)
+        self.favorites.append(label(_('Favorites'), 'ms-section', xalign=0))
+        self.favorite_grid = Gtk.Grid(column_homogeneous=True, row_spacing=8, column_spacing=4, margin_start=10, margin_end=10, margin_bottom=12)
+        self.favorites.append(self.favorite_grid)
+        contacts.append(self.favorites)
+        self.favorite_separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL, margin_start=12, margin_end=12, margin_bottom=8, visible=False)
+        contacts.append(self.favorite_separator)
+        contacts.append(self.list)
+        list_scroll = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER, child=contacts)
         self.sidebar.append(list_scroll)
         self.connection = label(_('Connecting to iPhone…'), xalign=0, wrap=True)
         self.connection.add_css_class('ms-status')
@@ -344,14 +357,15 @@ class Messages(Gtk.Application):
             if error or revision != self.photo_revision:
                 return
             self.photo_cache.update(photos)
-            for key, (content, old) in self.avatars.items():
+            for key, (content, old) in [*self.avatars.items(), *self.favorite_avatars.items()]:
                 thread = self.threads.get(key, {})
                 address = (thread.get('recipients') or [''])[0]
                 data = photos.get(address)
                 if data and (photo := self.photo_widget(data)):
                     content.remove(old)
                     content.insert_child_after(photo, None)
-                    self.avatars[key] = (content, photo)
+                    registry = self.favorite_avatars if content.has_css_class('ms-favorite-content') else self.avatars
+                    registry[key] = (content, photo)
             self.load_photos()
         self.task(load, loaded)
 
@@ -366,6 +380,10 @@ class Messages(Gtk.Application):
             clear(self.list)
             self.rows = {}
             self.avatars = {}
+            self.favorite_avatars = {}
+            self.favorite_buttons = {}
+            clear(self.favorite_grid)
+            self.grid_filter_signature = None
             for key in order:
                 thread = self.threads[key]
                 row = Gtk.ListBoxRow()
@@ -395,17 +413,33 @@ class Messages(Gtk.Application):
                 row.set_child(content)
                 self.rows[key] = row
                 self.list.append(row)
+                if is_pinned:
+                    button = Gtk.ToggleButton(tooltip_text=thread['name'])
+                    button.add_css_class('flat');button.add_css_class('ms-favorite')
+                    button.update_property([Gtk.AccessibleProperty.LABEL], [thread['name']])
+                    tile = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5, halign=Gtk.Align.CENTER)
+                    tile.add_css_class('ms-favorite-content')
+                    portrait = label((thread['name'] or '?')[0].upper(), 'ms-favorite-avatar')
+                    if not thread.get('is_group') and (data := self.photo_cache.get(address)):
+                        portrait = self.photo_widget(data) or portrait
+                    tile.append(portrait)
+                    tile.append(label(thread['name'], xalign=.5, ellipsize=Pango.EllipsizeMode.END, max_width_chars=7))
+                    button.set_child(tile)
+                    def choose(_button, identity=key):
+                        self.list.unselect_all()
+                        self.selected(None, self.rows[identity])
+                        self.sync_favorite_selection()
+                    button.connect('clicked', choose)
+                    self.favorite_buttons[key] = button
+                    self.favorite_avatars[key] = (tile, portrait)
             if self.model.selected in self.rows:
                 self.list.select_row(self.rows[self.model.selected])
         self.filter_rows()
+        self.sync_favorite_selection()
 
-    def section_header(self, row, before):
-        if row.is_pinned and (before is None or not before.is_pinned):
-            row.set_header(label(_('Pinned'), 'ms-section', xalign=0))
-        elif not row.is_pinned and before and before.is_pinned:
-            row.set_header(label(_('Messages'), 'ms-section', xalign=0))
-        else:
-            row.set_header(None)
+    def sync_favorite_selection(self):
+        for key, button in self.favorite_buttons.items():
+            button.set_active(key == self.model.selected)
 
     def pin_notice(self, text):
         self.pin_note.set_label(text)
@@ -566,14 +600,29 @@ class Messages(Gtk.Application):
 
     def filter_rows(self):
         query = self.search.get_text().casefold()
+        favorites = []
+        ordinary = False
         for key, row in self.rows.items():
             thread = self.threads[key]
-            row.set_visible(not query or query in thread['name'].casefold() or any(query in m.get('body', '').casefold() for m in thread['messages']))
+            matches = not query or query in thread['name'].casefold() or any(query in m.get('body', '').casefold() for m in thread['messages'])
+            row.set_visible(matches and not row.is_pinned)
+            ordinary = ordinary or row.get_visible()
+            if row.is_pinned and matches: favorites.append(key)
+        if tuple(favorites) != getattr(self, 'grid_filter_signature', None):
+            self.grid_filter_signature = tuple(favorites)
+            clear(self.favorite_grid)
+            for index, key in enumerate(favorites):
+                self.favorite_grid.attach(self.favorite_buttons[key], index % 4, index // 4, 1, 1)
+            if 0 < len(favorites) < 4:
+                self.favorite_grid.attach(Gtk.Box(), 3, 0, 1, 1)
+        self.favorites.set_visible(bool(favorites))
+        self.favorite_separator.set_visible(bool(favorites) and ordinary)
 
     def selected(self, _list, row):
         if row is None or row.key == self.model.selected:
             return
         self.model.selected = row.key
+        self.sync_favorite_selection()
         self.rendered = None
         self.editor.get_buffer().set_text(self.model.drafts.get(row.key, ''))
         self.show_conversation()

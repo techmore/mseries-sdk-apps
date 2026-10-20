@@ -147,7 +147,35 @@ class MessagesUI(unittest.TestCase):
         self.assertIn('Pins from Mac', app.pin_note.get_text())
         self.assertEqual(app.pin_state['snapshot']['source'], 'macos-pin-cache')
         self.assertIn('Apple pin settings last changed', app.pin_note.get_tooltip_text())
-        self.assertIsNotNone(app.rows['demo2'].get_header())
+        self.assertIn('demo2', app.favorite_buttons)
+        self.assertTrue(app.favorites.get_visible())
+
+    def test_favorite_grid_four_across_divider_and_thread_selection(self):
+        app=self.app
+        keys=['demo']
+        for index in range(4):
+            key=f'fixture-favorite-{index}'
+            app.threads[key]=dict(app.threads['demo'],key=key,name=f'Favorite {index}',messages=[])
+            keys.append(key)
+        app.pin_state=dict(version=1,snapshot=None,choices=keys)
+        app.populate();settle()
+        self.assertTrue(app.favorite_separator.get_visible())
+        self.assertEqual(tuple(app.favorite_grid.query_child(app.favorite_buttons[keys[3]])), (3,0,1,1))
+        self.assertEqual(tuple(app.favorite_grid.query_child(app.favorite_buttons[keys[4]])), (0,1,1,1))
+        if destination := os.environ.get('MSERIES_MESSAGES_SCREENSHOTS'):
+            from PIL import ImageGrab
+            out=Path(destination);out.mkdir(parents=True,exist_ok=True)
+            for dark in (False,True):
+                Gtk.Settings.get_default().props.gtk_application_prefer_dark_theme=dark;settle(.2)
+                ImageGrab.grab(bbox=(0,0,app.window.get_width(),app.window.get_height()),xdisplay=os.environ['DISPLAY']).save(out/('favorites-dark.png' if dark else 'favorites-light.png'))
+        app.editor.get_buffer().set_text('Preserve favorite draft')
+        app.favorite_buttons[keys[4]].emit('clicked')
+        self.assertEqual(app.model.selected,keys[4])
+        self.assertEqual(app.model.drafts['demo'],'Preserve favorite draft')
+        self.assertTrue(app.favorite_buttons[keys[4]].get_active())
+        app.search.set_text('Favorite 3');app.filter_rows()
+        self.assertFalse(app.favorite_separator.get_visible())
+        self.assertEqual(tuple(app.favorite_grid.query_child(app.favorite_buttons[keys[4]])), (0,0,1,1))
 
     def test_duplicate_pin_match_keeps_existing_pins(self):
         dialog = self.app.show_pin_review(self.pin_snapshot());settle()
