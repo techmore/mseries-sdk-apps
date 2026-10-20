@@ -23,5 +23,5 @@
   "contact_photos_enabled_by_owner": true,
   "contact_photos_cached": 34,
   "model_and_setup_tests_passed": 26,
-  "isolated_gtk_tests_passed": 7
+  "isolated_gtk_tests_passed": 9
 }

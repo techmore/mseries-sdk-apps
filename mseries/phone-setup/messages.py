@@ -17,6 +17,7 @@ gi.require_version('Granite', '7.0')
 gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Granite, Gtk, Pango
 from blueferry.client import BackendClient
+from blueferry.bus import get_system_bus
 from blueferry.recipients import validate_recipient
 from messages_model import ConversationState, merge_inbox
 
@@ -69,6 +70,8 @@ class Messages(Gtk.Application):
         self.search_generation = 0
         self.last_refresh = 0
         self.inbox_requested = True
+        self.inbox_request_epoch = 0
+        self.sleep_watch = None
         self.send_feedback = {}
         self.photo_cache = {}
         self.photo_revision = None
@@ -191,6 +194,14 @@ class Messages(Gtk.Application):
         if self.fixture:
             self.preview()
         else:
+            try:
+                self.sleep_watch = get_system_bus().add_signal_receiver(
+                    self.sleep_changed, signal_name='PrepareForSleep',
+                    dbus_interface='org.freedesktop.login1.Manager',
+                    bus_name='org.freedesktop.login1', path='/org/freedesktop/login1')
+            except Exception:
+                # Periodic wall-time/reconnect checks still work without logind.
+                pass
             self.refresh(True)
             self.poll = GLib.timeout_add_seconds(5, self.refresh)
 
@@ -210,12 +221,15 @@ class Messages(Gtk.Application):
         return False
 
     def refresh(self, inbox=False):
+        if inbox:
+            self.inbox_request_epoch += 1
         self.inbox_requested = self.inbox_requested or inbox
         if self.closed or self.fixture or self.snapshot_pending:
             return True
         self.snapshot_pending = True
         prior = self.last_map
         requested = self.inbox_requested
+        epoch = self.inbox_request_epoch
         def load():
             client = BackendClient()
             status = client.status().to_dict()
@@ -226,7 +240,7 @@ class Messages(Gtk.Application):
                     recent = client.recent('telecom/msg/INBOX', 200)
                 except Exception:
                     warning = _('Could not refresh the iPhone inbox. Showing messages already received.')
-            return status, [t.to_dict() for t in client.threads()], recent, warning
+            return status, [t.to_dict() for t in client.threads()], recent, warning, epoch
         self.task(load, self.loaded)
         return True
 
@@ -240,7 +254,7 @@ class Messages(Gtk.Application):
             self.notice.set_visible(True)
             self.update_composer()
             return
-        status, threads, recent, warning = result
+        status, threads, recent, warning, epoch = result
         self.status, self.last_map = status, bool(status.get('map'))
         revision = status.get('contact_photo_revision')
         if revision != self.photo_revision:
@@ -250,7 +264,7 @@ class Messages(Gtk.Application):
         if recent is not None:
             self.inbox = recent
             self.last_refresh = time.time()
-            self.inbox_requested = False
+            self.inbox_requested = epoch != self.inbox_request_epoch
         self.connection.set_label(_('iPhone connected · Messages ready') if self.last_map else _('iPhone reconnecting…'))
         self.notice.set_label(warning or ('' if self.last_map else _('Waiting for message access. Existing conversations remain available.')))
         self.notice.set_visible(bool(self.notice.get_label()))
@@ -559,8 +573,14 @@ class Messages(Gtk.Application):
         self.closed = True
         if self.poll:
             GLib.source_remove(self.poll)
+        if self.sleep_watch:
+            self.sleep_watch.remove()
         self.pool.shutdown(wait=False, cancel_futures=True)
         return False
+
+    def sleep_changed(self, sleeping):
+        if not sleeping and not self.closed:
+            self.refresh(True)
 
     def preview(self):
         self.status = dict(map=True)

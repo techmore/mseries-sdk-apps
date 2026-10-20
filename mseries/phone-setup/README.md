@@ -69,7 +69,7 @@ rendered as plain text. Fixture previews cannot send or query private accounts.
 ### Missed messages and sleep
 
 The app queries up to **200 recent inbox entries exposed by the iPhone** when
-opened, on a detected message reconnect, after five minutes between successful
+opened, on a detected message reconnect, on logind resume, after five minutes between successful
 queries (wall time includes suspend), and on manual Refresh. The normal status
 poll is every five seconds while the app is open; requests run on one background
 worker. Live events and inbox snapshots are deduplicated by MAP handle without

@@ -77,6 +77,19 @@ class MessagesUI(unittest.TestCase):
         self.assertEqual(app.model.drafts['demo'], 'Fixture only')
         self.assertIn('Could not send', app.send_status.get_text())
 
+    def test_resume_requests_fresh_inbox_even_after_short_sleep(self):
+        self.app.inbox_requested = False
+        self.app.sleep_changed(False)
+        self.assertTrue(self.app.inbox_requested)
+
+    def test_resume_during_inflight_read_is_not_lost(self):
+        app = self.app
+        app.sleep_changed(False)
+        epoch = app.inbox_request_epoch
+        app.sleep_changed(False)
+        app.loaded((dict(map=True), list(app.threads.values()), [], '', epoch), None)
+        self.assertTrue(app.inbox_requested)
+
     def test_photo_avatar_is_bounded_and_invalid_data_falls_back(self):
         import gi
         gi.require_version('GdkPixbuf', '2.0')
