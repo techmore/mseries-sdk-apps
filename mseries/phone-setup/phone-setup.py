@@ -17,6 +17,7 @@ from gi.repository import Gio, GLib, Granite, Gtk
 import dbus
 from setup_core import connection_outcome, needs_ios27_audio_recovery
 from phone_status import collect_status, record_recovery
+from connection import reconnect_existing
 
 APP_ID = 'io.elementary.mseries.PhoneSetup'
 
@@ -107,7 +108,9 @@ class PhoneSetup(Gtk.Application):
                 self.show('confirm', '1. Confirm on this computer', 'Compare the codes on both devices. If they match, choose Codes match here first. Then tap Pair on your iPhone.', 'Codes match')
                 self.code.set_label('123456')
             else:
-                status = {'map': self.fixture == 'ready', 'connectivity_state': 'authorization-required'}
+                status = {'map': self.fixture == 'ready', 'connectivity_state': 'backend-inactive' if self.fixture == 'inactive' else 'authorization-required'}
+                if self.fixture == 'blocked':
+                    status.update(contacts=727, pbap=True, recovery_history={'clean-repair': {'result': 'Message access denied'}}, evidence={'pairing': 'paired', 'messages': 'access-denied'})
                 self.present_status(status)
 
     def close_requested(self, *_):
@@ -130,7 +133,7 @@ class PhoneSetup(Gtk.Application):
         self.ios_row.set_visible(False)
         self.phones.set_visible(state == 'phone')
         self.code.set_visible(state == 'confirm')
-        self.secondary.set_visible(state in ('permissions', 'blocked', 'error', 'confirm', 'pairing'))
+        self.secondary.set_visible(state in ('permissions', 'blocked', 'inactive', 'unavailable', 'error', 'confirm', 'pairing'))
         self.secondary.set_label('Cancel' if state in ('confirm', 'pairing') else 'Refresh status')
         self.ios_help.set_visible(self.ios_version.startswith('27.') and state in ('permissions', 'blocked'))
 
@@ -196,9 +199,13 @@ class PhoneSetup(Gtk.Application):
     def advance(self, *_):
         if self.fixture:
             return
-        if self.state in ('ready', 'blocked'):
+        if self.state == 'ready':
             subprocess.Popen(['blueferry-gtk'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self.quit()
+        elif self.state in ('blocked', 'inactive'):
+            self.retry_connection()
+        elif self.state == 'unavailable':
+            self.start_status()
         elif self.state == 'confirm':
             self.answer_pair('yes')
             self.show('pairing', '2. Confirm on your iPhone', 'Tap Pair on your iPhone. Then allow contacts and messages if the phone asks. Setup will check the connection automatically.')
@@ -329,14 +336,20 @@ class PhoneSetup(Gtk.Application):
         self.details.set_label(detail)
         if not self.fixture and needs_ios27_audio_recovery(self.ios_version, status, self.audio_recovery_attempted):
             self.show('recovery', 'Prepare access for iOS 27', 'This iOS version may need the computer’s hands-free Bluetooth role before it offers message permissions. Next restores that role; your iPhone may offer this computer as an audio output. Setup will then check again.', 'Next')
-        elif not self.fixture and observed.get('messages') == 'access-denied' and history:
-            count = str(cached) + ' contacts are synced. ' if cached is not None else ''
-            self.show('blocked', 'Your phone is connected; messages need access', count + 'The iPhone still denies message access. The recorded recovery steps have already been tried, so setup will not ask you to repeat pairing. Connection details show the current evidence and the last verified result.', 'Open BlueFerry')
         else:
-            self.show(outcome.state, outcome.title, outcome.detail, 'Open Messages' if outcome.state == 'ready' else 'Open BlueFerry' if outcome.state == 'blocked' else None)
+            self.show(outcome.state, outcome.title, outcome.detail, outcome.action)
         if outcome.state == 'ready' and self.poll_id:
             GLib.source_remove(self.poll_id)
             self.poll_id = None
+
+    def retry_connection(self):
+        if self.worker_busy:
+            return
+        self.started = time.monotonic()
+        generation = self.generation
+        self.show('checking', 'Reconnecting messages', 'Restarting the phone service and checking message access. Your saved pairing and audio settings are retained.')
+        self.task(lambda: reconnect_existing(cancelled=lambda: generation != self.generation), self.present_status)
+        self.begin_polling()
 
     def recover_audio(self):
         self.audio_recovery_attempted = True
@@ -367,7 +380,7 @@ class PhoneSetup(Gtk.Application):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--preview', choices=['permissions', 'confirm', 'ready'])
+    parser.add_argument('--preview', choices=['permissions', 'confirm', 'ready', 'blocked', 'inactive'])
     parser.add_argument('--ios-version', default='')
     arguments = parser.parse_args()
     PhoneSetup(arguments.preview, arguments.ios_version).run([])

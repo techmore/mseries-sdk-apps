@@ -167,3 +167,31 @@ must not be presented as a remote read of those switches.
 
 Live latest result: trusted bond connected, **727 contacts cached**, PBAP open,
 MAP still denied. This is partial progress, not working message delivery.
+
+## Native retry and rollback, 2026-10-20
+
+The failed HFP phone-audio workaround was rolled back to its saved original
+preference on the live desktop, retaining the phone target, bond and 727 cached
+contacts. That rollback is recorded alongside the failed recovery attempts.
+
+The native app now offers **Retry Connection** when messaging is blocked or the
+backend is stopped. This verifies the saved bond, restarts only BlueFerry and
+waits for its message-access result. It does not forget/re-pair the phone or
+rewrite audio preferences. Missing bonds fail without making changes. Closing
+the window cancels subsequent checks; status polling remains read-only. A
+manual retry is distinct from Refresh Status. Previously denied access never
+becomes a success just because the service restarted or contacts connected.
+Inactive, unavailable and disconnected states are presented separately, and
+recorded failed recoveries suppress repeated toggle instructions.
+
+Deep live diagnostics: the iPhone exposes MAP 1.4, RFCOMM channel 2 and L2CAP
+PSM 4107. SDP lookup and the transport connection succeed; the iPhone returns
+OBEX Forbidden (wire response 0xc3, BlueZ error 0x43) to CONNECT. Explicit
+RFCOMM/L2CAP, fresh obexd after a quiet interval, basic OBEX 1.0/1.5, feature
+parameters, SRM and a hands-free connection did not establish MAP. No message
+was sent. Raw captures remain private outside Git. These observations narrow
+the failure but do not prove which iOS permission or policy caused it.
+
+18 native model/protocol/reconnect checks pass. The installed retry was exercised
+against the live phone: bond retained, message access still denied. This is
+not working text messaging; no end-to-end delivery is qualified.
