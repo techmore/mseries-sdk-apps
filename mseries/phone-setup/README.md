@@ -57,19 +57,40 @@ that evidence.
 
 ## Download the macOS visit kit
 
-Open this page on native macOS. Terminal commands (no GitHub login required):
+**One guided script now collects both Bubbles activation and Machine Lab files.**
+On native macOS, open Terminal and run these two lines:
 
 ```sh
-curl --fail --location 'https://raw.githubusercontent.com/techmore/ElementaryOS_MSeries/b6e3858b802bd886a115a04adef799e757596b80/mseries/phone-setup/macos-visit/Download-Kit.command' -o /tmp/MSeries-Download-Kit.command
-/bin/bash /tmp/MSeries-Download-Kit.command b6e3858b802bd886a115a04adef799e757596b80
+curl --fail --location 'https://raw.githubusercontent.com/techmore/ElementaryOS_MSeries/ef193905feaffc88a629d99b6227180a31cf45a9/mseries/phone-setup/macos-visit/Collect-Everything.command' -o "$HOME/Downloads/Collect-Everything.command"
+/bin/bash "$HOME/Downloads/Collect-Everything.command"
 ```
 
-Then follow the [exact macOS checklist](macos-visit/README.md). The downloader
-opens `Downloads/MSeries-Mac-Visit` with the official Mac helper and our scripts.
-Save the full export, verify a private return-transfer copy **before rebooting**,
-and complete Apple login on Linux. The checklist also covers optional Machine Lab
-guest collection during the same visit. Bubbles needs no running Mac or VM after
-export, but activation and future experimental VM compatibility remain unverified.
+Before starting: AC power, internet, native Apple Silicon macOS 13+, **100 GiB
+free on macOS and 100 GiB free on an external exFAT drive**. No Homebrew is needed.
+The script selects an existing external folder; it never formats a drive.
+
+It downloads and checks the Mac helper, macosvm and Ventura restore image; guides
+you through the full OABS hardware export; collects native firmware/provenance;
+restores the guest; starts it for a graphical check and guest shutdown; and
+re-reads checksums for every transferred file. Completed steps and interrupted
+downloads resume. An incomplete restore is preserved rather than overwritten.
+
+Your actions: choose the external folder; in Mac Hardware Info turn **Prevent
+sharing OFF** and **Copy Activation Code**, then return to Terminal; when the VM
+opens, wait for Setup Assistant and use its Apple menu to **Shut Down**, then
+confirm that result in Terminal. Do not sign into Apple in that VM.
+
+Wait for **COLLECTION COMPLETE** and `COLLECTION-COMPLETE.txt` in the external
+`MSeries-Linux-Return` folder. Eject the drive and return to Linux. We complete
+Bubbles login/2FA there. Keep the private export and guest identity outside GitHub
+and chat. Downloads, restore and full disk checks can take hours.
+
+[Detailed collection behavior and manual fallback](macos-visit/README.md).
+Shell checks and six mocked failure/resume cases pass. Native macOS execution
+remains untested here. The receipt certifies collection, owner-confirmed native
+startup and transfer; Linux KVM boot, extracted-booter compatibility, Bubbles
+activation and dock save/restore remain unverified. This gathers the known
+macOS-only inputs; future experimental work may still require another visit.
 
 ## Bubbles personal installation
 
