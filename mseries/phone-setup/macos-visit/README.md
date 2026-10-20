@@ -1,4 +1,35 @@
-# One macOS visit: native Linux messaging and optional Machine Lab
+# One macOS visit: collect everything
+
+**Use the new single guided collector** from the
+[parent download instructions](../README.md#download-the-macos-visit-kit).
+It combines the steps below, including Machine Lab provisioning and native GUI
+startup, and verifies the external copy before creating `COLLECTION-COMPLETE.txt`.
+No Homebrew or developer tools are required: it downloads pinned macosvm 0.2-3
+with its GitHub release SHA-256 verified.
+
+Requirements: native Apple Silicon macOS 13+, AC power, network, **100 GiB free on
+macOS plus 100 GiB on an external exFAT drive**. It never formats drives.
+Downloads/restores can take hours; hashing and copying the 64 GiB guest also take
+time. Existing partial downloads resume, completed restore/startup steps are
+retained. An interrupted restore is preserved for diagnosis and requires renaming
+`guest` to `guest-incomplete` before retrying; the script never overwrites it.
+
+The remaining manual actions are selecting the external folder, copying the code
+from Mac Hardware Info, and confirming guest Setup Assistant appeared after
+shutting down that guest. The collector checks the actual guest identity, relative
+storage links, disk/AUX sizes, download hashes, and every transferred file hash.
+The firmware provenance report compares the collected booter with the published
+proof. This confirms collection and native startup; Linux KVM compatibility,
+Bubbles activation and dock save/restore remain unverified. Do not reboot just
+because a file exists: wait for **COLLECTION COMPLETE**.
+
+If you lack the storage, stop before rebooting into macOS. The script deliberately
+requires a Linux-readable external destination for the full VM bundle. A cloud
+export of the small hardware code alone does not satisfy that requirement.
+
+The older individual steps below remain available for troubleshooting.
+
+# Manual collection reference
 
 This kit supports the ARM64 Bubbles build already installed on Linux. The native
 Connect iPhone/BlueFerry build is also installed, but Bluetooth message access is
