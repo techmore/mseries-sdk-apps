@@ -1,0 +1,12 @@
+[package]
+name = "granite-smoke"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Checks that Rust can drive the system Granite 7 through granite-rs (bindings generated from Granite-7.0.gir)"
+
+[dependencies]
+# granite-rs 3.3 does not enable a gtk4 feature itself, but gtk4-rs 0.11 gates gtk::Accessible behind v4_10;
+# turn on the GTK we actually ship (4.22) or granite-rs fails to compile.
+gtk = { package = "gtk4", version = "0.11", features = ["v4_20"] }
+granite = { package = "granite-rs", version = "3.3", features = ["v7_8", "gtk_v4_20"] }

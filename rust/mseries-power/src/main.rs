@@ -33,7 +33,9 @@ fn parse_conf(text: &str) -> Config {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let Some((k, v)) = line.split_once('=') else { continue };
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
         let v = v.trim().trim_matches('"').trim_matches('\'');
         match k.trim() {
             "CHARGE_LIMIT" => {
@@ -60,7 +62,9 @@ fn parse_conf(text: &str) -> Config {
 }
 
 fn load_conf(path: &Path) -> Config {
-    fs::read_to_string(path).map(|t| parse_conf(&t)).unwrap_or_default()
+    fs::read_to_string(path)
+        .map(|t| parse_conf(&t))
+        .unwrap_or_default()
 }
 
 fn write_sys(path: &Path, value: &str) {
@@ -134,7 +138,10 @@ fn apply_source(paths: &Paths, cfg: &Config) {
             write_sys(&entry.path().join("scaling_max_freq"), &target.to_string());
         }
     }
-    let _ = Command::new("powerprofilesctl").arg("set").arg(profile).output();
+    let _ = Command::new("powerprofilesctl")
+        .arg("set")
+        .arg(profile)
+        .output();
 }
 
 fn status(paths: &Paths) {
@@ -293,8 +300,14 @@ mod tests {
     fn limit_ordering_matches_bash() {
         // limit >= 100: end first, then start (avoids start >= end trip).
         assert_eq!(
-            limit_writes(100, 75).iter().map(|(f, _)| *f).collect::<Vec<_>>(),
-            vec!["charge_control_end_threshold", "charge_control_start_threshold"]
+            limit_writes(100, 75)
+                .iter()
+                .map(|(f, _)| *f)
+                .collect::<Vec<_>>(),
+            vec![
+                "charge_control_end_threshold",
+                "charge_control_start_threshold"
+            ]
         );
         // normal: start first, then end.
         let w = limit_writes(80, 75);
