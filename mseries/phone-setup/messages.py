@@ -2,6 +2,7 @@
 """GTK 4 / Granite 7 Messages client for the existing BlueFerry daemon."""
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+from collections import OrderedDict
 from datetime import datetime
 import gettext
 import os
@@ -21,6 +22,7 @@ from blueferry.bus import get_system_bus
 from blueferry.recipients import validate_recipient
 from messages_model import ConversationState, merge_inbox, contact_index, resolve_contact_names
 from message_pins import PinStore, profile_key, read_snapshot, suggested_matches, matched_state, ordered_keys, effective_choices
+from message_media import media_links, load_preview, youtube_id
 
 _ = gettext.gettext
 APP_ID = 'io.elementary.mseries.Messages'
@@ -31,7 +33,9 @@ STYLE = '''
 .ms-avatar { border-radius: 99px; background: alpha(@theme_selected_bg_color,.18); padding: 12px; }
 .ms-contact-name { font-size: 1.4em; font-weight: 600; }
 .ms-favorite-name { font-size: 1.1em; font-weight: 600; }
+.ms-unread-name { font-weight: 700; }
 .ms-unread-dot { color: #3689e6; font-size: 11px; }
+.ms-media { border-radius: 12px; padding: 10px; border: 1px solid alpha(@theme_fg_color,.15); }
 .ms-photo { border-radius: 99px; min-width: 42px; min-height: 42px; }
 .ms-bubble { border-radius: 16px; padding: 12px 16px; background: alpha(@theme_fg_color,.08); }
 .ms-outgoing { background: alpha(@theme_selected_bg_color,.25); color: @theme_fg_color; border: 1px solid alpha(@theme_selected_bg_color,.35); }
@@ -74,6 +78,10 @@ class Messages(Gtk.Application):
                          flags=Gio.ApplicationFlags.NON_UNIQUE if fixture else Gio.ApplicationFlags.DEFAULT_FLAGS)
         self.fixture, self.dark, self.narrow = fixture, dark, narrow
         self.pool = ThreadPoolExecutor(max_workers=1)
+        self.media_pool = ThreadPoolExecutor(max_workers=2)
+        self.media_cache = OrderedDict()
+        self.media_pending = {}
+        self.media_timers = set()
         self.model = ConversationState()
         self.threads = {}
         self.rows = {}
@@ -442,7 +450,7 @@ class Messages(Gtk.Application):
                 title = label(thread['name'], xalign=0, ellipsize=Pango.EllipsizeMode.END)
                 title.add_css_class('ms-contact-name')
                 if thread.get('unread_count'):
-                    title.add_css_class('heading')
+                    title.add_css_class('ms-unread-name')
                 text.append(title)
                 last = thread['messages'][-1].get('body', '') if thread['messages'] else _('New conversation')
                 text.append(label(last.replace('\n', ' '), 'dim-label', xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=24))
@@ -689,6 +697,7 @@ class Messages(Gtk.Application):
             near_bottom = adjustment.get_value() + adjustment.get_page_size() >= adjustment.get_upper() - 80
             switching = self.rendered is None or self.rendered[0] != thread['key']
             self.rendered = (thread['key'], [dict(m) for m in thread['messages']])
+            self.stop_media_animation()
             clear(self.messages)
             if not thread['messages']:
                 self.messages.append(label(_('Say hello.'), 'dim-label', vexpand=True, valign=Gtk.Align.CENTER))
@@ -700,12 +709,91 @@ class Messages(Gtk.Application):
                 if outgoing:
                     bubble.add_css_class('ms-outgoing')
                 line.append(bubble)
+                for url in media_links(message.get('body','')):
+                    line.append(self.media_card(url, automatic=bool(message.get('outgoing'))))
                 stamp = message.get('display_timestamp') or message.get('timestamp', '')
                 line.append(label(stamp, 'ms-time', xalign=1 if outgoing else 0))
                 self.messages.append(line)
             if near_bottom or switching:
                 GLib.idle_add(self.scroll_bottom)
         self.update_composer()
+
+    def stop_media_animation(self):
+        for timer in self.media_timers:GLib.source_remove(timer)
+        self.media_timers.clear()
+
+    def media_card(self, url, automatic=False):
+        card=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=8,halign=Gtk.Align.END if automatic else Gtk.Align.START,valign=Gtk.Align.START)
+        card.add_css_class('ms-media')
+        title=label(_('YouTube') if youtube_id(url) else _('Image'),xalign=0)
+        card.append(title)
+        load=Gtk.Button(label=_('Load Preview'))
+        card.append(load)
+        card.append(Gtk.LinkButton(uri=url,label=_('Open YouTube') if youtube_id(url) else _('Open Image')))
+        def completed(preview):
+            if not card.get_root():return
+            if preview is None:
+                title.set_label(_('Preview unavailable · open the link to view it.'))
+                title.set_wrap(True);title.set_max_width_chars(30);load.set_sensitive(True)
+                return
+            adjustment=self.message_scroll.get_vadjustment()
+            bottom=adjustment.get_value()+adjustment.get_page_size()>=adjustment.get_upper()-80
+            clear(card)
+            width,height=preview.size
+            picture=Gtk.Picture(can_shrink=True,content_fit=Gtk.ContentFit.CONTAIN,width_request=width,height_request=height)
+            picture.update_property([Gtk.AccessibleProperty.LABEL],[preview.title])
+            def frame(index):
+                picture.set_paintable(Gdk.MemoryTexture.new(width,height,Gdk.MemoryFormat.R8G8B8A8,GLib.Bytes.new(preview.frames[index]),width*4))
+            frame(0);card.append(picture)
+            card.append(label(preview.title,'heading',xalign=0,wrap=True,max_width_chars=30))
+            source_width,source_height=preview.source_size
+            info=f'{source_width} × {source_height}'
+            if len(preview.frames)>1:info+=' · '+_('%d frames') % len(preview.frames)
+            card.append(label(info,'dim-label',xalign=0))
+            card.append(Gtk.LinkButton(uri=url,label=_('Watch on YouTube') if preview.kind=='youtube' else _('Open Original')))
+            if len(preview.frames)>1 and Gtk.Settings.get_default().props.gtk_enable_animations:
+                position=[0]
+                def schedule(delay):
+                    holder={}
+                    def tick():
+                        self.media_timers.discard(holder['id'])
+                        if self.closed or not picture.get_root():return False
+                        if picture.get_mapped():
+                            position[0]=(position[0]+1)%len(preview.frames);frame(position[0])
+                        schedule(preview.durations[position[0]] if picture.get_mapped() else 500)
+                        return False
+                    holder['id']=GLib.timeout_add(delay,tick);self.media_timers.add(holder['id'])
+                schedule(preview.durations[0])
+            if bottom:GLib.idle_add(self.scroll_bottom)
+        def start(*_args):
+            if url in self.media_cache:
+                self.media_cache.move_to_end(url);GLib.idle_add(lambda: completed(self.media_cache.get(url)) or False);return
+            if self.fixture:
+                title.set_label(_('Preview fixture · no network request'));return
+            if url in self.media_pending:
+                self.media_pending[url].append(completed);load.set_sensitive(False);return
+            if len(self.media_pending)>=6:
+                title.set_label(_('Other previews are loading. Try again shortly.'));return
+            load.set_sensitive(False);title.set_label(_('Loading preview…'))
+            self.media_pending[url]=[completed]
+            future=self.media_pool.submit(load_preview,url)
+            def fetched(result):
+                try:preview=result.result()
+                except Exception:preview=None
+                def deliver():
+                    callbacks=self.media_pending.pop(url,[])
+                    if self.closed:return False
+                    if preview:
+                        self.media_cache[url]=preview
+                        while len(self.media_cache)>8 or sum(p.memory for p in self.media_cache.values())>24*1024*1024:
+                            self.media_cache.popitem(last=False)
+                    for callback in callbacks:callback(preview)
+                    return False
+                GLib.idle_add(deliver)
+            future.add_done_callback(fetched)
+        load.connect('clicked',start)
+        if url in self.media_cache or automatic or url in self.media_pending:GLib.idle_add(lambda: start() or False)
+        return card
 
     def scroll_bottom(self):
         if not self.closed:
@@ -856,6 +944,8 @@ class Messages(Gtk.Application):
         if self.sleep_watch:
             self.sleep_watch.remove()
         self.pool.shutdown(wait=False, cancel_futures=True)
+        self.media_pool.shutdown(wait=False,cancel_futures=True)
+        self.stop_media_animation()
         return False
 
     def sleep_changed(self, sleeping):

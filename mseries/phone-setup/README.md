@@ -272,3 +272,32 @@ the failure but do not prove which iOS permission or policy caused it.
 18 native model/protocol/reconnect checks pass. The installed retry was exercised
 against the live phone: bond retained, message access still denied. This is
 not working text messaging; no end-to-end delivery is qualified.
+
+### Media-link previews
+
+Messages renders direct HTTPS JPEG/PNG/WebP images, animated GIFs, and YouTube
+thumbnail/title cards. Original image dimensions are shown; the YouTube dimensions
+refer to its thumbnail, and Watch on YouTube opens playback in the browser.
+Sent media links load automatically. Incoming links offer Load Preview unless
+already cached or loading. This does not add MAP attachment payloads.
+Downloads use validated public HTTPS endpoints, bounded sizes/decoded frames and
+an in-memory cache. No authentication cookies or private/LAN endpoints are used.
+Private rendering of the actual self-test assets passed: photo 500×477,
+GIF 400×400/44 frames with observed GTK frame advancement, YouTube thumbnail
+480×360. All three full text links were received back through the phone.
+
+### Native frontend integration prompt
+
+```text
+Continue our existing Messages app as an elementary GTK 4/Granite 7 frontend
+for BlueFerry. Reuse its backend and typed client APIs; preserve working pairing,
+message routing, contacts/photos, read state, history and send/retry behavior.
+Keep four favorite contacts per row with a separator, large readable names and
+blue unread dots left of avatars. Resolve names through unique cached phonebook
+identities; never guess group recipients or ambiguous contacts. Support bounded
+photo/GIF and YouTube link previews. Distinguish link previews from unsupported
+MAP attachments, and Mac-exported pin snapshots from live iPhone pin sync.
+Preserve drafts, focus, selection, light/dark themes and narrow layouts. Test the
+actual behavior before claiming parity. Commit/push coherent changes and open
+PRs against dev. Preserve the running Bluetooth, audio, kernel and panel setup.
+```

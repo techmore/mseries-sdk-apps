@@ -55,6 +55,25 @@ class MessagesUI(unittest.TestCase):
         parent,avatar=app.favorite_avatars['demo']
         self.assertFalse(avatar.get_prev_sibling().get_first_child().get_visible())
 
+    def test_media_card_renders_cached_gif_and_stops_animation_on_close(self):
+        import io
+        from PIL import Image
+        from message_media import decode_image
+        frames=[Image.new('RGB',(80,60),c) for c in ('red','blue')]
+        out=io.BytesIO();frames[0].save(out,format='GIF',save_all=True,append_images=frames[1:],duration=100,loop=0)
+        url='https://example.org/fixture.gif'
+        self.app.media_cache[url]=decode_image(out.getvalue())
+        self.app.threads['demo']['messages'].append(dict(body=url,outgoing=True,timestamp='Now'))
+        self.app.show_conversation();settle(.3)
+        line=self.app.messages.get_last_child()
+        card=line.get_first_child().get_next_sibling()
+        picture=card.get_first_child()
+        self.assertIsInstance(picture,Gtk.Picture)
+        self.assertEqual(picture.get_paintable().get_width(),80)
+        self.assertTrue(self.app.media_timers)
+        self.app.stop_media_animation()
+        self.assertFalse(self.app.media_timers)
+
     def test_offline_retains_conversations_and_disables_send(self):
         app = self.app
         app.editor.get_buffer().set_text('Keep offline')
