@@ -200,7 +200,7 @@ class PhoneSetup(Gtk.Application):
         if self.fixture:
             return
         if self.state == 'ready':
-            subprocess.Popen(['blueferry-gtk'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen([str(Path.home()/'.local/bin/mseries-messages')], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self.quit()
         elif self.state in ('blocked', 'inactive'):
             self.retry_connection()

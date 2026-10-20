@@ -1,11 +1,11 @@
 # Connect iPhone (experimental)
 
-A native GTK 4 / Granite 7 onboarding window over BlueFerry's existing backend.
+Native GTK 4 / Granite 7 Messages and onboarding windows over BlueFerry's existing backend.
 Install with `bash mseries/install-phone-setup.sh` after installing BlueFerry's
 backend and GTK client. Launch `mseries-phone-setup`; optionally pass
 `--ios-version 27.0.1` for diagnostics. The opening page does not ask for an iOS version or require one to continue.
 
-The intended flow is Next → choose a phone → Connect → confirm the matching code on the computer first, then tap Pair on the iPhone
+The intended flow is Next → choose a phone → Connect → compare and approve the matching code on both devices
 → grant iPhone permissions → Open Messages. Existing configured phones skip
 selection. Polling and Bluetooth requests run in worker threads; close/cancel
 stops the owned pairing helper and stale callbacks are ignored. Status checks stop when the target is cleared instead of repeatedly activating an unconfigured backend. Only a live
@@ -33,27 +33,68 @@ accepted automatically. No messages are sent by the setup app.
   kernels automatically. iPhone code approval and permission grants remain
   controlled by iOS and cannot be toggled from Linux.
 
-The new window is an initial onboarding layer; message composition still opens
-upstream BlueFerry. Tether and Bubbles are separate apps, not controlled by this
+The setup window hands message composition to the native Messages app. Tether and Bubbles are separate apps, not controlled by this
 wizard. Localization infrastructure is not present yet.
 
-## Current hardware result, 2026-10-20
+## Working messages and native desktop — 2026-10-20
 
-M1 Pro J314S, elementary OS 9 / Aurora .20, BlueZ 5.85, iPhone 14 Pro / iOS
-27.0.1. BlueFerry source `60fd7ef1abbd25947981f0cf27a521d82784a75f`,
-package 0.8.1-1, built locally: 3734 tests passed, 16 skipped. Bluetooth powered
-on, HFP device class and active LE solicitation confirmed. Bonding succeeds;
-PBAP opens, but MAP returns OBEX Forbidden (0x43), and no message/contacts
-switches appeared in the phone's Bluetooth detail page. One clean re-pair and
-one HFP-role restoration/re-pair did not establish messaging. This is not a
-qualified messaging installation. No test message was sent by this agent.
+**Sending and receiving texts are hardware-verified** on M1 Pro J314S,
+elementary OS 9, kernel `7.1.12-2-20261017.20-sep-ARCH`, iPhone 14 Pro / iOS
+27.0.1. BlueFerry is pinned to `60fd7ef1abbd25947981f0cf27a521d82784a75f`.
+A matched BlueZ 5.87 stack runs with the experimental bearer API. A fresh
+Connect-first pairing with Hands-Free exposed produced Classic + LE keys.
+The user enabled the newly visible **Show Message Notifications** switch;
+MAP then opened and its MNS listener connected. A self-addressed text was
+sent and received; an explicitly authorized contact test was sent, followed by
+two incoming replies. Contacts remain available. ANCS app notifications remain
+unavailable and are not required for these ordinary texts.
 
-[BlueFerry issue #263](https://github.com/erikwb/blueferry/issues/263), opened
-2026-10-18, reports the same iOS 27.0.1 missing-switch behavior. Restoring HFP
-made its switches appear, but that reporter still had an SDP-service error on
-BlueZ 5.87. That differs from our 0x43, so it is a related report, not a proven
-root cause or guaranteed workaround. A BlueZ upgrade alone is not justified by
-that evidence.
+Launch **Messages** (`mseries-messages`) for the native GTK 4 / Granite 7
+conversation sidebar, contact picker, message bubbles and composer. Sidebar
+names are larger; avatars use BlueFerry’s opt-in contact-photo cache with an
+initials fallback. The owner requested this opt-in; 34 real photos were synced.
+Images are bounded/validated upstream and decoded to small thumbnails in memory. All sending,
+recipient validation, encrypted history, group checks and phone sessions stay in
+BlueFerry. The new window is a client of that existing daemon, not a competing MAP
+client. Advanced BlueFerry remains accessible from its menu. Setup now opens this
+native client once message access is ready.
+
+Drafts are kept per conversation while the window is open. Sending is explicit,
+shows pending/failure, prevents duplicate clicks, and keeps a failed draft for
+retry. The captured thread identity/roster token controls the send even if the
+selection changes while it is pending. Unknown or unconfirmed group routes stay
+blocked; use Advanced BlueFerry to review their participants. Phone contents are
+rendered as plain text. Fixture previews cannot send or query private accounts.
+
+### Missed messages and sleep
+
+The app queries up to **200 recent inbox entries exposed by the iPhone** when
+opened, on a detected message reconnect, after five minutes between successful
+queries (wall time includes suspend), and on manual Refresh. The normal status
+poll is every five seconds while the app is open; requests run on one background
+worker. Live events and inbox snapshots are deduplicated by MAP handle without
+changing known group routes. This snapshot stays in memory; persistent live
+history remains in BlueFerry's encrypted store. Offline views retain the current
+window's last snapshot. The app does not download the full iCloud archive or
+recover a complete sent history. A real inbox read returned 11 entries on this
+phone; a controlled suspend/missed-message/reopen scenario remains unverified.
+
+### Persist and undo the Bluetooth stack
+
+`bash mseries/install-messaging-bluez.sh --install BLUEZ_BUILD_DIR` installs the
+reviewed three binaries under `/usr/local/libexec/mseries-bluez-5.87/`, writes
+scoped system/user drop-ins, and preserves an already running successful trial
+without restarting it. On a different installation use `--restart` explicitly.
+`--rollback` removes only these drop-ins and restarts distro services, retaining
+the current bond and contact data. Distro executables are never overwritten.
+The current successful machine has the persistent configuration installed.
+
+BlueFerry probes `bluetoothctl --version` to select pairing policy, so a 5.87
+daemon with distro 5.85 CLI still incorrectly selects compatibility mode. The
+scoped backend PATH and native launchers use the matching 5.87 client. See
+[the upstream review](UPSTREAM-REVIEW.md) for build flags, sources and limitations.
+The change is installed on this desktop; no factory-image Bluetooth upgrade or
+reboot qualification is implied.
 
 ## Download the macOS visit kit
 

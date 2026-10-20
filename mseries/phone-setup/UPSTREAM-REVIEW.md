@@ -108,3 +108,67 @@ phone authorization or delivery verification. The live host still runs Ubuntu's
 5.85 bluetoothd/obexd. Runtime experimental bearer API and the live upgrade/rollback
 trial remain unperformed. Current host kernel is
 `7.1.12-2-20261017.20-sep-ARCH`; the audit changed no kernel.
+
+
+## Live 5.87 trial and successful delivery — 2026-10-20
+
+The owner authorized the live trial. Installed root-owned candidate binaries
+under `/usr/local/libexec/mseries-bluez-5.87`, with distro files untouched and
+root-private pre-trial bonds retained outside Git. Verified the **running**
+bluetoothd path and both bearer Connect/Disconnect methods; merely reading the
+candidate's version or a loaded ExecStart is insufficient. In the initial
+activation a desktop D-Bus caller raced daemon-reload and reactivated 5.85;
+an explicit restart corrected that before the actual 5.87 phone trial.
+
+Existing bond: MAP remained Forbidden with matched 5.87 bluetoothd/obexd.
+The owner then forgot eos on the iPhone. Removed only that phone's Linux bond,
+set `BLUEFERRY_KEEP_PHONE_AUDIO_ON_PHONE=false` to expose Hands-Free during
+pairing, and ran upstream's interactive Connect-first transaction. The owner
+compared the passkey and accepted it on the phone; Linux confirmation followed.
+Class 0x7c0408 and local Hands-Free/MNS/PBAP-client UUIDs were verified. This time
+the phone acquired LinkKey type 8, IRK and LE long-term keys; previously only a
+Classic key was present. Contact permission appeared first. The user subsequently
+found and enabled **Show Message Notifications**; MAP and MNS then connected.
+There is no requirement for a separate "sync messages" popup.
+
+The fresh setup also exposed a **version-probe mismatch**: BlueFerry's
+`bluetooth_capabilities.bluez_stack()` tries `bluetoothctl --version` before
+daemon paths, so the distro 5.85 CLI selected compatibility mode despite the
+verified 5.87 runtime. Built the matching 5.87 client (installed the small distro
+`libreadline-dev` dependency), set a scoped PATH for backend/native launchers,
+and reran completion on the existing new bond. It now reports 5.87,
+notifications_supported/active and bearer_api_supported/active true. This fixes
+policy detection; the evidence does not prove it alone made MAP permission
+appear. Multiple conditions changed in the successful trial. No further
+unpair was needed for this correction. Optional ANCS is still not authorized;
+ordinary text delivery works independently.
+
+Delivery evidence: one explicitly authorized self-addressed text produced
+`sms_sent` then `sms_received` approximately 2.4 seconds later; a contact selected
+by the owner's exact contact name received an authorized explanatory test, and
+two incoming replies from that contact were recorded. No phone numbers, bond
+keys, message contents or raw captures are published. A read-only recent-inbox
+query returned 11 entries. Full missed-message/suspend recovery is not yet a
+hardware pass. Apple documents MAP inbox browsing, composing and replying at
+[Bluetooth profiles supported by iOS](https://support.apple.com/en-us/102842).
+BlueFerry's full-history limitations still apply.
+
+Additional current upstream checks:
+- [Tether #243](https://github.com/zackb/tether/issues/243) was resolved by enabling
+  L2CAP ERTM; this machine already has `disable_ertm=N`, and its failure was an
+  actual OBEX Forbidden, so that fix was not applied here.
+- [Tether #213](https://github.com/zackb/tether/issues/213) includes a corrected
+  BlueZ build producing notification access; it is another reason to verify live
+  APIs and build configuration, not proof of this phone's MAP cause.
+- [BlueFerry #181](https://github.com/erikwb/blueferry/issues/181) records daily
+  working iOS 27 use on Intel AX200/5.87. Broadcom reports #164/#146 do not provide
+  a published universal authorization fix. Blue and bluez-message use the same
+  MAP/OBEX authorization mechanism, so no alternate client was started in parallel.
+
+`install-messaging-bluez.sh --install BUILD_DIR` now persists the successful
+scoped binary/service setup without interrupting it; `--rollback` restores
+packaged services and retains current bonds/contacts. It is applied to this
+machine. Source/configure flags for the final client build match the earlier
+candidate except `--enable-client` replaces `--disable-client`. `--experimental`
+is a runtime daemon argument. Factory-image integration and post-reboot recovery
+are not qualified.
