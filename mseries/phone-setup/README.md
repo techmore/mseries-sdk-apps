@@ -63,8 +63,76 @@ Drafts are kept per conversation while the window is open. Sending is explicit,
 shows pending/failure, prevents duplicate clicks, and keeps a failed draft for
 retry. The captured thread identity/roster token controls the send even if the
 selection changes while it is pending. Unknown or unconfirmed group routes stay
-blocked; use Advanced BlueFerry to review their participants. Phone contents are
-rendered as plain text. Fixture previews cannot send or query private accounts.
+blocked; use Advanced BlueFerry to review their participants. Message text is
+escaped, never interpreted as markup; only URLs that BlueFerry's own formatter
+judges safe become links (the call its other clients use, which also refuses
+text with direction-control characters). Fixture previews cannot send or query
+private accounts.
+
+### Native conversation experience
+
+A pass over how the window looks and behaves, without changing what it sends
+or where that data lives. Everything below is presentation; BlueFerry still
+owns sending, recipient checks, history and group safety.
+
+- **Conversation list.** Colour-coded initials (stable per person, every tone
+  at least 4.5:1 with white text), a people glyph for groups, a large name
+  (1.4em, bold while unread) with a short time (clock today, then Yesterday,
+  weekday, date), a two-line preview that starts with "You:" for your own last
+  message, and an accent-coloured unread dot immediately left of the avatar, in
+  the list and in favourites, as the owner asked. Bare numbers show the
+  person's name when the cached phonebook has exactly one match (see
+  `resolve_contact_names`); groups and ambiguous contacts are never guessed.
+  Favourites use larger avatars. An empty list says why: No Conversations or
+  No Results.
+- **Link previews.** Direct HTTPS image and GIF links and YouTube links get a
+  card under the bubble (see *Media-link previews* below). Sent links load at
+  once; incoming ones offer Load Preview. The card is built by the controller
+  because it owns the network pool and cache; `messages_widgets` only places it.
+- **Conversation.** Header with the contact's avatar and addresses. Bubbles from
+  the same person within five minutes form a run with tight spacing and a tail
+  on the last bubble. Centred time headings appear after a 30-minute silence or
+  a new day, using BlueFerry's own wording. Group messages name the sender at
+  the start of each run. Hovering a bubble shows its full time.
+- **Sending.** A message appears at once, dimmed with "Sending…", and becomes
+  solid when the phone accepts it. It is shown only until BlueFerry's history
+  contains it, so it is never doubled. A failed send removes the bubble and
+  keeps the draft. When new messages arrive while you are scrolled up, a
+  New Messages button offers a jump to the latest.
+- **Composer.** One rounded field with the send button inside it. The button
+  slides in when there is something to send and shows a spinner while pending.
+  Ctrl+Enter sends and Enter adds a line, exactly as before; plain Enter does
+  not send because an input-method confirmation must never send by accident.
+- **Colour.** Outgoing bubbles use the stylesheet's `accent_bg_color` with
+  `accent_fg_color`, so the user's accent colour and dark mode are honoured. The
+  older `theme_selected_*` pair was not used for text: it measured 1.8:1 in dark
+  mode here.
+- **Offline and reconnect.** The footer shows a coloured dot plus words. A banner
+  appears when the phone is unavailable or access is pending, with **Retry
+  Connection**. That reuses `connection.reconnect_existing`: it checks the saved
+  bond, restarts only BlueFerry and never re-pairs or touches audio policy.
+- **New Message.** A sheet with recent conversations before you type. Enter starts
+  the typed address (or the first match), Down moves into the results and Escape
+  closes it. Group conversations are not offered as recipients.
+- **Keyboard.** Ctrl+N new message, Ctrl+F search, Ctrl+R or F5 refresh, Alt+Left
+  back in the single-pane layout, Ctrl+Enter send.
+- **Read state.** Opening a conversation, or receiving into one that is open and
+  focused, marks it read once per newest message.
+- **Single pane.** Below 760 px wide only one pane shows. The window now reacts
+  to resizes instead of running a callback on every frame.
+
+Code layout (all under `phone-setup/`): `messages.py` is the controller (state,
+worker thread, BlueFerry calls, dialogs); `messages_model.py` holds pure,
+GTK-free logic (message runs, time labels, previews, the send outbox, avatar
+tones); `messages_widgets.py` builds the widgets; `messages_style.py` holds the
+scoped stylesheet. The installer copies all four.
+
+Checked with the isolated fixture and Cairo rendering in light, dark and narrow
+layouts, with 30 model tests, 5 media tests and 47 GTK tests (one screenshot
+test needs its environment variable and skips), including end-to-end tests that
+push realistic BlueFerry objects through the real refresh path. **Not verified:**
+the redesign has not been run against the live phone, and the owner's open
+Messages window keeps the previous code until it is relaunched.
 
 ### Missed messages and sleep
 
@@ -272,3 +340,32 @@ the failure but do not prove which iOS permission or policy caused it.
 18 native model/protocol/reconnect checks pass. The installed retry was exercised
 against the live phone: bond retained, message access still denied. This is
 not working text messaging; no end-to-end delivery is qualified.
+
+### Media-link previews
+
+Messages renders direct HTTPS JPEG/PNG/WebP images, animated GIFs, and YouTube
+thumbnail/title cards. Original image dimensions are shown; the YouTube dimensions
+refer to its thumbnail, and Watch on YouTube opens playback in the browser.
+Sent media links load automatically. Incoming links offer Load Preview unless
+already cached or loading. This does not add MAP attachment payloads.
+Downloads use validated public HTTPS endpoints, bounded sizes/decoded frames and
+an in-memory cache. No authentication cookies or private/LAN endpoints are used.
+Private rendering of the actual self-test assets passed: photo 500×477,
+GIF 400×400/44 frames with observed GTK frame advancement, YouTube thumbnail
+480×360. All three full text links were received back through the phone.
+
+### Native frontend integration prompt
+
+```text
+Continue our existing Messages app as an elementary GTK 4/Granite 7 frontend
+for BlueFerry. Reuse its backend and typed client APIs; preserve working pairing,
+message routing, contacts/photos, read state, history and send/retry behavior.
+Keep four favorite contacts per row with a separator, large readable names and
+blue unread dots left of avatars. Resolve names through unique cached phonebook
+identities; never guess group recipients or ambiguous contacts. Support bounded
+photo/GIF and YouTube link previews. Distinguish link previews from unsupported
+MAP attachments, and Mac-exported pin snapshots from live iPhone pin sync.
+Preserve drafts, focus, selection, light/dark themes and narrow layouts. Test the
+actual behavior before claiming parity. Commit/push coherent changes and open
+PRs against dev. Preserve the running Bluetooth, audio, kernel and panel setup.
+```

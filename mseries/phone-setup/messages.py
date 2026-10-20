@@ -1,8 +1,14 @@
 #!/usr/bin/python3
-"""GTK 4 / Granite 7 Messages client for the existing BlueFerry daemon."""
+"""GTK 4 / Granite 7 Messages client for the existing BlueFerry daemon.
+
+This module is the controller: it owns state, talks to BlueFerry on a worker
+thread and decides what to show. Look and feel live in messages_style.py and
+messages_widgets.py; pure presentation logic lives in messages_model.py.
+"""
 import argparse
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 import gettext
 import os
 from pathlib import Path
@@ -14,48 +20,28 @@ import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Gdk', '4.0')
 gi.require_version('Granite', '7.0')
-gi.require_version('GdkPixbuf', '2.0')
-from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Granite, Gtk, Pango
+from gi.repository import Gdk, Gio, GLib, Granite, Gtk, Pango
 from blueferry.client import BackendClient
 from blueferry.bus import get_system_bus
 from blueferry.recipients import validate_recipient
-from messages_model import ConversationState, merge_inbox
+from messages_model import ConversationState, Outbox, contact_index, layout_messages, merge_inbox, resolve_contact_names
+from message_media import load_preview, youtube_id
+from messages_style import build_style, missing_accent_names
+from messages_widgets import (AVATAR_PX, avatar, build_composer, build_notice, build_status, clear,
+                              conversation_row, empty_state, favorite_tile, icon_for, identity_of,
+                              label, photo_frame, render_messages)
 from message_pins import PinStore, profile_key, read_snapshot, suggested_matches, matched_state, ordered_keys, effective_choices
 
 _ = gettext.gettext
 APP_ID = 'io.elementary.mseries.Messages'
-STYLE = '''
-.ms-sidebar { background: @theme_base_color; }
-.ms-status { padding: 8px 14px; border-top: 1px solid alpha(@theme_fg_color, .12); }
-.ms-row { padding: 12px; }
-.ms-avatar { border-radius: 99px; background: alpha(@theme_selected_bg_color,.18); padding: 12px; }
-.ms-contact-name { font-size: 1.15em; font-weight: 600; }
-.ms-photo { border-radius: 99px; min-width: 42px; min-height: 42px; }
-.ms-bubble { border-radius: 16px; padding: 12px 16px; background: alpha(@theme_fg_color,.08); }
-.ms-outgoing { background: alpha(@theme_selected_bg_color,.25); color: @theme_fg_color; border: 1px solid alpha(@theme_selected_bg_color,.35); }
-.ms-composer { padding: 14px 20px; border-top: 1px solid alpha(@theme_fg_color,.12); }
-.ms-heading { padding: 12px 20px; border-bottom: 1px solid alpha(@theme_fg_color,.12); }
-.ms-time { font-size: .85em; opacity: .72; }
-.ms-notice { padding: 8px 20px; background: alpha(@theme_selected_bg_color,.10); }
-.ms-section { padding: 12px 12px 4px; font-weight: 600; opacity: .75; }
-.ms-pin-note { padding: 4px 14px 10px; }
-.ms-pin-row { border-bottom: 1px solid alpha(@theme_fg_color,.08); padding: 12px 0; }
-.ms-favorite { padding: 4px; }
-.ms-favorite:checked { background: alpha(@theme_selected_bg_color,.18); }
-.ms-favorite-avatar { border-radius: 99px; background: alpha(@theme_selected_bg_color,.18); min-width: 42px; min-height: 42px; }
-'''
-
-
-def label(text='', css=None, **kwargs):
-    widget = Gtk.Label(label=text, **kwargs)
-    if css:
-        widget.add_css_class(css)
-    return widget
-
-
-def clear(box):
-    while box.get_first_child():
-        box.remove(box.get_first_child())
+# Below this width the window shows one pane at a time, like a phone.
+NARROW = 760
+CONNECTION = {
+    'connecting': ('wait', _('Connecting to iPhone…')),
+    'ready': ('ok', _('iPhone connected · Messages ready')),
+    'reconnecting': ('wait', _('iPhone reconnecting…')),
+    'offline': ('off', _('iPhone unavailable · conversations kept')),
+}
 
 
 class Messages(Gtk.Application):
@@ -64,7 +50,16 @@ class Messages(Gtk.Application):
                          flags=Gio.ApplicationFlags.NON_UNIQUE if fixture else Gio.ApplicationFlags.DEFAULT_FLAGS)
         self.fixture, self.dark, self.narrow = fixture, dark, narrow
         self.pool = ThreadPoolExecutor(max_workers=1)
+        # Link previews fetch over the network, so they never queue behind phone calls.
+        self.media_pool = ThreadPoolExecutor(max_workers=2)
+        self.media_cache = OrderedDict()
+        self.media_pending = {}
+        self.media_timers = set()
+        self.contact_names = {}
+        self.contact_revision = None
+        self.contacts_pending = False
         self.model = ConversationState()
+        self.outbox = Outbox()
         self.threads = {}
         self.rows = {}
         self.inbox = []
@@ -73,19 +68,27 @@ class Messages(Gtk.Application):
         self.snapshot_pending = False
         self.closed = False
         self.rendered = None
+        self.rendered_count = 0
+        self.force_scroll = False
         self.poll = 0
         self.search_generation = 0
         self.last_refresh = 0
+        self.checked_text = ''
         self.inbox_requested = True
         self.inbox_request_epoch = 0
         self.sleep_watch = None
         self.send_feedback = {}
+        self.read_marked = {}
+        self.connection_state = ''
+        self.retrying = False
+        self.css_errors = []
         self.photo_cache = {}
         self.photo_revision = None
         self.photo_pending = False
         self.avatars = {}
         self.favorite_avatars = {}
         self.favorite_buttons = {}
+        self.heading_signature = None
         self.pin_state = dict(version=1, snapshot=None, choices=[])
         self.pin_profile = None
         self.pin_store = None
@@ -103,119 +106,27 @@ class Messages(Gtk.Application):
         settings.connect('notify::prefers-color-scheme', scheme)
         scheme()
         provider = Gtk.CssProvider()
-        provider.load_from_string(STYLE)
+        # Kept so tests can prove the stylesheet parses cleanly on this toolkit.
+        provider.connect('parsing-error', lambda _p, section, error: self.css_errors.append((section.to_string(), error.message)))
+        # Probe the theme through a throwaway widget before our own CSS is added.
+        self.stylesheet = build_style(missing_accent_names(Gtk.Label().get_style_context()))
+        provider.load_from_string(self.stylesheet)
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self.window = Gtk.ApplicationWindow(application=self, title=_('Messages'), default_width=1080, default_height=720)
         self.window.set_icon_name(APP_ID)
         self.window.set_size_request(420, 420)
         self.window.connect('close-request', self.close)
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        header = Gtk.HeaderBar()
-        self.back = Gtk.Button(icon_name='go-previous-symbolic', tooltip_text=_('Conversations'), visible=False)
-        self.back.connect('clicked', self.go_back)
-        self.back.update_property([Gtk.AccessibleProperty.LABEL], [_('Conversations')])
-        header.pack_start(self.back)
-        header.set_title_widget(label(_('Messages'), 'title'))
-        new = Gtk.Button(icon_name='document-edit-symbolic', tooltip_text=_('New Message'))
-        new.connect('clicked', self.new_message)
-        new.update_property([Gtk.AccessibleProperty.LABEL], [_('New Message')])
-        header.pack_start(new)
-        refresh = Gtk.Button(icon_name='view-refresh-symbolic', tooltip_text=_('Refresh iPhone Inbox'))
-        refresh.connect('clicked', lambda *_args: self.refresh(True))
-        refresh.update_property([Gtk.AccessibleProperty.LABEL], [_('Refresh iPhone Inbox')])
-        header.pack_end(refresh)
-        menu = Gio.Menu()
-        for text, action, method in [(_('Import iPhone Pins…'), 'import-pins', self.import_pins), (_('Review Imported Pins…'), 'review-pins', self.review_pins), (_('Connect iPhone…'), 'setup', self.setup), (_('Advanced BlueFerry…'), 'advanced', self.advanced)]:
-            a = Gio.SimpleAction.new(action, None)
-            a.connect('activate', method)
-            self.add_action(a)
-            menu.append(text, 'app.' + action)
-        header.pack_end(Gtk.MenuButton(icon_name='open-menu-symbolic', menu_model=menu))
-        outer.append(header)
-        self.split = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL, vexpand=True)
-        self.split.set_position(300)
-        self.split.set_shrink_start_child(False)
-        self.split.set_shrink_end_child(False)
-        self.sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, width_request=260)
-        self.sidebar.add_css_class('ms-sidebar')
-        self.search = Gtk.SearchEntry(placeholder_text=_('Search conversations'), margin_top=10, margin_bottom=10, margin_start=12, margin_end=12)
-        self.search.connect('search-changed', lambda *_args: self.filter_rows())
-        self.sidebar.append(self.search)
-        self.pin_note = label('', 'ms-pin-note', xalign=0, wrap=True, visible=False)
-        self.pin_note.add_css_class('dim-label')
-        self.sidebar.append(self.pin_note)
-        self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
-        self.list.add_css_class('navigation-sidebar')
-        self.list.connect('row-selected', self.selected)
-        contacts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self.favorites = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, visible=False)
-        self.favorites.append(label(_('Favorites'), 'ms-section', xalign=0))
-        self.favorite_grid = Gtk.Grid(column_homogeneous=True, row_spacing=8, column_spacing=4, margin_start=10, margin_end=10, margin_bottom=12)
-        self.favorites.append(self.favorite_grid)
-        contacts.append(self.favorites)
-        self.favorite_separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL, margin_start=12, margin_end=12, margin_bottom=8, visible=False)
-        contacts.append(self.favorite_separator)
-        contacts.append(self.list)
-        list_scroll = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER, child=contacts)
-        self.sidebar.append(list_scroll)
-        self.connection = label(_('Connecting to iPhone…'), xalign=0, wrap=True)
-        self.connection.add_css_class('ms-status')
-        self.sidebar.append(self.connection)
-        self.split.set_start_child(self.sidebar)
-        self.detail = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, width_request=280)
-        self.title = label(_('Your conversations'), 'title-2', xalign=0, ellipsize=Pango.EllipsizeMode.END)
-        self.subtitle = label(_('Messages sent through your iPhone'), 'dim-label', xalign=0, ellipsize=Pango.EllipsizeMode.MIDDLE)
-        heading = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        heading.add_css_class('ms-heading')
-        heading.append(self.title)
-        heading.append(self.subtitle)
-        self.detail.append(heading)
-        self.notice = label('', xalign=0, wrap=True, visible=False)
-        self.notice.add_css_class('ms-notice')
-        self.detail.append(self.notice)
-        self.stack = Gtk.Stack(vexpand=True)
-        welcome = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, valign=Gtk.Align.CENTER, halign=Gtk.Align.CENTER, margin_start=24, margin_end=24)
-        icon = Gtk.Image.new_from_icon_name('mail-message-new-symbolic')
-        icon.set_pixel_size(64)
-        welcome.append(icon)
-        welcome.append(label(_('A little closer, wherever you work.'), 'title-2', wrap=True, justify=Gtk.Justification.CENTER))
-        welcome.append(label(_('Choose a conversation or start a new message.\nYour iPhone sends and receives the texts.'), 'dim-label', wrap=True, justify=Gtk.Justification.CENTER))
-        start = Gtk.Button(label=_('New Message'), halign=Gtk.Align.CENTER)
-        start.add_css_class('suggested-action')
-        start.connect('clicked', self.new_message)
-        welcome.append(start)
-        self.stack.add_named(welcome, 'welcome')
-        self.messages = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14, margin_start=24, margin_end=24, margin_top=22, margin_bottom=22)
-        self.message_scroll = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER, child=self.messages)
-        self.stack.add_named(self.message_scroll, 'messages')
-        self.detail.append(self.stack)
-        compose = Gtk.Box(spacing=12)
-        compose.add_css_class('ms-composer')
-        self.editor = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR, accepts_tab=False, top_margin=10, bottom_margin=10, left_margin=12, right_margin=12)
-        self.editor.update_property([Gtk.AccessibleProperty.LABEL], [_('Message')])
-        self.editor.get_buffer().connect('changed', self.draft_changed)
-        editor_scroll = Gtk.ScrolledWindow(hexpand=True, min_content_height=64, max_content_height=140, propagate_natural_height=True, hscrollbar_policy=Gtk.PolicyType.NEVER, child=self.editor)
-        editor_scroll.add_css_class('frame')
-        compose.append(editor_scroll)
-        self.send = Gtk.Button(icon_name='mail-send-symbolic', tooltip_text=_('Send Message (Ctrl+Enter)'), valign=Gtk.Align.END)
-        self.send.add_css_class('suggested-action')
-        self.send.connect('clicked', self.send_message)
-        self.send.update_property([Gtk.AccessibleProperty.LABEL], [_('Send Message')])
-        compose.append(self.send)
-        self.detail.append(compose)
-        self.send_status = label(_('Choose a conversation to write a message.'), 'dim-label', xalign=0, wrap=True, margin_start=20, margin_end=20, margin_bottom=10)
-        self.detail.append(self.send_status)
-        self.split.set_end_child(self.detail)
-        outer.append(self.split)
-        self.window.set_child(outer)
-        self.window.connect('notify::default-width', lambda *_a: self.layout(self.window.get_default_size()[0] < 760))
+        self.install_actions()
+        self.window.set_child(self.build_window())
+        self.window.connect('notify::default-width', lambda *_a: self.layout(self.window.get_default_size()[0] < NARROW))
         keys = Gtk.EventControllerKey()
         keys.connect('key-pressed', self.key_pressed)
         self.editor.add_controller(keys)
-        self.window.add_tick_callback(self.responsive)
         self.window.present()
+        self.watch_size()
         if self.narrow:
             self.window.set_default_size(480, 680)
+        self.set_connection('connecting')
         if self.fixture:
             self.preview()
         else:
@@ -229,6 +140,138 @@ class Messages(Gtk.Application):
                 pass
             self.refresh(True)
             self.poll = GLib.timeout_add_seconds(5, self.refresh)
+        self.update_composer()
+
+    def install_actions(self):
+        """Application actions with accelerators; also listed in the menu and tooltips."""
+        shortcuts = [('new-message', ['<Primary>n'], self.new_message),
+                     ('search', ['<Primary>f'], self.focus_search),
+                     ('refresh', ['<Primary>r', 'F5'], lambda *_a: self.refresh(True)),
+                     ('back', ['<Alt>Left'], self.go_back)]
+        for name, accels, handler in shortcuts:
+            action = Gio.SimpleAction.new(name, None)
+            action.connect('activate', handler)
+            self.add_action(action)
+            self.set_accels_for_action('app.' + name, accels)
+
+    def build_window(self):
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        outer.append(self.build_header())
+        self.split = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL, vexpand=True)
+        self.split.set_position(320)
+        self.split.set_shrink_start_child(False)
+        self.split.set_shrink_end_child(False)
+        self.split.set_start_child(self.build_sidebar())
+        self.split.set_end_child(self.build_detail())
+        outer.append(self.split)
+        return outer
+
+    def build_header(self):
+        header = Gtk.HeaderBar()
+        self.back = Gtk.Button(icon_name='go-previous-symbolic', tooltip_text=_('Conversations'), visible=False)
+        self.back.connect('clicked', self.go_back)
+        self.back.update_property([Gtk.AccessibleProperty.LABEL], [_('Conversations')])
+        header.pack_start(self.back)
+        header.set_title_widget(label(_('Messages'), 'title'))
+        new = Gtk.Button(icon_name='document-edit-symbolic', tooltip_text=_('New Message (Ctrl+N)'))
+        new.connect('clicked', self.new_message)
+        new.update_property([Gtk.AccessibleProperty.LABEL], [_('New Message')])
+        header.pack_start(new)
+        refresh = Gtk.Button(icon_name='view-refresh-symbolic', tooltip_text=_('Refresh iPhone Inbox (Ctrl+R)'))
+        refresh.connect('clicked', lambda *_args: self.refresh(True))
+        refresh.update_property([Gtk.AccessibleProperty.LABEL], [_('Refresh iPhone Inbox')])
+        header.pack_end(refresh)
+        menu = Gio.Menu()
+        for text, action, method in [(_('Import iPhone Pins…'), 'import-pins', self.import_pins), (_('Review Imported Pins…'), 'review-pins', self.review_pins), (_('Connect iPhone…'), 'setup', self.setup), (_('Advanced BlueFerry…'), 'advanced', self.advanced)]:
+            a = Gio.SimpleAction.new(action, None)
+            a.connect('activate', method)
+            self.add_action(a)
+            menu.append(text, 'app.' + action)
+        header.pack_end(Gtk.MenuButton(icon_name='open-menu-symbolic', menu_model=menu, tooltip_text=_('Menu')))
+        return header
+
+    def build_sidebar(self):
+        self.sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, width_request=260)
+        self.sidebar.add_css_class('ms-sidebar')
+        self.search = Gtk.SearchEntry(placeholder_text=_('Search conversations'))
+        self.search.add_css_class('ms-search')
+        self.search.connect('search-changed', lambda *_args: self.filter_rows())
+        self.sidebar.append(self.search)
+        self.pin_note = label('', 'ms-pin-note', xalign=0, wrap=True, visible=False)
+        self.pin_note.add_css_class('dim-label')
+        self.sidebar.append(self.pin_note)
+        self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
+        self.list.add_css_class('navigation-sidebar')
+        self.list.add_css_class('ms-list')
+        self.list.connect('row-selected', self.selected)
+        contacts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.favorites = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, visible=False)
+        self.favorites.append(label(_('Favorites'), 'ms-section', xalign=0))
+        self.favorite_grid = Gtk.Grid(column_homogeneous=True, row_spacing=8, column_spacing=4, margin_start=10, margin_end=10, margin_bottom=12)
+        self.favorites.append(self.favorite_grid)
+        contacts.append(self.favorites)
+        self.favorite_separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL, margin_start=12, margin_end=12, margin_bottom=8, visible=False)
+        contacts.append(self.favorite_separator)
+        contacts.append(self.list)
+        self.empty_list = empty_state('mail-message-new-symbolic', _('No Conversations'), _('Start one with the pencil button above.'))
+        self.empty_list.set_visible(False)
+        contacts.append(self.empty_list)
+        self.sidebar.append(Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER, child=contacts))
+        self.status_bar = build_status()
+        self.connection = self.status_bar.text
+        self.sidebar.append(self.status_bar.box)
+        return self.sidebar
+
+    def build_detail(self):
+        self.detail = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, width_request=280)
+        self.heading = Gtk.Box(spacing=12, visible=False)
+        self.heading.add_css_class('ms-heading')
+        self.heading_slot = Gtk.Box(valign=Gtk.Align.CENTER, hexpand=False)
+        self.heading.append(self.heading_slot)
+        titles = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1, valign=Gtk.Align.CENTER, hexpand=True)
+        self.title = label(_('Your conversations'), 'title-3', xalign=0, ellipsize=Pango.EllipsizeMode.END)
+        self.subtitle = label(_('Messages sent through your iPhone'), 'dim-label', xalign=0, ellipsize=Pango.EllipsizeMode.MIDDLE)
+        titles.append(self.title)
+        titles.append(self.subtitle)
+        self.heading.append(titles)
+        self.detail.append(self.heading)
+        self.notice = build_notice()
+        self.notice.retry.connect('clicked', self.retry_connection)
+        self.detail.append(self.notice.box)
+        self.stack = Gtk.Stack(vexpand=True, transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=150)
+        welcome = Granite.Placeholder(title=_('A little closer, wherever you work.'),
+                                      description=_('Choose a conversation or start a new message.\nYour iPhone sends and receives the texts.'),
+                                      icon=Gio.ThemedIcon.new('mail-message-new-symbolic'))
+        welcome.append_button(Gio.ThemedIcon.new('document-edit-symbolic'), _('New Message'),
+                              _('Write to anyone in your contacts')).connect('clicked', self.new_message)
+        # Granite's placeholder wants ~420px; let it scroll instead of forcing a tall window.
+        self.stack.add_named(Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER, child=welcome), 'welcome')
+        self.messages = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_start=20, margin_end=20, margin_top=8, margin_bottom=16)
+        self.message_scroll = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER, child=self.messages)
+        self.message_scroll.get_vadjustment().connect('value-changed', self.scrolled)
+        self.jump = Gtk.Button(label=_('New Messages'), halign=Gtk.Align.CENTER, valign=Gtk.Align.END, visible=False)
+        for css in ('suggested-action', 'pill', 'ms-jump'):
+            self.jump.add_css_class(css)
+        self.jump.connect('clicked', lambda *_a: self.scroll_bottom(True))
+        overlay = Gtk.Overlay(child=self.message_scroll)
+        overlay.add_overlay(self.jump)
+        self.stack.add_named(overlay, 'messages')
+        self.detail.append(self.stack)
+        self.composer = build_composer()
+        self.editor, self.send, self.send_status = self.composer.editor, self.composer.send, self.composer.status
+        self.editor.get_buffer().connect('changed', self.draft_changed)
+        self.send.connect('clicked', self.send_message)
+        self.detail.append(self.composer.box)
+        return self.detail
+
+    def watch_size(self):
+        """React to resizes without a per-frame tick callback."""
+        surface = self.window.get_surface()
+        if surface is None:
+            self.window.add_tick_callback(self.responsive)
+            return
+        surface.connect('layout', lambda _surface, width, _height: self.layout(width < NARROW))
+        self.apply_layout()
 
     def task(self, work, completed):
         future = self.pool.submit(work)
@@ -239,12 +282,10 @@ class Messages(Gtk.Application):
                 value, error = None, str(exc)
             GLib.idle_add(self.deliver, completed, value, error)
         future.add_done_callback(done)
-
     def deliver(self, completed, value, error):
         if not self.closed:
             completed(value, error)
         return False
-
     def refresh(self, inbox=False):
         if inbox:
             self.inbox_request_epoch += 1
@@ -269,15 +310,50 @@ class Messages(Gtk.Application):
         self.task(load, self.loaded)
         return True
 
+    def set_connection(self, state):
+        tone, text = CONNECTION[state]
+        self.connection_state = state
+        self.status_bar.text.set_label(text)
+        for name in ('ok', 'wait', 'off'):
+            self.status_bar.dot.remove_css_class('ms-' + name)
+        self.status_bar.dot.add_css_class('ms-' + tone)
+
+    def set_notice(self, text, retry=False):
+        self.notice.text.set_label(text)
+        self.notice.box.set_visible(bool(text))
+        self.notice.retry.set_visible(bool(text) and retry)
+        self.notice.retry.set_sensitive(not self.retrying)
+
+    def retry_connection(self, *_args):
+        """Reconnect the saved phone through BlueFerry; never re-pairs or edits audio policy."""
+        if self.retrying or self.closed:
+            return
+        self.retrying = True
+        self.set_connection('reconnecting')
+        self.set_notice(_('Reconnecting to your iPhone…'), retry=True)
+        def work():
+            if self.fixture:
+                raise RuntimeError('Preview cannot reconnect')
+            from connection import reconnect_existing
+            return reconnect_existing(cancelled=lambda: self.closed)
+        def finished(_status, error):
+            self.retrying = False
+            if error:
+                self.set_notice(_('Could not reconnect. Keep your iPhone nearby with Bluetooth on, or choose Connect iPhone.'), retry=True)
+                self.notice.text.set_tooltip_text(str(error))
+            self.refresh(True)
+        self.task(work, finished)
+
     def loaded(self, result, error):
         self.snapshot_pending = False
         if error:
             self.status = dict(map=False)
             self.last_map = False
-            self.connection.set_label(_('iPhone unavailable · conversations kept'))
-            self.notice.set_label(_('Messages are offline. Keep your iPhone nearby with Bluetooth on. Use Connect iPhone if it needs setup.'))
-            self.notice.set_visible(True)
+            self.set_connection('offline')
+            if not self.retrying:
+                self.set_notice(_('Messages are offline. Keep your iPhone nearby with Bluetooth on. Use Connect iPhone if it needs setup.'), retry=True)
             self.update_composer()
+            self.filter_rows()
             return
         status, threads, recent, warning, epoch = result
         self.status, self.last_map = status, bool(status.get('map'))
@@ -290,14 +366,20 @@ class Messages(Gtk.Application):
             self.inbox = recent
             self.last_refresh = time.time()
             self.inbox_requested = epoch != self.inbox_request_epoch
-        self.connection.set_label(_('iPhone connected · Messages ready') if self.last_map else _('iPhone reconnecting…'))
-        self.notice.set_label(warning or ('' if self.last_map else _('Waiting for message access. Existing conversations remain available.')))
-        self.notice.set_visible(bool(self.notice.get_label()))
+        self.set_connection('ready' if self.last_map else 'reconnecting')
+        if not self.retrying:
+            if warning:
+                self.set_notice(warning)
+            elif not self.last_map:
+                self.set_notice(_('Waiting for message access. Existing conversations remain available.'), retry=True)
+            else:
+                self.set_notice('')
+            self.notice.text.set_tooltip_text(None)
         if self.last_refresh:
             stamp = datetime.now().astimezone().strftime('%X') if recent is not None else self.checked_text
             self.checked_text = stamp
-            self.connection.set_tooltip_text(_('Recent iPhone inbox checked at %s. Up to 200 messages exposed by the phone; full iCloud history is not available.') % stamp)
-        combined = merge_inbox(threads, self.inbox)
+            self.status_bar.box.set_tooltip_text(_('Recent iPhone inbox checked at %s. Up to 200 messages exposed by the phone; full iCloud history is not available.') % stamp)
+        combined = resolve_contact_names(merge_inbox(threads, self.inbox), self.contact_names)
         # A phone-only/new conversation acquires a canonical backend identity
         # after the first live event. Move the draft without changing its route.
         for key, thread in self.threads.items():
@@ -308,34 +390,52 @@ class Messages(Gtk.Application):
                         self.model.drafts[match['key']] = self.model.drafts.pop(key)
                     if key in self.send_feedback:
                         self.send_feedback[match['key']] = self.send_feedback.pop(key)
+                    self.outbox.rekey(key, match['key'])
                     if self.model.selected == key:
                         self.model.selected = match['key']
                 elif thread.get('new') or key in self.model.pending:
                     combined.append(thread)
         self.threads = {t['key']: t for t in combined}
         self.load_pins()
+        self.load_contact_names(force=recent is not None)
         self.update_pin_note()
         self.populate()
         self.show_conversation()
         self.load_photos()
 
-    def photo_widget(self, data):
-        try:
-            loader = GdkPixbuf.PixbufLoader.new()
-            loader.set_size(42, 42)
-            loader.write(data)
-            loader.close()
-            texture = Gdk.Texture.new_for_pixbuf(loader.get_pixbuf())
-        except GLib.Error:
-            return None
-        picture = Gtk.Picture.new_for_paintable(texture)
-        picture.set_content_fit(Gtk.ContentFit.COVER)
-        picture.set_size_request(42, 42)
-        picture.set_can_shrink(True)
-        frame = Gtk.Box(overflow=Gtk.Overflow.HIDDEN, valign=Gtk.Align.CENTER)
-        frame.add_css_class('ms-photo')
-        frame.append(picture)
-        return frame
+    def load_contact_names(self, force=False):
+        """Page the cached phonebook so bare numbers show the person's name.
+
+        Presentation only: resolve_contact_names never changes a thread's
+        identity or recipients, and never guesses groups or ambiguous contacts.
+        """
+        if self.fixture or self.contacts_pending:
+            return
+        revision = (self.pin_profile, self.status.get('contacts'), self.status.get('contact_photo_revision'))
+        if not force and revision == self.contact_revision:
+            return
+        self.contacts_pending = True
+        def load():
+            client = BackendClient()
+            records = []
+            for offset in range(0, 10000, 150):
+                page = client.list_contacts(offset, 150)
+                records.extend(page)
+                if len(page) < 150:
+                    break
+            return contact_index(records)
+        def loaded(index, error):
+            self.contacts_pending = False
+            if error or revision[0] != self.pin_profile:
+                return
+            self.contact_names, self.contact_revision = index, revision
+            resolve_contact_names(self.threads.values(), index)
+            self.populate()
+            self.show_conversation()
+        self.task(load, loaded)
+
+    def photo_widget(self, data, px=AVATAR_PX['m']):
+        return photo_frame(data, px)
 
     def load_photos(self):
         if self.fixture or self.photo_pending or not self.status.get('contact_photos'):
@@ -357,15 +457,16 @@ class Messages(Gtk.Application):
             if error or revision != self.photo_revision:
                 return
             self.photo_cache.update(photos)
-            for key, (content, old) in [*self.avatars.items(), *self.favorite_avatars.items()]:
-                thread = self.threads.get(key, {})
-                address = (thread.get('recipients') or [''])[0]
-                data = photos.get(address)
-                if data and (photo := self.photo_widget(data)):
-                    content.remove(old)
-                    content.insert_child_after(photo, None)
-                    registry = self.favorite_avatars if content.has_css_class('ms-favorite-content') else self.avatars
-                    registry[key] = (content, photo)
+            for registry, size in ((self.avatars, 'm'), (self.favorite_avatars, 'l')):
+                for key, (slot, old) in list(registry.items()):
+                    thread = self.threads.get(key, {})
+                    data = photos.get((thread.get('recipients') or [''])[0])
+                    if data and not thread.get('is_group') and (photo := photo_frame(data, AVATAR_PX[size])):
+                        slot.remove(old)
+                        slot.append(photo)
+                        registry[key] = (slot, photo)
+            self.heading_signature = None
+            self.show_conversation()
             self.load_photos()
         self.task(load, loaded)
 
@@ -373,7 +474,11 @@ class Messages(Gtk.Application):
         order = ordered_keys(self.threads, self.pin_state)
         pinned = set(effective_choices(self.threads, self.pin_state))
         # Avoid destroying focus/selection when a status poll changes nothing.
-        signatures = [(key, self.threads[key]['name'], key in pinned, self.threads[key].get('unread_count', 0), self.threads[key]['messages'][-1].get('body', '') if self.threads[key]['messages'] else '') for key in order]
+        def last(thread):
+            return thread['messages'][-1] if thread['messages'] else {}
+        signatures = [(key, self.threads[key]['name'], key in pinned, self.threads[key].get('unread_count', 0),
+                       last(self.threads[key]).get('body', ''), last(self.threads[key]).get('outgoing', False),
+                       self.threads[key].get('last_ts', '')) for key in order]
         if signatures != getattr(self, 'row_signature', None):
             self.row_signature = signatures
             self.list.unselect_all()
@@ -386,44 +491,19 @@ class Messages(Gtk.Application):
             self.grid_filter_signature = None
             for key in order:
                 thread = self.threads[key]
-                row = Gtk.ListBoxRow()
+                address = (thread.get('recipients') or [''])[0]
+                photo = None if thread.get('is_group') else self.photo_cache.get(address)
+                row, slot, portrait = conversation_row(thread, photo=photo)
                 row.key = key
                 is_pinned = row.is_pinned = key in pinned
-                content = Gtk.Box(spacing=12)
-                content.add_css_class('ms-row')
-                avatar = label((thread['name'] or '?')[0].upper(), 'ms-avatar')
-                address = (thread.get('recipients') or [''])[0]
-                if not thread.get('is_group') and (data := self.photo_cache.get(address)):
-                    avatar = self.photo_widget(data) or avatar
-                content.append(avatar)
-                self.avatars[key] = (content, avatar)
-                text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, hexpand=True)
-                title = label(thread['name'], xalign=0, ellipsize=Pango.EllipsizeMode.END)
-                title.add_css_class('ms-contact-name')
-                if thread.get('unread_count'):
-                    title.add_css_class('heading')
-                text.append(title)
-                last = thread['messages'][-1].get('body', '') if thread['messages'] else _('New conversation')
-                text.append(label(last.replace('\n', ' '), 'dim-label', xalign=0, ellipsize=Pango.EllipsizeMode.END, max_width_chars=24))
-                content.append(text)
-                if is_pinned:
-                    pin_icon = Gtk.Image.new_from_icon_name('starred-symbolic')
-                    pin_icon.set_tooltip_text(_('Imported from Apple Messages · this computer keeps a snapshot'))
-                    content.append(pin_icon)
-                row.set_child(content)
                 self.rows[key] = row
+                self.avatars[key] = (slot, portrait)
                 self.list.append(row)
                 if is_pinned:
                     button = Gtk.ToggleButton(tooltip_text=thread['name'])
                     button.add_css_class('flat');button.add_css_class('ms-favorite')
                     button.update_property([Gtk.AccessibleProperty.LABEL], [thread['name']])
-                    tile = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5, halign=Gtk.Align.CENTER)
-                    tile.add_css_class('ms-favorite-content')
-                    portrait = label((thread['name'] or '?')[0].upper(), 'ms-favorite-avatar')
-                    if not thread.get('is_group') and (data := self.photo_cache.get(address)):
-                        portrait = self.photo_widget(data) or portrait
-                    tile.append(portrait)
-                    tile.append(label(thread['name'], xalign=.5, ellipsize=Pango.EllipsizeMode.END, max_width_chars=7))
+                    tile, favorite_slot, favorite_portrait = favorite_tile(thread, photo)
                     button.set_child(tile)
                     def choose(_button, identity=key):
                         self.list.unselect_all()
@@ -431,7 +511,7 @@ class Messages(Gtk.Application):
                         self.sync_favorite_selection()
                     button.connect('clicked', choose)
                     self.favorite_buttons[key] = button
-                    self.favorite_avatars[key] = (tile, portrait)
+                    self.favorite_avatars[key] = (favorite_slot, favorite_portrait)
             if self.model.selected in self.rows:
                 self.list.select_row(self.rows[self.model.selected])
         self.filter_rows()
@@ -440,11 +520,9 @@ class Messages(Gtk.Application):
     def sync_favorite_selection(self):
         for key, button in self.favorite_buttons.items():
             button.set_active(key == self.model.selected)
-
     def pin_notice(self, text):
         self.pin_note.set_label(text)
         self.pin_note.set_visible(bool(text))
-
     def load_pins(self):
         if self.fixture or self.pin_pending:
             return
@@ -473,7 +551,6 @@ class Messages(Gtk.Application):
             self.populate()
             self.load_photos()
         self.task(load, loaded)
-
     def update_pin_note(self):
         snapshot = self.pin_state.get('snapshot')
         if not snapshot:
@@ -486,7 +563,6 @@ class Messages(Gtk.Application):
         if snapshot.get('source_modified_at'):
             modified = datetime.fromisoformat(snapshot['source_modified_at']).astimezone().strftime('%x %X')
             self.pin_note.set_tooltip_text(self.pin_note.get_tooltip_text() + '\n' + (_('Apple pin settings last changed: %s') % modified))
-
     def import_pins(self, *_args):
         chooser = Gtk.FileDialog(title=_('Import iPhone Pins'))
         file_filter = Gtk.FileFilter(name=_('Apple Messages pin export'))
@@ -507,13 +583,11 @@ class Messages(Gtk.Application):
                     self.show_pin_review(snapshot)
             self.task(lambda: read_snapshot(path), loaded)
         chooser.open(self.window, None, selected)
-
     def review_pins(self, *_args):
         if self.pin_state.get('snapshot'):
             self.show_pin_review(self.pin_state['snapshot'], effective_choices(self.threads, self.pin_state))
         else:
             self.import_pins()
-
     def show_pin_review(self, snapshot, previous=None):
         dialog = Gtk.Window(title=_('Import iPhone Pins'), transient_for=self.window, destroy_with_parent=True, modal=True, default_width=480, default_height=540)
         header = Gtk.HeaderBar()
@@ -617,6 +691,12 @@ class Messages(Gtk.Application):
                 self.favorite_grid.attach(Gtk.Box(), 3, 0, 1, 1)
         self.favorites.set_visible(bool(favorites))
         self.favorite_separator.set_visible(bool(favorites) and ordinary)
+        # Say why the list is blank; stay quiet while the first load is in flight.
+        loading = not self.threads and self.connection_state in ('', 'connecting')
+        self.empty_list.set_visible(not (ordinary or favorites) and not loading)
+        self.empty_list.image.set_from_icon_name(icon_for('edit-find-symbolic') if query else icon_for('mail-message-new-symbolic'))
+        self.empty_list.title.set_label(_('No Results') if query else _('No Conversations'))
+        self.empty_list.detail.set_label(_('Try a different name or word.') if query else _('Start one with the pencil button above.'))
 
     def selected(self, _list, row):
         if row is None or row.key == self.model.selected:
@@ -624,14 +704,42 @@ class Messages(Gtk.Application):
         self.model.selected = row.key
         self.sync_favorite_selection()
         self.rendered = None
+        self.jump.set_visible(False)
         self.editor.get_buffer().set_text(self.model.drafts.get(row.key, ''))
         self.show_conversation()
-        thread = self.threads[row.key]
-        if not self.fixture and not thread.get('inbox_only') and not thread.get('new'):
-            self.task(lambda: BackendClient().mark_thread_read(thread['key']), lambda _v, _e: None)
+        self.apply_layout()
+        self.mark_read(self.threads[row.key])
+
+    def mark_read(self, thread):
+        """Ask BlueFerry to mark a thread read, once per newest message.
+
+        Opening a conversation and new messages arriving in an open, focused
+        one both come through here, so the phone is asked a single time.
+        """
+        if self.fixture or thread.get('inbox_only') or thread.get('new'):
+            return
+        key = thread['key']
+        marker = (thread['messages'][-1].get('handle') if thread['messages'] else '', thread.get('unread_count', 0))
+        if self.read_marked.get(key) == marker:
+            return
+        self.read_marked[key] = marker
+        # A failed request must be retried on the next opportunity.
+        self.task(lambda: BackendClient().mark_thread_read(key),
+                  lambda _value, error: self.read_marked.pop(key, None) if error else None)
+
+    def update_heading_avatar(self, thread):
+        address = (thread.get('recipients') or [''])[0]
+        data = None if thread.get('is_group') else self.photo_cache.get(address)
+        signature = (thread['key'], thread['name'], bool(data))
+        if signature == self.heading_signature:
+            return
+        self.heading_signature = signature
+        clear(self.heading_slot)
+        self.heading_slot.append(avatar(thread['name'], identity_of(thread), 's', thread.get('is_group'), data))
 
     def show_conversation(self):
         thread = self.threads.get(self.model.selected)
+        self.heading.set_visible(thread is not None)
         if thread is None:
             self.stack.set_visible_child_name('welcome')
             self.update_composer()
@@ -639,35 +747,152 @@ class Messages(Gtk.Application):
         self.stack.set_visible_child_name('messages')
         self.title.set_label(thread['name'])
         self.subtitle.set_label(', '.join(thread.get('recipients', [])))
-        signature = (thread['key'], thread['messages'])
+        self.update_heading_avatar(thread)
+        pending = self.outbox.visible(thread['key'], thread['messages'])
+        pending_state = [(e.body, e.state) for e in pending]
+        signature = (thread['key'], thread['messages'], pending_state)
         if signature != self.rendered:
             adjustment = self.message_scroll.get_vadjustment()
             near_bottom = adjustment.get_value() + adjustment.get_page_size() >= adjustment.get_upper() - 80
             switching = self.rendered is None or self.rendered[0] != thread['key']
-            self.rendered = (thread['key'], [dict(m) for m in thread['messages']])
-            clear(self.messages)
-            if not thread['messages']:
+            count = len(thread['messages']) + len(pending)
+            grew = not switching and count > self.rendered_count
+            self.rendered = (thread['key'], [dict(m) for m in thread['messages']], pending_state)
+            self.rendered_count = count
+            # Messages sent from this window show at once, dimmed until the phone confirms.
+            stamp = datetime.now().astimezone().isoformat(timespec='seconds')
+            shown = list(thread['messages']) + [dict(body=e.body, outgoing=True, timestamp=stamp, sender='', _state=e.state) for e in pending]
+            self.stop_media_animation()
+            render_messages(self.messages, layout_messages(shown, bool(thread.get('is_group'))), self.media_card)
+            if not shown:
                 self.messages.append(label(_('Say hello.'), 'dim-label', vexpand=True, valign=Gtk.Align.CENTER))
-            for message in thread['messages']:
-                outgoing = message.get('outgoing', False)
-                line = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, halign=Gtk.Align.END if outgoing else Gtk.Align.START)
-                bubble = label(message.get('body', ''), 'ms-bubble', wrap=True, selectable=True, xalign=0, max_width_chars=48, natural_wrap_mode=Gtk.NaturalWrapMode.NONE)
-                bubble.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
-                if outgoing:
-                    bubble.add_css_class('ms-outgoing')
-                line.append(bubble)
-                stamp = message.get('display_timestamp') or message.get('timestamp', '')
-                line.append(label(stamp, 'ms-time', xalign=1 if outgoing else 0))
-                self.messages.append(line)
-            if near_bottom or switching:
+            if near_bottom or switching or self.force_scroll:
+                self.force_scroll = False
                 GLib.idle_add(self.scroll_bottom)
+            elif grew:
+                self.jump.set_visible(True)
+        # An open, focused conversation counts as read when new messages arrive.
+        if thread.get('unread_count') and self.window.is_active():
+            self.mark_read(thread)
         self.update_composer()
 
-    def scroll_bottom(self):
+    # --- Link previews (images, GIFs, YouTube) -----------------------------
+    # Fetching is bounded and public-HTTPS only; see message_media.py.
+
+    def stop_media_animation(self):
+        for timer in self.media_timers:
+            GLib.source_remove(timer)
+        self.media_timers.clear()
+
+    def media_card(self, url, automatic=False):
+        """A preview card for one link. Sent links load at once; incoming ones ask first."""
+        video = bool(youtube_id(url))
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, halign=Gtk.Align.END if automatic else Gtk.Align.START, valign=Gtk.Align.START)
+        card.add_css_class('ms-media')
+        title = label(_('YouTube') if video else _('Image'), xalign=0)
+        card.append(title)
+        load = Gtk.Button(label=_('Load Preview'))
+        card.append(load)
+        card.append(Gtk.LinkButton(uri=url, label=_('Open YouTube') if video else _('Open Image')))
+
+        def completed(preview):
+            if not card.get_root():
+                return
+            if preview is None:
+                title.set_label(_('Preview unavailable · open the link to view it.'))
+                title.set_wrap(True)
+                title.set_max_width_chars(30)
+                load.set_sensitive(True)
+                return
+            adjustment = self.message_scroll.get_vadjustment()
+            bottom = adjustment.get_value() + adjustment.get_page_size() >= adjustment.get_upper() - 80
+            clear(card)
+            width, height = preview.size
+            picture = Gtk.Picture(can_shrink=True, content_fit=Gtk.ContentFit.CONTAIN, width_request=width, height_request=height)
+            picture.update_property([Gtk.AccessibleProperty.LABEL], [preview.title])
+            def frame(index):
+                picture.set_paintable(Gdk.MemoryTexture.new(width, height, Gdk.MemoryFormat.R8G8B8A8, GLib.Bytes.new(preview.frames[index]), width * 4))
+            frame(0)
+            card.append(picture)
+            card.append(label(preview.title, 'heading', xalign=0, wrap=True, max_width_chars=30))
+            source_width, source_height = preview.source_size
+            info = f'{source_width} × {source_height}'
+            if len(preview.frames) > 1:
+                info += ' · ' + _('%d frames') % len(preview.frames)
+            card.append(label(info, 'dim-label', xalign=0))
+            card.append(Gtk.LinkButton(uri=url, label=_('Watch on YouTube') if preview.kind == 'youtube' else _('Open Original')))
+            if len(preview.frames) > 1 and Gtk.Settings.get_default().props.gtk_enable_animations:
+                position = [0]
+                def schedule(delay):
+                    holder = {}
+                    def tick():
+                        self.media_timers.discard(holder['id'])
+                        if self.closed or not picture.get_root():
+                            return False
+                        if picture.get_mapped():
+                            position[0] = (position[0] + 1) % len(preview.frames)
+                            frame(position[0])
+                        schedule(preview.durations[position[0]] if picture.get_mapped() else 500)
+                        return False
+                    holder['id'] = GLib.timeout_add(delay, tick)
+                    self.media_timers.add(holder['id'])
+                schedule(preview.durations[0])
+            if bottom:
+                GLib.idle_add(self.scroll_bottom)
+
+        def start(*_args):
+            if url in self.media_cache:
+                self.media_cache.move_to_end(url)
+                GLib.idle_add(lambda: completed(self.media_cache.get(url)) or False)
+                return
+            if self.fixture:
+                title.set_label(_('Preview fixture · no network request'))
+                return
+            if url in self.media_pending:
+                self.media_pending[url].append(completed)
+                load.set_sensitive(False)
+                return
+            if len(self.media_pending) >= 6:
+                title.set_label(_('Other previews are loading. Try again shortly.'))
+                return
+            load.set_sensitive(False)
+            title.set_label(_('Loading preview…'))
+            self.media_pending[url] = [completed]
+            future = self.media_pool.submit(load_preview, url)
+            def fetched(result):
+                try:
+                    preview = result.result()
+                except Exception:
+                    preview = None
+                def deliver():
+                    callbacks = self.media_pending.pop(url, [])
+                    if self.closed:
+                        return False
+                    if preview:
+                        self.media_cache[url] = preview
+                        while len(self.media_cache) > 8 or sum(p.memory for p in self.media_cache.values()) > 24 * 1024 * 1024:
+                            self.media_cache.popitem(last=False)
+                    for callback in callbacks:
+                        callback(preview)
+                    return False
+                GLib.idle_add(deliver)
+            future.add_done_callback(fetched)
+
+        load.connect('clicked', start)
+        if url in self.media_cache or automatic or url in self.media_pending:
+            GLib.idle_add(lambda: start() or False)
+        return card
+
+    def scroll_bottom(self, *_args):
         if not self.closed:
             a = self.message_scroll.get_vadjustment()
             a.set_value(max(a.get_lower(), a.get_upper() - a.get_page_size()))
+            self.jump.set_visible(False)
         return False
+
+    def scrolled(self, adjustment):
+        if adjustment.get_value() + adjustment.get_page_size() >= adjustment.get_upper() - 80:
+            self.jump.set_visible(False)
 
     def draft_changed(self, buffer):
         if self.model.selected:
@@ -679,14 +904,31 @@ class Messages(Gtk.Application):
         key = self.model.selected
         thread = self.threads.get(key)
         pending = key in self.model.pending
+        draft = self.model.drafts.get(key, '')
         self.editor.set_sensitive(bool(thread))
-        self.send.set_sensitive(bool(thread and thread.get('reply_ready') and self.status.get('map') and self.model.drafts.get(key, '').strip() and not pending))
+        self.send.set_sensitive(bool(thread and thread.get('reply_ready') and self.status.get('map') and draft.strip() and not pending))
+        self.composer.send_revealer.set_reveal_child(bool(draft.strip()) or pending)
+        self.composer.face.set_visible_child_name('busy' if pending else 'icon')
+        (self.composer.spinner.start if pending else self.composer.spinner.stop)()
+        if not thread:
+            hint = _('Choose a conversation to write a message.')
+        elif not thread.get('reply_ready'):
+            hint = _('Replies are off until the group’s participants are confirmed.')
+        elif not self.status.get('map'):
+            hint = _('Offline · your draft is kept')
+        else:
+            hint = _('Message')
+        self.composer.placeholder.set_label(hint)
+        self.composer.placeholder.set_visible(not draft)
+        text = ''
         if pending:
-            self.send_status.set_label(_('Sending…'))
+            text = _('Sending…')
         elif thread and not thread.get('reply_ready'):
-            self.send_status.set_label(_('Check the group participants in Advanced BlueFerry before replying.'))
+            text = _('Check the group participants in Advanced BlueFerry before replying.')
         elif thread:
-            self.send_status.set_label(self.send_feedback.get(key) or (_('Ctrl+Enter to send · Enter for a new line') if self.status.get('map') else _('Offline · your draft is kept while this window is open')))
+            text = self.send_feedback.get(key) or ((_('Ctrl+Enter to send · Enter for a new line') if self.status.get('map') else _('Offline · your draft is kept while this window is open')) if draft.strip() else '')
+        self.send_status.set_label(text)
+        self.composer.revealer.set_reveal_child(bool(text))
 
     def key_pressed(self, _controller, key, _code, modifiers):
         if key in (Gdk.KEY_Return, Gdk.KEY_KP_Enter) and modifiers & Gdk.ModifierType.CONTROL_MASK:
@@ -703,8 +945,12 @@ class Messages(Gtk.Application):
             attempt = self.model.prepare(thread)
         except ValueError as error:
             self.send_status.set_label(str(error))
+            self.composer.revealer.set_reveal_child(True)
             return
+        entry = self.outbox.add(attempt.key, attempt.body, thread['messages'])
+        self.force_scroll = True
         self.update_composer()
+        self.show_conversation()
         def send():
             if self.fixture:
                 raise RuntimeError('Preview cannot send messages')
@@ -714,27 +960,44 @@ class Messages(Gtk.Application):
             return client.send(attempt.recipient, attempt.body)
         def sent(_transfer, error):
             self.model.finish(attempt, not error)
+            if error:
+                self.outbox.failed(entry)
+            else:
+                self.outbox.delivered(entry)
             if self.model.selected == attempt.key:
                 self.editor.get_buffer().set_text(self.model.drafts.get(attempt.key, ''))
             self.send_feedback[attempt.key] = _('Could not send. Your draft is kept; choose Send to retry.') if error else _('Sent through your iPhone')
             self.update_composer()
+            self.show_conversation()
             self.refresh()
         self.task(send, sent)
 
+    def focus_search(self, *_args):
+        if self.sidebar.get_visible():
+            self.search.grab_focus()
+
     def new_message(self, *_args):
-        dialog = Gtk.Window(title=_('New Message'), transient_for=self.window, modal=True, default_width=460, default_height=420)
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin_start=18, margin_end=18, margin_top=18, margin_bottom=18)
-        box.append(label(_('To'), 'title-2', xalign=0))
+        dialog = Gtk.Window(title=_('New Message'), transient_for=self.window, modal=True, destroy_with_parent=True, default_width=440, default_height=500)
+        header = Gtk.HeaderBar()
+        header.set_title_widget(label(_('New Message'), 'title'))
+        cancel = Gtk.Button(label=_('Cancel'))
+        cancel.connect('clicked', lambda *_a: dialog.close())
+        header.pack_start(cancel)
+        dialog.set_titlebar(header)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin_start=16, margin_end=16, margin_top=14, margin_bottom=16)
         entry = Gtk.SearchEntry(placeholder_text=_('Name, phone number, or email'))
+        entry.update_property([Gtk.AccessibleProperty.LABEL], [_('To')])
         box.append(entry)
-        results = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
-        box.append(Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER, child=results))
         hint = label(_('Choose a contact or enter a complete address.'), 'dim-label', wrap=True, xalign=0)
         box.append(hint)
+        results = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE, activate_on_single_click=True)
+        results.add_css_class('navigation-sidebar')
+        box.append(Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER, child=results))
         use = Gtk.Button(label=_('Start Conversation'), sensitive=False)
         use.add_css_class('suggested-action')
         box.append(use)
         dialog.set_child(box)
+        dialog.set_default_widget(use)
         state = dict(generation=0, alive=True)
         dialog.connect('close-request', lambda *_a: state.update(alive=False) or False)
         def choose(name, address):
@@ -753,6 +1016,26 @@ class Messages(Gtk.Application):
             state['alive'] = False
             dialog.destroy()
             self.editor.grab_focus()
+        def add_result(name, address):
+            row = Gtk.ListBoxRow()
+            row.contact = (name, address)
+            content = Gtk.Box(spacing=12, margin_top=6, margin_bottom=6, margin_start=4, margin_end=4)
+            content.append(avatar(name or address, address, 's'))
+            texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, valign=Gtk.Align.CENTER)
+            texts.append(label(name or address, xalign=0, ellipsize=Pango.EllipsizeMode.END))
+            if name:
+                texts.append(label(address, 'dim-label', xalign=0, ellipsize=Pango.EllipsizeMode.MIDDLE))
+            content.append(texts)
+            row.set_child(content)
+            row.update_property([Gtk.AccessibleProperty.LABEL], [name + ', ' + address if name else address])
+            results.append(row)
+        def show_recents():
+            clear(results)
+            recent = [t for t in sorted(self.threads.values(), key=lambda t: t.get('last_ts', ''), reverse=True)
+                      if not t.get('is_group') and len(t.get('recipients', [])) == 1 and not t.get('new')][:8]
+            for thread in recent:
+                add_result(thread['name'], thread['recipients'][0])
+            hint.set_label(_('Recent conversations') if recent else _('Choose a contact or enter a complete address.'))
         def changed(*_a):
             state['generation'] += 1
             generation = state['generation']
@@ -762,31 +1045,54 @@ class Messages(Gtk.Application):
                 use.set_sensitive(True)
             except ValueError:
                 use.set_sensitive(False)
-            clear(results)
             if len(query) < 2:
+                show_recents()
                 return
             def found(matches, error):
                 if not state['alive'] or generation != state['generation']:
                     return
                 clear(results)
-                hint.set_label(_('Could not search contacts.') if error else _('Choose the address you want to message.'))
+                hint.set_label(_('Could not search contacts.') if error else (_('Choose the address you want to message.') if matches else _('No matching contacts. A complete number or email works too.')))
                 for name, address in (matches or [])[:30]:
-                    button = Gtk.Button()
-                    content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3, margin_top=6, margin_bottom=6)
-                    content.append(label(name, xalign=0, ellipsize=Pango.EllipsizeMode.END))
-                    content.append(label(address, 'dim-label', xalign=0, ellipsize=Pango.EllipsizeMode.MIDDLE))
-                    button.set_child(content)
-                    button.add_css_class('flat')
-                    button.connect('clicked', lambda _b, n=name, a=address: choose(n, a))
-                    results.append(button)
+                    add_result(name, address)
             self.task(lambda: [] if self.fixture else BackendClient().find_contacts(query), found)
+        def activated(*_a):
+            # A complete address typed by the user wins; otherwise take the first match.
+            if use.get_sensitive():
+                choose('', entry.get_text())
+            elif (first := results.get_row_at_index(0)):
+                choose(*first.contact)
+        def entry_key(_c, key, _code, _mods):
+            if key == Gdk.KEY_Down and (first := results.get_row_at_index(0)):
+                results.select_row(first)
+                first.grab_focus()
+                return True
+            return False
+        def dialog_key(_c, key, _code, _mods):
+            if key == Gdk.KEY_Escape:
+                dialog.close()
+                return True
+            return False
         entry.connect('search-changed', changed)
+        entry.connect('activate', activated)
+        results.connect('row-activated', lambda _l, row: choose(*row.contact))
         use.connect('clicked', lambda *_a: choose('', entry.get_text()))
+        for widget, handler, phase in ((entry, entry_key, Gtk.PropagationPhase.BUBBLE), (dialog, dialog_key, Gtk.PropagationPhase.CAPTURE)):
+            controller = Gtk.EventControllerKey()
+            controller.set_propagation_phase(phase)
+            controller.connect('key-pressed', handler)
+            widget.add_controller(controller)
+        show_recents()
         dialog.present()
+        entry.grab_focus()
 
     def responsive(self, *_args):
-        self.layout(self.window.get_width() < 760)
+        self.apply_layout()
         return not self.closed
+
+    def apply_layout(self):
+        width = self.window.get_width() or self.window.get_default_size()[0]
+        self.layout(width < NARROW)
 
     def layout(self, narrow):
         selected = bool(self.model.selected)
@@ -797,11 +1103,12 @@ class Messages(Gtk.Application):
     def go_back(self, *_args):
         self.model.selected = ''
         self.list.unselect_all()
-        self.stack.set_visible_child_name('welcome')
+        self.sync_favorite_selection()
+        self.show_conversation()
+        self.apply_layout()
 
     def setup(self, *_args):
         subprocess.Popen([str(Path.home()/'.local/bin/mseries-phone-setup')])
-
     def advanced(self, *_args):
         subprocess.Popen(['blueferry-gtk'])
 
@@ -812,6 +1119,8 @@ class Messages(Gtk.Application):
         if self.sleep_watch:
             self.sleep_watch.remove()
         self.pool.shutdown(wait=False, cancel_futures=True)
+        self.media_pool.shutdown(wait=False, cancel_futures=True)
+        self.stop_media_animation()
         return False
 
     def sleep_changed(self, sleeping):
@@ -819,9 +1128,33 @@ class Messages(Gtk.Application):
             self.refresh(True)
 
     def preview(self):
+        """Credential-free fixture used by tests and screenshots; it never touches Bluetooth."""
+        now = datetime.now().astimezone()
+        def at(**ago):
+            return (now - timedelta(**ago)).isoformat(timespec='seconds')
+        def msg(handle, body, outgoing, when, sender=''):
+            return dict(handle=handle, body=body, outgoing=outgoing, timestamp=when, sender=sender)
+        alex = [msg('demo-a', 'Did you get the new desktop running?', False, at(days=1, hours=1)),
+                msg('demo-b', 'Setting it up now. Wish me luck.', True, at(days=1, hours=1, minutes=-2)),
+                msg('demo1', 'Made it home! How is the new desktop?', False, at(hours=3)),
+                msg('demo2', 'Even better now. Messages are right here with everything else.', True, at(hours=2, minutes=58)),
+                msg('demo2b', 'Links work too: https://elementary.io/docs/human-interface-guidelines', True, at(hours=2, minutes=58, seconds=-20)),
+                msg('demo3', 'That looks so much easier. See you for coffee tomorrow ☕', False, at(hours=2, minutes=55))]
         self.status = dict(map=True)
-        self.connection.set_label(_('iPhone connected · Messages ready'))
-        self.threads = {'demo': dict(key='demo', name='Alex Morgan', recipients=['+15550100123'], reply_ready=True, messages=[dict(handle='demo1', body='Made it home! How is the new desktop?', outgoing=False, timestamp='Today, 11:42'), dict(handle='demo2', body='Even better now. Messages are right here with everything else.', outgoing=True, timestamp='Today, 11:43'), dict(handle='demo3', body='That looks so much easier. See you for coffee tomorrow ☕', outgoing=False, timestamp='Today, 11:44')]), 'demo2': dict(key='demo2', name='A very long contact name that should fit comfortably', recipients=['+15550100124'], reply_ready=True, messages=[dict(body='This is a preview conversation.', outgoing=False, timestamp='Yesterday')])}
+        self.set_connection('ready')
+        self.threads = {
+            'demo': dict(key='demo', name='Alex Morgan', recipients=['+15550100123'], reply_ready=True, messages=alex, last_ts=alex[-1]['timestamp']),
+            'demo2': dict(key='demo2', name='A very long contact name that should fit comfortably', recipients=['+15550100124'], reply_ready=True,
+                          messages=[msg('demo4', 'This is a preview conversation.', False, at(days=1))], last_ts=at(days=1)),
+            'family': dict(key='family', name='Family', recipients=['+15550100126', '+15550100127'], is_group=True, reply_ready=True,
+                           messages=[msg('fam1', 'Dinner at 7?', False, at(minutes=50), '+15550100126'),
+                                     msg('fam2', 'I can bring dessert', False, at(minutes=48), '+15550100127'),
+                                     msg('fam3', 'Perfect, see you both then', True, at(minutes=40))], last_ts=at(minutes=40)),
+            'jordan': dict(key='jordan', name='Jordan Lee', recipients=['+15550100125'], reply_ready=True, unread_count=2,
+                           messages=[msg('jl1', 'Running ten minutes late', False, at(minutes=12)), msg('jl2', 'Save me a seat?', False, at(minutes=11))], last_ts=at(minutes=11)),
+            'sam': dict(key='sam', name='Sam Rivera', recipients=['+15550100128'], reply_ready=True,
+                        messages=[msg('sr1', 'Sounds good, thanks!', True, at(days=3))], last_ts=at(days=3)),
+        }
         self.populate()
         self.list.select_row(self.rows['demo'])
 
