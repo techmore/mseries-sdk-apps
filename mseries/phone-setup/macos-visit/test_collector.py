@@ -36,7 +36,7 @@ elif name=='sw_vers': print('15.7')
 elif name=='caffeinate' or name=='open' or name=='sync': pass
 elif name=='df': print('Filesystem 1024-blocks Used Available Capacity Mounted on\\nx 999999999 0 999999999 0% /')
 elif name=='diskutil': print('fixture-volume')
-elif name=='PlistBuddy': print('exfat' if 'FilesystemType' in args[1] else 'false')
+elif name=='PlistBuddy': print(('apfs' if mode=='bad-filesystem' else 'exfat') if 'FilesystemType' in args[1] else ('true' if mode=='internal' else 'false'))
 elif name=='osascript':
  if '-e' in args: print(os.environ['MOCK_DRIVE']+'/')
  else:
@@ -94,7 +94,7 @@ else: raise RuntimeError(name)
                                       text=True, capture_output=True, timeout=30)
             result = execute()
             receipt = drive/'MSeries-Linux-Return/COLLECTION-COMPLETE.txt'
-            if mode == 'ok':
+            if mode in ('ok', 'internal'):
                 self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
                 self.assertTrue(receipt.is_file())
                 self.assertNotIn(base64.b64encode(b'OABS\0'+b'x'*120).decode(), result.stdout)
@@ -108,6 +108,8 @@ else: raise RuntimeError(name)
                 self.assertFalse(receipt.exists(), result.stdout+result.stderr)
 
     def test_complete_and_resume(self): self.run_case(twice=True)
+    def test_internal_exfat_allowed(self): self.run_case('internal')
+    def test_apfs_rejected(self): self.run_case('bad-filesystem')
     def test_invalid_hardware_stops(self): self.run_case('bad-hardware')
     def test_restore_failure_stops(self): self.run_case('bad-restore')
     def test_native_startup_failure_stops(self): self.run_case('bad-native-startup')

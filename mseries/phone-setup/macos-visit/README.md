@@ -14,7 +14,7 @@ time. Existing partial downloads resume, completed restore/startup steps are
 retained. An interrupted restore is preserved for diagnosis and requires renaming
 `guest` to `guest-incomplete` before retrying; the script never overwrites it.
 
-The remaining manual actions are selecting the external folder, copying the code
+The remaining manual actions are selecting the shared folder, copying the code
 from Mac Hardware Info, and confirming guest Setup Assistant appeared after
 shutting down that guest. The collector checks the actual guest identity, relative
 storage links, disk/AUX sizes, download hashes, and every transferred file hash.
@@ -23,8 +23,11 @@ proof. This confirms collection and native startup; Linux KVM compatibility,
 Bubbles activation and dock save/restore remain unverified. Do not reboot just
 because a file exists: wait for **COLLECTION COMPLETE**.
 
-If you lack the storage, stop before rebooting into macOS. The script deliberately
-requires a Linux-readable external destination for the full VM bundle. A cloud
+If you lack the storage, stop before rebooting into macOS. The script requires a Linux-readable exFAT destination for the full VM bundle.
+An existing internal exFAT partition is accepted; an ordinary folder or another
+APFS volume inside the encrypted macOS container is not. Creating an internal
+shared partition requires separately resizing the macOS APFS container; the
+collector never changes partition layouts. A cloud
 export of the small hardware code alone does not satisfy that requirement.
 
 The older individual steps below remain available for troubleshooting.

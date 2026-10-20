@@ -15,16 +15,16 @@ mkdir -p "$stage"
 caffeinate -i -w $$ &
 printf '%s\n' 'MSeries: collect Bubbles activation + Machine Lab guest in one visit.'
 printf '%s\n' 'This can take hours. Keep AC power connected. No Apple Account login is needed.'
-printf '%s\n' 'Choose an EXISTING folder on an external exFAT drive (100 GiB free). No drive is formatted.'
-transfer=$(osascript -e 'POSIX path of (choose folder with prompt "Choose an external exFAT folder for the private Linux return bundle")')
+printf '%s\n' 'Choose an EXISTING folder on shared exFAT storage (internal or external, 100 GiB free). No partition is created or formatted.'
+transfer=$(osascript -e 'POSIX path of (choose folder with prompt "Choose a shared exFAT folder (internal or external) for the private Linux return bundle")')
 transfer=${transfer%/}
 [ -d "$transfer" ] && [ -w "$transfer" ] || fail 'Transfer folder is not writable.'
 device=$(df -P "$transfer" | awk 'END {print $1}')
 diskutil info -plist "$device" > "$stage/transfer-volume.plist"
 fs=$(/usr/libexec/PlistBuddy -c 'Print :FilesystemType' "$stage/transfer-volume.plist")
 [ "$fs" = exfat ] || [ "$fs" = ExFAT ] || fail 'Choose exFAT: Linux cannot read this Mac APFS installation, and FAT32 cannot hold the guest.'
-internal=$(/usr/libexec/PlistBuddy -c 'Print :Internal' "$stage/transfer-volume.plist" 2>/dev/null || echo unknown)
-[ "$internal" = false ] || fail 'Choose a verified external volume; this folder is internal or its location could not be verified.'
+# Existing internal exFAT partitions are valid too. APFS and FAT32 remain rejected.
+# Partition creation/resizing is deliberately outside this collector.
 bundle="$transfer/MSeries-Linux-Return"
 if [ -e "$bundle" ] && [ ! -f "$bundle/.mseries-collector-owner" ]; then
   fail 'An unrelated MSeries-Linux-Return folder exists. Rename it before continuing.'
@@ -143,7 +143,7 @@ if [ ! -f "$stage/native-startup-confirmed" ]; then
 fi
 dd if="$guest/aux.img" of="$guest/aux.img.trimmed" bs=16384 skip=1 2>/dev/null
 [ "$(stat -f %z "$guest/aux.img.trimmed")" -eq $(( $(stat -f %z "$guest/aux.img") - 16384 )) ] || fail 'Trimmed AUX size mismatch.'
-printf '\n5/6 Private bundle, checksums and external transfer\n'
+printf '\n5/6 Private bundle, checksums and shared-volume transfer\n'
 # A failed retry must never leave an old completion marker looking current.
 mkdir -p "$bundle"
 rm -f "$bundle/COLLECTION-COMPLETE.txt"
@@ -165,19 +165,19 @@ for name in "${files[@]}" SHA256SUMS; do
   rsync -a --progress "$stage/$name" "$bundle/$name"
 done
 printf '\n6/6 Re-read every transferred file and verify its checksum\n'
-(cd "$bundle" && shasum -a 256 -c SHA256SUMS) || fail 'External copy did not verify. Keep macOS running and rerun.'
+(cd "$bundle" && shasum -a 256 -c SHA256SUMS) || fail 'Shared-volume copy did not verify. Keep macOS running and rerun.'
 valid_hardware "$bundle/mac-hardware.txt" || fail 'Transferred hardware code invalid.'
 validate_config "$bundle/guest/vm.json" || fail 'Transferred guest config invalid.'
 sync
 cat > "$bundle/COLLECTION-COMPLETE.txt" <<TXT
-Collection and external transfer verified: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
+Collection and shared-volume transfer verified: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 Native host macOS: $version
 All manifest SHA-256 checks passed after transfer.
 Native guest graphical startup and shutdown confirmed by owner.
 Linux KVM boot and Bubbles activation remain to be tested.
 TXT
 sync
-printf '\nCOLLECTION COMPLETE — safe to return to Linux after ejecting the drive.\n'
+printf '\nCOLLECTION COMPLETE — ready to return to Linux. Eject the drive first if it is external.\n'
 printf 'Verified bundle: %s\n' "$bundle"
 printf '%s\n' 'This certifies file collection, native startup and transfer. Linux compatibility is still unverified.'
 printf '%s\n' 'Keep the macOS staging copy until Linux activation and VM import are checked.'
