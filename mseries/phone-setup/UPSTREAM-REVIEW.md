@@ -3,6 +3,11 @@
 Scope: sending and receiving texts through BlueFerry on this desktop. This
 review does not qualify message delivery or add another setup interface.
 
+Conversation-pin import is a separate requested feature. The
+[2026-10-20 pin-sync investigation](PIN-SYNC-RESEARCH.md) records Apple/private
+API evidence, current public implementations and remaining Linux access gates.
+Working text delivery and contact sync do not establish access to iPhone pins.
+
 ## Versions and primary sources
 
 - BlueFerry upstream main and our installed backend/GTK source:
