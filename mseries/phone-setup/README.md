@@ -61,13 +61,19 @@ that evidence.
 On native macOS, open Terminal and run these two lines:
 
 ```sh
-curl --fail --location 'https://raw.githubusercontent.com/techmore/ElementaryOS_MSeries/ef193905feaffc88a629d99b6227180a31cf45a9/mseries/phone-setup/macos-visit/Collect-Everything.command' -o "$HOME/Downloads/Collect-Everything.command"
+curl --fail --location 'https://raw.githubusercontent.com/techmore/ElementaryOS_MSeries/adde4b8c27ffd27fd7b0995ff0650d7b65f7e7f6/mseries/phone-setup/macos-visit/Collect-Everything.command' -o "$HOME/Downloads/Collect-Everything.command"
 /bin/bash "$HOME/Downloads/Collect-Everything.command"
 ```
 
 Before starting: AC power, internet, native Apple Silicon macOS 13+, **100 GiB
-free on macOS and 100 GiB free on an external exFAT drive**. No Homebrew is needed.
-The script selects an existing external folder; it never formats a drive.
+free on macOS and 100 GiB free on shared exFAT storage (internal or external)**. No Homebrew is needed.
+The script selects an existing exFAT folder; it never formats a drive.
+Without an external drive, use a separate internal exFAT partition. A proposed
+120 GiB shared partition must be created separately by shrinking the macOS APFS
+container after checking its capacity and backups. This is not the same as adding
+an APFS volume. No partition changes have been performed or automated. The
+existing macOS data volume cannot be unlocked by this Linux setup; Linux root
+currently has only about 11 GiB free.
 
 It downloads and checks the Mac helper, macosvm and Ventura restore image; guides
 you through the full OABS hardware export; collects native firmware/provenance;
@@ -75,18 +81,18 @@ restores the guest; starts it for a graphical check and guest shutdown; and
 re-reads checksums for every transferred file. Completed steps and interrupted
 downloads resume. An incomplete restore is preserved rather than overwritten.
 
-Your actions: choose the external folder; in Mac Hardware Info turn **Prevent
+Your actions: choose the shared folder; in Mac Hardware Info turn **Prevent
 sharing OFF** and **Copy Activation Code**, then return to Terminal; when the VM
 opens, wait for Setup Assistant and use its Apple menu to **Shut Down**, then
 confirm that result in Terminal. Do not sign into Apple in that VM.
 
-Wait for **COLLECTION COMPLETE** and `COLLECTION-COMPLETE.txt` in the external
-`MSeries-Linux-Return` folder. Eject the drive and return to Linux. We complete
+Wait for **COLLECTION COMPLETE** and `COLLECTION-COMPLETE.txt` in the shared
+`MSeries-Linux-Return` folder. Eject external storage if used, then return to Linux. We complete
 Bubbles login/2FA there. Keep the private export and guest identity outside GitHub
 and chat. Downloads, restore and full disk checks can take hours.
 
 [Detailed collection behavior and manual fallback](macos-visit/README.md).
-Shell checks and six mocked failure/resume cases pass. Native macOS execution
+Shell checks and eight mocked failure/resume cases pass. Native macOS execution
 remains untested here. The receipt certifies collection, owner-confirmed native
 startup and transfer; Linux KVM boot, extracted-booter compatibility, Bubbles
 activation and dock save/restore remain unverified. This gathers the known
