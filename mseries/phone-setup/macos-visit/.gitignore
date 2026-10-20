@@ -1,0 +1,10 @@
+mac-hardware.txt
+hardware-code.*
+*.bin
+*.img
+*.trimmed
+vm.json
+*.ipsw
+*.7z
+Mac.Hardware.Info.zip
+*.app/
