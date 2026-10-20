@@ -270,12 +270,42 @@ class MessagesUI(unittest.TestCase):
 
     def test_every_theme_colour_the_stylesheet_uses_resolves(self):
         import re
-        from messages_style import build_style
         context = self.app.window.get_style_context()
-        names = sorted(set(re.findall(r'@([A-Za-z_]+)', build_style())))
+        # Names after @define-color lines, i.e. the ones our rules actually reference.
+        rules = self.app.stylesheet.split('\n.ms-', 1)[1]
+        names = sorted(set(re.findall(r'@([A-Za-z_]+)', rules)))
         self.assertIn('accent_bg_color', names)
         missing = [n for n in names if not context.lookup_color(n)[0]]
         self.assertEqual(missing, [], 'GTK silently ignores unknown colours, so check them explicitly')
+
+    def test_accent_names_are_defined_when_the_theme_lacks_them(self):
+        from messages_style import ACCENT_FALLBACKS, build_style
+        css = build_style(ACCENT_FALLBACKS)
+        self.assertTrue(css.startswith('@define-color accent_bg_color @theme_selected_bg_color;'))
+        self.assertIn('@define-color accent_fg_color @theme_selected_fg_color;', css)
+        self.assertNotIn('@define-color', build_style())
+        for name in ACCENT_FALLBACKS:
+            self.assertTrue(self.app.window.get_style_context().lookup_color(name)[0], name)
+        # The alias mechanism itself: a name this theme lacks, defined the same way, resolves.
+        provider = Gtk.CssProvider()
+        provider.load_from_string('@define-color ms_probe_missing @theme_selected_bg_color;')
+        display = self.app.window.get_display()
+        Gtk.StyleContext.add_provider_for_display(display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        try:
+            ok, probe = self.app.window.get_style_context().lookup_color('ms_probe_missing')
+            self.assertTrue(ok)
+            self.assertEqual(probe.to_string(), self.app.window.get_style_context().lookup_color('theme_selected_bg_color')[1].to_string())
+        finally:
+            Gtk.StyleContext.remove_provider_for_display(display, provider)
+
+    def test_missing_accent_probe_reports_only_undefined_names(self):
+        from messages_style import missing_accent_names
+        class Context:
+            def __init__(self, known): self.known = known
+            def lookup_color(self, name): return (name in self.known, None)
+        self.assertEqual(missing_accent_names(Context({'theme_selected_bg_color'})), ['accent_bg_color', 'accent_fg_color'])
+        self.assertEqual(missing_accent_names(Context({'accent_bg_color'})), ['accent_fg_color'])
+        self.assertEqual(missing_accent_names(Context({'accent_bg_color', 'accent_fg_color'})), [])
 
     def test_avatars_never_expand_so_every_row_aligns(self):
         app = self.app

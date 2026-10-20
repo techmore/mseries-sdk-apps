@@ -26,7 +26,7 @@ from blueferry.bus import get_system_bus
 from blueferry.recipients import validate_recipient
 from messages_model import ConversationState, Outbox, contact_index, layout_messages, merge_inbox, resolve_contact_names
 from message_media import load_preview, youtube_id
-from messages_style import build_style
+from messages_style import build_style, missing_accent_names
 from messages_widgets import (AVATAR_PX, avatar, build_composer, build_notice, build_status, clear,
                               conversation_row, empty_state, favorite_tile, icon_for, identity_of,
                               label, photo_frame, render_messages)
@@ -108,7 +108,9 @@ class Messages(Gtk.Application):
         provider = Gtk.CssProvider()
         # Kept so tests can prove the stylesheet parses cleanly on this toolkit.
         provider.connect('parsing-error', lambda _p, section, error: self.css_errors.append((section.to_string(), error.message)))
-        provider.load_from_string(build_style())
+        # Probe the theme through a throwaway widget before our own CSS is added.
+        self.stylesheet = build_style(missing_accent_names(Gtk.Label().get_style_context()))
+        provider.load_from_string(self.stylesheet)
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self.window = Gtk.ApplicationWindow(application=self, title=_('Messages'), default_width=1080, default_height=720)
         self.window.set_icon_name(APP_ID)

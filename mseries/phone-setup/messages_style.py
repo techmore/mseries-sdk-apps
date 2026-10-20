@@ -75,6 +75,19 @@ STYLE = '''
 '''
 
 
-def build_style():
+# elementary's stylesheet defines these; GTK's default Adwaita (used by CI and
+# other desktops) does not. When they are missing the app defines them from the
+# theme's selection pair so every rule above still resolves.
+ACCENT_FALLBACKS = {'accent_bg_color': 'theme_selected_bg_color', 'accent_fg_color': 'theme_selected_fg_color'}
+
+
+def missing_accent_names(context):
+    """Accent colour names the current theme does not define."""
+    return [name for name in ACCENT_FALLBACKS if not context.lookup_color(name)[0]]
+
+
+def build_style(define=()):
+    """The full stylesheet, with @define-color lines for any names in `define`."""
+    defines = ''.join('@define-color %s @%s;\n' % (name, ACCENT_FALLBACKS[name]) for name in define)
     tones = '\n'.join('.ms-tone-%d { background: %s; }' % (i, color) for i, color in enumerate(AVATAR_TONES))
-    return STYLE + tones + '\n'
+    return defines + STYLE + tones + '\n'

@@ -128,7 +128,7 @@ tones); `messages_widgets.py` builds the widgets; `messages_style.py` holds the
 scoped stylesheet. The installer copies all four.
 
 Checked with the isolated fixture and Cairo rendering in light, dark and narrow
-layouts, with 30 model tests, 5 media tests and 45 GTK tests (one screenshot
+layouts, with 30 model tests, 5 media tests and 47 GTK tests (one screenshot
 test needs its environment variable and skips), including end-to-end tests that
 push realistic BlueFerry objects through the real refresh path. **Not verified:**
 the redesign has not been run against the live phone, and the owner's open
