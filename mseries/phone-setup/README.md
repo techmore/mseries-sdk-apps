@@ -55,6 +55,22 @@ BlueZ 5.87. That differs from our 0x43, so it is a related report, not a proven
 root cause or guaranteed workaround. A BlueZ upgrade alone is not justified by
 that evidence.
 
+## Download the macOS visit kit
+
+Open this page on native macOS. Terminal commands (no GitHub login required):
+
+```sh
+curl --fail --location 'https://raw.githubusercontent.com/techmore/ElementaryOS_MSeries/b6e3858b802bd886a115a04adef799e757596b80/mseries/phone-setup/macos-visit/Download-Kit.command' -o /tmp/MSeries-Download-Kit.command
+/bin/bash /tmp/MSeries-Download-Kit.command b6e3858b802bd886a115a04adef799e757596b80
+```
+
+Then follow the [exact macOS checklist](macos-visit/README.md). The downloader
+opens `Downloads/MSeries-Mac-Visit` with the official Mac helper and our scripts.
+Save the full export, verify a private return-transfer copy **before rebooting**,
+and complete Apple login on Linux. The checklist also covers optional Machine Lab
+guest collection during the same visit. Bubbles needs no running Mac or VM after
+export, but activation and future experimental VM compatibility remain unverified.
+
 ## Bubbles personal installation
 
 [Source](https://github.com/chrispouliot/bubbles/tree/9c677ec71ffc01eb87f8a7daf6f08289c03b61f3),
