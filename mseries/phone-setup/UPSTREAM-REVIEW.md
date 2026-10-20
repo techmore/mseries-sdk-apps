@@ -87,3 +87,24 @@ isolated build/package and rollback plan rather than claiming apt upgrade will
 supply it. Preserve the current bond until an explicitly coordinated new pairing
 is needed. Verification must include an authorized outgoing test and a real
 incoming text; status checks, builds and contact sync do not count as delivery.
+
+## Prepared candidate, not installed or running
+
+Built the matched BlueZ 5.87 `src/bluetoothd` and `obexd/src/obexd` ARM64
+executables from annotated release tag 5.87, commit
+`65d11edee469c24dcc8d075b8be9c040cebaaf98`, in this chat workspace's
+`work/bluez-5.87`. Bootstrap/configure and both links succeeded. Configure flags:
+`--prefix=/usr/local --sysconfdir=/etc --localstatedir=/var
+--libexecdir=/usr/local/libexec/mseries-bluez-5.87 --disable-client
+--disable-manpages --disable-cups --disable-mesh --disable-midi`. Core phone profiles/OBEX are
+built; normal /etc configuration and /var/lib/bluetooth storage paths are retained
+in the compiled configuration. This service-only candidate is not feature-identical to Ubuntu's complete
+package set. No make install was run and no new build dependencies were installed.
+
+The daemon reports 5.87. Both ELF files are AArch64 with resolved shared-library
+dependencies. Upstream unit tests: 34 GObex + 134 SDP passed (168 total). Build
+and test logs remain in the chat workspace. These are software checks, not
+phone authorization or delivery verification. The live host still runs Ubuntu's
+5.85 bluetoothd/obexd. Runtime experimental bearer API and the live upgrade/rollback
+trial remain unperformed. Current host kernel is
+`7.1.12-2-20261017.20-sep-ARCH`; the audit changed no kernel.
