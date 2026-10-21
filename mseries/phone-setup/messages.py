@@ -39,6 +39,7 @@ ngettext = gettext.ngettext
 APP_ID = 'io.elementary.mseries.Messages'
 # Below this width the window shows one pane at a time, like a phone.
 NARROW = 760
+GROUP_INFO_NOTE = _('Your iPhone is not sharing notifications with this computer, so group texts appear under the person who sent them and replies here go to that person only. On the iPhone, open Settings › Bluetooth, tap the info button beside this computer and turn on Share System Notifications.')
 CONNECTION = {
     'connecting': ('wait', _('Connecting to iPhone…')),
     'ready': ('ok', _('iPhone connected · Messages ready')),
@@ -491,6 +492,19 @@ class Messages(Gtk.Application):
             self.load_photos()
         self.task(load, loaded)
 
+    def release_focus(self, container):
+        """Drop keyboard focus from `container` before its children are destroyed.
+
+        Selectable bubble text and list rows take focus. GTK 4.22's AT-SPI layer aborts the
+        whole app when a focused widget is destroyed under it (SIGABRT in gtk_at_spi_root_to_ref),
+        so any rebuild first moves focus out of the subtree. True means focus was inside it.
+        """
+        focus = self.window.get_focus()
+        if focus is None or not (focus is container or focus.is_ancestor(container)):
+            return False
+        self.window.set_focus(None)
+        return True
+
     def populate(self):
         order = ordered_keys(self.threads, self.pin_state)
         pinned = set(effective_choices(self.threads, self.pin_state))
@@ -502,6 +516,7 @@ class Messages(Gtk.Application):
                        self.threads[key].get('last_ts', '')) for key in order]
         if signatures != getattr(self, 'row_signature', None):
             self.row_signature = signatures
+            had_focus = self.release_focus(self.list) or self.release_focus(self.favorite_grid)
             self.list.unselect_all()
             clear(self.list)
             self.rows = {}
@@ -536,6 +551,8 @@ class Messages(Gtk.Application):
                     self.favorite_avatars[key] = (favorite_slot, favorite_portrait)
             if self.model.selected in self.rows:
                 self.list.select_row(self.rows[self.model.selected])
+                if had_focus:
+                    self.rows[self.model.selected].grab_focus()
         self.filter_rows()
         self.sync_favorite_selection()
 
@@ -745,6 +762,7 @@ class Messages(Gtk.Application):
             if row.is_pinned and matches: favorites.append(key)
         if tuple(favorites) != getattr(self, 'grid_filter_signature', None):
             self.grid_filter_signature = tuple(favorites)
+            self.release_focus(self.favorite_grid)
             clear(self.favorite_grid)
             for index, key in enumerate(favorites):
                 self.favorite_grid.attach(self.favorite_buttons[key], index % 4, index // 4, 1, 1)
@@ -824,9 +842,12 @@ class Messages(Gtk.Application):
             stamp = datetime.now().astimezone().isoformat(timespec='seconds')
             shown = list(thread['messages']) + [dict(body=e.body, outgoing=True, timestamp=stamp, sender='', _state=e.state) for e in pending]
             self.stop_media_animation()
+            had_focus = self.release_focus(self.messages)
             render_messages(self.messages, layout_messages(shown, bool(thread.get('is_group'))), self.media_card)
             if not shown:
                 self.messages.append(label(_('Say hello.'), 'dim-label', vexpand=True, valign=Gtk.Align.CENTER))
+            if had_focus and self.editor.get_sensitive():
+                self.editor.grab_focus()
             if near_bottom or switching or self.force_scroll:
                 self.force_scroll = False
                 GLib.idle_add(self.scroll_bottom)
@@ -961,6 +982,15 @@ class Messages(Gtk.Application):
             self.send_feedback.pop(self.model.selected, None)
         self.update_composer()
 
+    def group_info_missing(self):
+        """True when BlueFerry reports it cannot see which group a text belongs to.
+
+        iOS gives MAP only the sender; group membership comes from ANCS notifications, so
+        without them a group text is filed under whoever wrote it. Absent in the preview
+        fixture, which never claims anything about the phone.
+        """
+        return self.status.get('ancs') is False
+
     def update_composer(self):
         key = self.model.selected
         thread = self.threads.get(key)
@@ -989,6 +1019,9 @@ class Messages(Gtk.Application):
             text = _('Check the group participants in Advanced BlueFerry before replying.')
         elif thread:
             text = self.send_feedback.get(key) or (((_('Enter to send · Shift+Enter for a new line') if self.settings['enter_sends'] else _('Ctrl+Enter to send · Enter for a new line')) if self.status.get('map') else _('Offline · your draft is kept while this window is open')) if draft.strip() else '')
+            if text and draft.strip() and self.status.get('map') and self.group_info_missing() and not thread.get('is_group') and key not in self.send_feedback:
+                text += ' · ' + _('Sends to this person only')
+        self.send_status.set_tooltip_text(GROUP_INFO_NOTE if self.group_info_missing() else None)
         self.send_status.set_label(text)
         self.composer.revealer.set_reveal_child(bool(text))
 
