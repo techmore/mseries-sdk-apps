@@ -22,17 +22,33 @@ def contact_index(records):
     return result
 
 
-def lookup_contact_name(address, index):
-    """The one phonebook name for this address, or '' when none or several match."""
+def identity_keys(address):
+    """Typed identities for one address: its canonical form, plus the North American twin.
+
+    BlueFerry's canonical form already makes "+1 908 642 0729" and "19086420729" the
+    same identity. A 10-digit number and its 11-digit "1" form are also one phone in
+    the United States and Canada, so both are returned. Other lengths get no twin.
+    Names and unparseable text return ().
+    """
     key = canonical_address(address)
     if not key:
-        return ''
-    names = index.get(key, set())
-    if not names and key.startswith('phone:'):
+        return ()
+    keys = [key]
+    if key.startswith('phone:'):
         digits = key[6:]
-        alternate = '1'+digits if len(digits)==10 else digits[1:] if len(digits)==11 and digits.startswith('1') else ''
-        names = index.get('phone:'+alternate, set()) if alternate else set()
-    return next(iter(names)) if len(names) == 1 else ''
+        if len(digits) == 10:
+            keys.append('phone:1' + digits)
+        elif len(digits) == 11 and digits.startswith('1'):
+            keys.append('phone:' + digits[1:])
+    return tuple(keys)
+
+
+def lookup_contact_name(address, index):
+    """The one phonebook name for this address, or '' when none or several match."""
+    for key in identity_keys(address):
+        if names := index.get(key, set()):
+            return next(iter(names)) if len(names) == 1 else ''
+    return ''
 
 
 def resolve_contact_names(threads, index):
@@ -53,27 +69,45 @@ def address_key(address):
 
 
 def merge_inbox(threads, inbox):
-    """Merge a bounded phone snapshot in memory, preserving backend group routes."""
+    """Merge a bounded phone snapshot in memory, preserving backend group routes.
+
+    A snapshot message joins the one direct conversation that owns its sender by
+    identity (so "+19086420729" and "19086420729" are the same person). If no
+    direct conversation owns it, or more than one claims it, it goes to a single
+    phone-only conversation for that sender instead of guessing.
+    """
     result = {t['key']: deepcopy(t) for t in threads}
     handles = {m.get('handle') for t in result.values() for m in t['messages'] if m.get('handle')}
-    by_address = {}
+    owners = {}
     for thread in result.values():
         if not thread.get('is_group') and len(thread.get('recipients', [])) == 1:
-            by_address[address_key(thread['recipients'][0])] = thread
+            for key in identity_keys(thread['recipients'][0]):
+                owners.setdefault(key, []).append(thread)
+    phone_only = {}
     for raw in inbox:
         if raw.get('handle') in handles:
             continue
-        address = address_key(raw.get('sender_phone_norm') or raw.get('sender', ''))
+        sender = raw.get('sender_phone_norm') or raw.get('sender', '')
+        address = address_key(sender)
         if not address:
             continue
-        thread = by_address.get(address)
+        keys = identity_keys(sender)
+        candidates = []
+        for key in keys:
+            for candidate in owners.get(key, []):
+                if candidate not in candidates:
+                    candidates.append(candidate)
+        thread = candidates[0] if len(candidates) == 1 else None
+        if thread is None:
+            thread = next((phone_only[key] for key in keys if key in phone_only), None)
         if thread is None:
             key = 'inbox:' + address
             thread = dict(key=key, name=raw.get('contact_name') or raw.get('sender') or address,
                           recipients=[address], is_group=False, reply_ready=True,
                           messages=[], last_ts='', inbox_only=True)
             result[key] = thread
-            by_address[address] = thread
+            for identity in keys or (address,):
+                phone_only[identity] = thread
         thread['messages'].append(dict(handle=raw.get('handle', ''), body=raw.get('body', ''),
                                        timestamp=raw.get('timestamp', ''), outgoing=False,
                                        read=raw.get('read', False), sender=raw.get('sender', '')))
