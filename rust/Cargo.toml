@@ -1,3 +1,3 @@
 [workspace]
-members = ["mseries-power", "granite-smoke", "pantheon-compositor", "mseries-update-core", "mseries-updates"]
+members = ["mseries-power", "granite-smoke", "pantheon-compositor", "mseries-update-core", "mseries-updates", "mseries-diskspace"]
 resolver = "2"

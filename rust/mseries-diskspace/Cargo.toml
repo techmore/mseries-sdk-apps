@@ -1,0 +1,20 @@
+[package]
+name = "mseries-diskspace"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+description = "Disk space analyzer for elementary OS: filesystems on the left, cards or a sunburst to find and recover space"
+
+[dependencies]
+# Same GTK/Granite pins as granite-smoke (see mseries/RUST-UPSTREAM-MAINTENANCE.md).
+gtk = { package = "gtk4", version = "0.11", features = ["v4_20"] }
+granite = { package = "granite-rs", version = "3.3", features = ["v7_8", "gtk_v4_20"] }
+pangocairo = "0.22"
+rayon = "1.10"
+libc = "0.2"
+
+# GTK needs the main thread and one display, so the render test is a single plain main(), not libtest.
+[[test]]
+name = "render"
+harness = false
