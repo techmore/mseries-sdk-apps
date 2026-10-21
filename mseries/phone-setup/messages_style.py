@@ -60,6 +60,8 @@ STYLE = '''
 .ms-outgoing.ms-last, .ms-outgoing.ms-single { border-bottom-right-radius: 5px; }
 .ms-sending { opacity: .6; }
 .ms-attachment { font-style: italic; margin-top: 3px; }
+.ms-reactions { font-size: .95em; padding: 1px 8px; margin: -5px 8px 2px; border-radius: 99px; background: @theme_base_color; border: 1px solid alpha(@theme_fg_color,.18); }
+.ms-quote { margin: 6px 16px 0; padding: 4px 6px 4px 10px; border-left: 3px solid @accent_bg_color; background: alpha(@theme_fg_color,.06); border-radius: 6px; font-size: .9em; }
 .ms-caption { font-size: .82em; opacity: .72; margin: 2px 4px 0; }
 .ms-media { border-radius: 14px; padding: 10px; margin-top: 4px; background: alpha(@theme_fg_color,.06); border: 1px solid alpha(@theme_fg_color,.12); }
 .ms-media picture { border-radius: 8px; }

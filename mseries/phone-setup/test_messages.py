@@ -313,6 +313,60 @@ class GroupReplyTests(unittest.TestCase):
         self.assertFalse(state.prepare(thread(), confirm_group=True).confirm_group, 'a direct chat has nothing to confirm')
 
 
+class TapbackAndQuoteTests(unittest.TestCase):
+    def thread(self, *rows):
+        return [dict(body=b, outgoing=o, sender=who, timestamp='2026-10-21T10:%02d:00+00:00' % i) for i, (b, o, who) in enumerate(rows)]
+
+    def test_a_tapback_folds_onto_the_message_it_names(self):
+        from messages_model import fold_reactions
+        out = fold_reactions(self.thread(('Do you have a starlink mini?', False, ''), ('Liked “Do you have a starlink mini?”', True, '')))
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]['reactions'], [{'reaction': 'Liked', 'by': 'You'}])
+
+    def test_the_phones_named_and_shortened_forms_fold_too(self):
+        from messages_model import fold_reactions
+        long = 'Racism incoming I want Rupert to be so good at saving money Jason gives the approval to call it'
+        out = fold_reactions(self.thread((long, False, 'Derek'), ('Derek laughed at “%s…”' % long[:60], False, '')))
+        self.assertEqual(out[0]['reactions'], [{'reaction': 'Laughed at', 'by': 'Derek'}])
+
+    def test_a_newer_tapback_replaces_and_a_removal_deletes(self):
+        from messages_model import fold_reactions
+        base = ('Dinner at six', False, 'Jan')
+        out = fold_reactions(self.thread(base, ('Liked “Dinner at six”', False, 'Sam'), ('Loved “Dinner at six”', False, 'Sam'), ('Liked “Dinner at six”', False, 'Jan')))
+        self.assertEqual([(r['by'], r['reaction']) for r in out[0]['reactions']], [('Sam', 'Loved'), ('Jan', 'Liked')])
+        out = fold_reactions(self.thread(base, ('Liked “Dinner at six”', False, 'Sam'), ('Removed a like from “Dinner at six”', False, 'Sam')))
+        self.assertEqual(out[0]['reactions'], [])
+
+    def test_an_unmatched_tapback_stays_a_normal_message(self):
+        from messages_model import fold_reactions
+        rows = self.thread(('Hello', False, ''), ('Liked “Something we never saw”', False, ''))
+        out = fold_reactions(rows)
+        self.assertEqual([m['body'] for m in out], ['Hello', 'Liked “Something we never saw”'])
+        self.assertNotIn('reactions', out[0])
+
+    def test_folding_never_mutates_the_callers_messages(self):
+        from messages_model import fold_reactions
+        rows = self.thread(('Hi', False, ''), ('Liked “Hi”', True, ''))
+        fold_reactions(rows)
+        self.assertNotIn('reactions', rows[0])
+        self.assertEqual(len(rows), 2)
+
+    def test_a_folded_tapback_adds_no_bubble_to_the_layout(self):
+        from messages_model import layout_messages
+        items = layout_messages(self.thread(('Hi', False, ''), ('Liked “Hi”', True, '')))
+        self.assertEqual([i['kind'] for i in items], ['stamp', 'message'])
+
+    def test_quote_snippets_and_reply_bodies(self):
+        from messages_model import quote_snippet, reply_body
+        self.assertEqual(quote_snippet(dict(body='Starlink\nmini ?')), '“Starlink mini ?”')
+        self.assertEqual(quote_snippet(dict(body='Hi', sender='Jan'), is_group=True), 'Jan: “Hi”')
+        self.assertEqual(quote_snippet(dict(body='Hi', sender='Jan', outgoing=True), is_group=True), '“Hi”')
+        self.assertTrue(quote_snippet(dict(body='x' * 300)).endswith('…”'))
+        self.assertLessEqual(len(quote_snippet(dict(body='x' * 300))), 83)
+        self.assertEqual(reply_body('“Hi”', 'Yes'), '↪ “Hi”\nYes')
+        self.assertEqual(reply_body('', 'Yes'), 'Yes')
+
+
 class FailureReasonTests(unittest.TestCase):
     def test_daemon_wording_becomes_plain_reasons(self):
         cases = {

@@ -25,7 +25,7 @@ from blueferry.client import BackendClient
 from blueferry.bus import get_system_bus
 from blueferry.recipients import validate_recipient
 from messages_model import (ConversationState, Outbox, blocks_group_confirmation, contact_index, group_roster, layout_messages,
-                            merge_inbox, needs_group_confirmation, resolve_contact_names, send_failure_reason)
+                            merge_inbox, needs_group_confirmation, quote_snippet, reply_body, resolve_contact_names, send_failure_reason)
 from message_media import load_preview, youtube_id
 import messages_settings
 from messages_style import build_style, missing_accent_names
@@ -54,6 +54,8 @@ class Messages(Gtk.Application):
                          flags=Gio.ApplicationFlags.NON_UNIQUE if fixture else Gio.ApplicationFlags.DEFAULT_FLAGS)
         self.fixture, self.dark, self.narrow = fixture, dark, narrow
         self.pool = ThreadPoolExecutor(max_workers=1)
+        # thread key -> quote line the next message will carry (a Reply in progress)
+        self.replying = {}
         # Link previews fetch over the network, so they never queue behind phone calls.
         self.media_pool = ThreadPoolExecutor(max_workers=2)
         self.media_cache = OrderedDict()
@@ -283,6 +285,7 @@ class Messages(Gtk.Application):
         self.editor, self.send, self.send_status = self.composer.editor, self.composer.send, self.composer.status
         self.editor.get_buffer().connect('changed', self.draft_changed)
         self.send.connect('clicked', self.send_message)
+        self.composer.quote_close.connect('clicked', lambda *_a: self.cancel_reply())
         self.detail.append(self.composer.box)
         return self.detail
 
@@ -843,7 +846,7 @@ class Messages(Gtk.Application):
             shown = list(thread['messages']) + [dict(body=e.body, outgoing=True, timestamp=stamp, sender='', _state=e.state) for e in pending]
             self.stop_media_animation()
             had_focus = self.release_focus(self.messages)
-            render_messages(self.messages, layout_messages(shown, bool(thread.get('is_group'))), self.media_card)
+            render_messages(self.messages, layout_messages(shown, bool(thread.get('is_group'))), self.media_card, self.reply_to_message)
             if not shown:
                 self.messages.append(label(_('Say hello.'), 'dim-label', vexpand=True, valign=Gtk.Align.CENTER))
             if had_focus and self.editor.get_sensitive():
@@ -982,6 +985,21 @@ class Messages(Gtk.Application):
             self.send_feedback.pop(self.model.selected, None)
         self.update_composer()
 
+    def reply_to_message(self, message):
+        """Start a quoted reply: the quote rides above whatever the user types next."""
+        key = self.model.selected
+        thread = self.threads.get(key)
+        if not thread:
+            return
+        self.replying[key] = quote_snippet(message, bool(thread.get('is_group')))
+        self.update_composer()
+        self.editor.grab_focus()
+
+    def cancel_reply(self):
+        self.replying.pop(self.model.selected, None)
+        self.update_composer()
+        self.editor.grab_focus()
+
     def group_info_missing(self):
         """True when BlueFerry reports it cannot see which group a text belongs to.
 
@@ -1000,6 +1018,9 @@ class Messages(Gtk.Application):
         self.send.set_sensitive(bool(thread and thread.get('reply_ready') and self.status.get('map') and draft.strip() and not pending))
         self.send.set_tooltip_text(_('Send Message (Enter)') if self.settings['enter_sends'] else _('Send Message (Ctrl+Enter)'))
         self.composer.send_revealer.set_reveal_child(bool(draft.strip()) or pending)
+        quote = self.replying.get(key, '') if thread else ''
+        self.composer.quote_label.set_label(_('Replying to %s') % quote if quote else '')
+        self.composer.quote_revealer.set_reveal_child(bool(quote))
         self.composer.face.set_visible_child_name('busy' if pending else 'icon')
         (self.composer.spinner.start if pending else self.composer.spinner.stop)()
         if not thread:
@@ -1134,7 +1155,9 @@ class Messages(Gtk.Application):
             self.send_status.set_label(str(error))
             self.composer.revealer.set_reveal_child(True)
             return
-        entry = self.outbox.add(attempt.key, attempt.body, thread['messages'])
+        # A reply carries its quote in the text, so the phone and the echo see the same body.
+        wire = reply_body(self.replying.get(attempt.key, ''), attempt.body)
+        entry = self.outbox.add(attempt.key, wire, thread['messages'])
         self.force_scroll = True
         self.update_composer()
         self.show_conversation()
@@ -1143,14 +1166,15 @@ class Messages(Gtk.Application):
                 raise RuntimeError('Preview cannot send messages')
             client = BackendClient()
             if attempt.backend_thread:
-                return client.send_to_thread(attempt.key, attempt.body, confirm_group=attempt.confirm_group, expected_group_token=attempt.token)
-            return client.send(attempt.recipient, attempt.body)
+                return client.send_to_thread(attempt.key, wire, confirm_group=attempt.confirm_group, expected_group_token=attempt.token)
+            return client.send(attempt.recipient, wire)
         def sent(_transfer, error):
             self.model.finish(attempt, not error)
             if error:
                 self.outbox.failed(entry)
             else:
                 self.outbox.delivered(entry)
+                self.replying.pop(attempt.key, None)
                 if attempt.confirm_group and attempt.key in self.threads:
                     # BlueFerry remembered the confirmation; do not ask again before the refresh lands.
                     self.threads[attempt.key]['group_confirmed'] = True

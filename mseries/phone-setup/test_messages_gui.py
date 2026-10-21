@@ -164,6 +164,63 @@ class MessagesUI(unittest.TestCase):
             self.assertNotIn('this person only', app.send_status.get_label())
             self.assertIsNone(app.send_status.get_tooltip_text())
 
+    def test_tapbacks_show_as_a_chip_on_the_message_not_as_bubbles(self):
+        app = self.app
+        thread = app.threads[app.model.selected]
+        thread['messages'].append(msg('Do you have a starlink mini?', '2026-01-05T09:00:00', False))
+        thread['messages'].append(msg('Liked “Do you have a starlink mini?”', '2026-01-05T09:01:00', True))
+        app.show_conversation(); settle(.2)
+        bodies = [b.get_text() for b in with_class(app.messages, 'ms-bubble')]
+        self.assertIn('Do you have a starlink mini?', bodies)
+        self.assertFalse([b for b in bodies if b.startswith('Liked')])
+        chips = with_class(app.messages, 'ms-reactions')
+        self.assertEqual([c.get_text() for c in chips], ['👍'])
+        self.assertIn('You', chips[0].get_tooltip_text())
+
+    def test_reply_quotes_the_message_and_sends_the_quote_with_the_text(self):
+        from unittest.mock import patch
+        app = self.app
+        key = app.model.selected
+        target = dict(app.threads[key]['messages'][-1])
+        queued = []
+        app.task = lambda work, completed: queued.append((work, completed))
+        app.reply_to_message(target); settle(.2)
+        self.assertTrue(app.composer.quote_revealer.get_reveal_child())
+        self.assertIn('Replying to ', app.composer.quote_label.get_label())
+        app.editor.get_buffer().set_text('Agreed')
+        app.send_message(); settle()
+        work, completed = queued[0]
+        with patch('messages.BackendClient') as backend:
+            backend.return_value.send_to_thread.return_value = 'transfer'
+            app.fixture = False
+            try:
+                work()
+            finally:
+                app.fixture = True
+        body = backend.return_value.send_to_thread.call_args.args[1]
+        self.assertTrue(body.startswith('↪ ') and body.endswith('\nAgreed'), body)
+        self.assertEqual(app.model.drafts.get(key, ''), 'Agreed', 'still pending, so the draft is untouched')
+        app.refresh = lambda *_a: True
+        completed('transfer', None); settle()
+        self.assertFalse(app.composer.quote_revealer.get_reveal_child(), 'a sent reply ends the reply')
+        self.assertNotIn(key, app.replying)
+
+    def test_cancelling_a_reply_sends_plain_text(self):
+        app = self.app
+        key = app.model.selected
+        app.reply_to_message(dict(app.threads[key]['messages'][-1])); settle(.1)
+        app.composer.quote_close.emit('clicked'); settle(.1)
+        self.assertFalse(app.composer.quote_revealer.get_reveal_child())
+        self.assertNotIn(key, app.replying)
+
+    def test_bubbles_offer_reply_and_copy_on_right_click(self):
+        app = self.app
+        bubble = with_class(app.messages, 'ms-bubble')[0]
+        column = bubble.get_parent()
+        gestures = [c for c in column.observe_controllers() if isinstance(c, Gtk.GestureClick)]
+        self.assertTrue(gestures, 'bubble has a secondary-click gesture')
+        self.assertEqual(gestures[0].get_button(), 3)
+
     def test_offline_retains_conversations_and_disables_send(self):
         app = self.app
         app.editor.get_buffer().set_text('Keep offline')
