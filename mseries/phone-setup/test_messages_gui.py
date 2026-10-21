@@ -679,15 +679,137 @@ class MessagesUI(unittest.TestCase):
         app = self.app
         sheet = app.show_shortcuts();settle(.3)
         accelerators = [w for w in walk(sheet) if isinstance(w, Granite.AccelLabel)]
-        self.assertEqual(len(accelerators), 5)
+        self.assertEqual(len(accelerators), 6)
         keycaps = [w.get_label() for w in walk(sheet) if isinstance(w, Gtk.Label) and w.get_label() in ('Ctrl', 'Enter', 'Return', 'F5', 'N', 'F', 'R', 'Left', 'Alt')]
         self.assertGreaterEqual(len(keycaps), 9, 'every row shows its keys: %s' % keycaps)
         for accelerator in accelerators:
             self.assertTrue(accelerator.get_first_child() is not None, 'an empty accelerator label draws nothing')
         text = ' '.join(w.get_label() for w in walk(sheet) if isinstance(w, Gtk.Label))
-        for expected in ('New Message', 'Search Conversations', 'Refresh iPhone Inbox', 'Back to Conversations', 'Send Message'):
+        for expected in ('New Message', 'Search Conversations', 'Refresh iPhone Inbox', 'Back to Conversations', 'Send Message', 'New Line'):
             self.assertIn(expected, text)
         sheet.close();settle(.2)
+
+
+    # --- Enter to send (opt-in) --------------------------------------------
+
+    def press(self, app, key, modifiers=Gdk.ModifierType(0)):
+        """Deliver a key press to the editor's capture-phase controllers, as GTK would."""
+        for controller in app.editor.observe_controllers():
+            if isinstance(controller, Gtk.EventControllerKey) and controller.get_propagation_phase() == Gtk.PropagationPhase.CAPTURE:
+                controller.emit('key-pressed', key, 0, modifiers)
+
+    def enter_app(self, enabled=True):
+        app = self.app
+        app.settings['enter_sends'] = enabled
+        sent = []
+        app.send_message = lambda *_a: sent.append(app.editor.get_buffer().get_text(*app.editor.get_buffer().get_bounds(), True))
+        app.editor.get_buffer().set_text('Hello there')
+        settle(.2)
+        return app, sent
+
+    def draft(self, app):
+        buffer = app.editor.get_buffer()
+        return buffer.get_text(buffer.get_start_iter(), buffer.get_end_iter(), True)
+
+    def test_enter_sends_when_the_switch_is_on_and_adds_no_newline(self):
+        app, sent = self.enter_app()
+        self.press(app, Gdk.KEY_Return)
+        app.editor.get_buffer().insert_at_cursor('\n');settle(.2)
+        self.assertEqual(sent, ['Hello there'], 'sent exactly once, without a trailing newline')
+        self.assertEqual(self.draft(app), 'Hello there')
+
+    def test_enter_still_adds_a_line_when_the_switch_is_off(self):
+        app, sent = self.enter_app(enabled=False)
+        self.press(app, Gdk.KEY_Return)
+        app.editor.get_buffer().insert_at_cursor('\n');settle(.2)
+        self.assertEqual(sent, [])
+        self.assertEqual(self.draft(app), 'Hello there\n')
+
+    def test_shift_enter_adds_a_line_instead_of_sending(self):
+        app, sent = self.enter_app()
+        self.press(app, Gdk.KEY_Return, Gdk.ModifierType.SHIFT_MASK)
+        app.editor.get_buffer().insert_at_cursor('\n');settle(.2)
+        self.assertEqual(sent, [])
+        self.assertEqual(self.draft(app), 'Hello there\n')
+
+    def test_enter_that_confirms_an_input_method_composition_never_sends(self):
+        # An input method consumes Return to commit its candidate, so what arrives is
+        # the composed text and not a newline. Sending here would send half a thought.
+        app, sent = self.enter_app()
+        self.press(app, Gdk.KEY_Return)
+        app.editor.get_buffer().insert_at_cursor('あ');settle(.2)
+        self.assertEqual(sent, [])
+        self.assertEqual(self.draft(app), 'Hello thereあ')
+        # And the armed state must not linger and turn a later pasted newline into a send.
+        settle(.3)
+        app.editor.get_buffer().insert_at_cursor('\n');settle(.2)
+        self.assertEqual(sent, [])
+        self.assertTrue(self.draft(app).endswith('\n'))
+
+    def test_a_pasted_newline_without_a_return_press_is_just_text(self):
+        app, sent = self.enter_app()
+        app.editor.get_buffer().insert_at_cursor('\nsecond line');settle(.2)
+        self.assertEqual(sent, [])
+        self.assertEqual(self.draft(app), 'Hello there\nsecond line')
+
+    def test_ctrl_enter_still_sends_in_both_modes(self):
+        for enabled in (True, False):
+            app, sent = self.enter_app(enabled)
+            app.send.set_sensitive(True)
+            app.key_pressed(None, Gdk.KEY_Return, 0, Gdk.ModifierType.CONTROL_MASK)
+            self.assertEqual(len(sent), 1, 'enabled=%s' % enabled)
+
+    def test_enter_on_an_empty_draft_does_nothing_at_all(self):
+        app, sent = self.enter_app()
+        app.editor.get_buffer().set_text('');settle(.2)
+        self.press(app, Gdk.KEY_Return)
+        app.editor.get_buffer().insert_at_cursor('\n');settle(.2)
+        self.assertEqual(self.draft(app), '', 'the swallowed Return leaves no stray blank line')
+        self.assertFalse(app.send.get_sensitive())
+        self.assertEqual(sent, [], 'nothing to send, so nothing is sent')
+
+    def test_menu_switch_persists_privately_and_updates_the_hint(self):
+        import json, stat, tempfile
+        from unittest.mock import patch
+        folder = tempfile.mkdtemp()
+        app = self.app
+        app.fixture = False
+        self.addCleanup(setattr, app, 'fixture', True)
+        with patch.dict(os.environ, {'XDG_CONFIG_HOME': folder}):
+            action = app.lookup_action('enter-sends')
+            self.assertFalse(action.get_state().get_boolean())
+            action.activate(None);settle(.2)
+            self.assertTrue(action.get_state().get_boolean(), 'one activation toggles exactly once')
+            path = os.path.join(folder, 'mseries', 'messages.json')
+            self.assertEqual(json.load(open(path)), {'enter_sends': True})
+            self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+            app.editor.get_buffer().set_text('Draft');settle(.3)
+            self.assertIn('Enter to send · Shift+Enter', app.send_status.get_text())
+            self.assertIn('(Enter)', app.send.get_tooltip_text())
+            action.activate(None);settle(.2)
+            self.assertEqual(json.load(open(path)), {'enter_sends': False})
+            self.assertIn('Ctrl+Enter to send', app.send_status.get_text())
+
+    def test_fixture_never_touches_the_owners_preferences(self):
+        import tempfile
+        from unittest.mock import patch
+        folder = tempfile.mkdtemp()
+        with patch.dict(os.environ, {'XDG_CONFIG_HOME': folder}):
+            self.app.lookup_action('enter-sends').activate(None);settle(.2)
+        self.assertFalse(os.path.exists(os.path.join(folder, 'mseries')))
+
+    @unittest.skipUnless(__import__('shutil').which('xdotool'), 'needs xdotool to send real key events')
+    def test_real_key_events_end_to_end(self):
+        import subprocess
+        app, sent = self.enter_app()
+        app.window.present();settle(.5)
+        subprocess.run(['xdotool', 'search', '--name', 'Messages', 'windowfocus'], capture_output=True)
+        app.editor.grab_focus();settle(.3)
+        subprocess.run(['xdotool', 'key', 'Return'], check=True);settle(.6)
+        self.assertEqual(sent, ['Hello there'], 'a real Return key press sends once with no newline')
+        subprocess.run(['xdotool', 'key', 'shift+Return'], check=True);settle(.5)
+        self.assertEqual(len(sent), 1)
+        self.assertTrue(self.draft(app).endswith('\n'), 'a real Shift+Return adds a line')
 
 
     def test_theme_screenshots(self):

@@ -1,5 +1,10 @@
+import json
+import os
+import stat
+import tempfile
 import unittest
 from datetime import datetime
+import messages_settings
 from messages_model import (AVATAR_TONES, ConversationState, Outbox, avatar_tone, conversation_preview,
                             initials, layout_messages, merge_inbox, parse_timestamp, short_stamp,
                             contact_index, resolve_contact_names, blocks_group_confirmation, group_roster,
@@ -296,6 +301,49 @@ class FailureReasonTests(unittest.TestCase):
         self.assertEqual(send_failure_reason(''), 'BlueFerry could not send it')
         self.assertEqual(send_failure_reason(None), 'BlueFerry could not send it')
         self.assertNotIn('\x1b', send_failure_reason('red \x1b[31mtext'))
+
+
+class SettingsTests(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.path = os.path.join(self.dir, 'mseries', 'messages.json')
+
+    def test_missing_corrupt_and_wrongly_typed_files_fall_back_to_defaults(self):
+        self.assertEqual(messages_settings.load(self.path), messages_settings.DEFAULTS)
+        os.makedirs(os.path.dirname(self.path))
+        for content in ('not json', '[]', '{"enter_sends": "yes"}', '{"enter_sends": 1}', ''):
+            with open(self.path, 'w') as out:
+                out.write(content)
+            self.assertEqual(messages_settings.load(self.path), {'enter_sends': False}, content)
+
+    def test_round_trip_keeps_only_known_boolean_switches(self):
+        saved = messages_settings.save({'enter_sends': True, 'body': 'secret text', 'recipient': '+15550100123'}, self.path)
+        self.assertEqual(saved, {'enter_sends': True})
+        self.assertEqual(json.load(open(self.path)), {'enter_sends': True}, 'nothing but the switch is written')
+        self.assertEqual(messages_settings.load(self.path), {'enter_sends': True})
+
+    def test_file_and_folder_are_private_and_no_temp_file_is_left(self):
+        messages_settings.save({'enter_sends': True}, self.path)
+        self.assertEqual(stat.S_IMODE(os.stat(self.path).st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(os.stat(os.path.dirname(self.path)).st_mode), 0o700)
+        self.assertEqual(os.listdir(os.path.dirname(self.path)), ['messages.json'])
+
+    def test_unknown_keys_in_an_existing_file_are_never_loaded(self):
+        os.makedirs(os.path.dirname(self.path))
+        with open(self.path, 'w') as out:
+            json.dump({'enter_sends': True, 'evil': True}, out)
+        self.assertEqual(messages_settings.load(self.path), {'enter_sends': True})
+
+    def test_default_path_honours_xdg_config_home(self):
+        old = os.environ.get('XDG_CONFIG_HOME')
+        os.environ['XDG_CONFIG_HOME'] = self.dir
+        try:
+            self.assertEqual(str(messages_settings.config_path()), os.path.join(self.dir, 'mseries', 'messages.json'))
+        finally:
+            if old is None:
+                del os.environ['XDG_CONFIG_HOME']
+            else:
+                os.environ['XDG_CONFIG_HOME'] = old
 
 
 if __name__ == '__main__':

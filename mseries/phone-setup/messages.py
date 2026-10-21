@@ -27,6 +27,7 @@ from blueferry.recipients import validate_recipient
 from messages_model import (ConversationState, Outbox, blocks_group_confirmation, contact_index, group_roster, layout_messages,
                             merge_inbox, needs_group_confirmation, resolve_contact_names, send_failure_reason)
 from message_media import load_preview, youtube_id
+import messages_settings
 from messages_style import build_style, missing_accent_names
 from messages_widgets import (AVATAR_PX, avatar, build_composer, build_notice, build_status, clear,
                               conversation_row, empty_state, favorite_tile, icon_for, identity_of,
@@ -96,6 +97,9 @@ class Messages(Gtk.Application):
         self.pin_store = None
         self.pin_pending = False
         self.group_dialog = None
+        # Fixtures never read or write the owner's real preferences.
+        self.settings = dict(messages_settings.DEFAULTS) if fixture else messages_settings.load()
+        self.enter_armed = False
 
     def do_activate(self):
         if self.get_active_window():
@@ -125,6 +129,15 @@ class Messages(Gtk.Application):
         keys = Gtk.EventControllerKey()
         keys.connect('key-pressed', self.key_pressed)
         self.editor.add_controller(keys)
+        # Enter-to-send. A plain Return is handled by the text view itself before any
+        # controller of ours could stop it, so note the press (capture phase) and act
+        # only when a literal newline is then inserted. If an input method used the key
+        # to confirm a composition, other text arrives instead and nothing is sent.
+        arm = Gtk.EventControllerKey()
+        arm.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        arm.connect('key-pressed', self.arm_enter)
+        self.editor.add_controller(arm)
+        self.editor.get_buffer().connect('insert-text', self.guard_newline)
         self.window.present()
         self.watch_size()
         if self.narrow:
@@ -156,6 +169,10 @@ class Messages(Gtk.Application):
             action.connect('activate', handler)
             self.add_action(action)
             self.set_accels_for_action('app.' + name, accels)
+        toggle = Gio.SimpleAction.new_stateful('enter-sends', None, GLib.Variant.new_boolean(self.settings['enter_sends']))
+        toggle.connect('change-state', self.set_enter_sends)
+        toggle.connect('activate', lambda action, _p: action.change_state(GLib.Variant.new_boolean(not action.get_state().get_boolean())))
+        self.add_action(toggle)
 
     def build_window(self):
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -190,6 +207,7 @@ class Messages(Gtk.Application):
             a.connect('activate', method)
             self.add_action(a)
             menu.append(text, 'app.' + action)
+        menu.append(_('Press Enter to Send'), 'app.enter-sends')
         header.pack_end(Gtk.MenuButton(icon_name='open-menu-symbolic', menu_model=menu, tooltip_text=_('Menu')))
         return header
 
@@ -950,6 +968,7 @@ class Messages(Gtk.Application):
         draft = self.model.drafts.get(key, '')
         self.editor.set_sensitive(bool(thread))
         self.send.set_sensitive(bool(thread and thread.get('reply_ready') and self.status.get('map') and draft.strip() and not pending))
+        self.send.set_tooltip_text(_('Send Message (Enter)') if self.settings['enter_sends'] else _('Send Message (Ctrl+Enter)'))
         self.composer.send_revealer.set_reveal_child(bool(draft.strip()) or pending)
         self.composer.face.set_visible_child_name('busy' if pending else 'icon')
         (self.composer.spinner.start if pending else self.composer.spinner.stop)()
@@ -969,9 +988,46 @@ class Messages(Gtk.Application):
         elif thread and not thread.get('reply_ready'):
             text = _('Check the group participants in Advanced BlueFerry before replying.')
         elif thread:
-            text = self.send_feedback.get(key) or ((_('Ctrl+Enter to send · Enter for a new line') if self.status.get('map') else _('Offline · your draft is kept while this window is open')) if draft.strip() else '')
+            text = self.send_feedback.get(key) or (((_('Enter to send · Shift+Enter for a new line') if self.settings['enter_sends'] else _('Ctrl+Enter to send · Enter for a new line')) if self.status.get('map') else _('Offline · your draft is kept while this window is open')) if draft.strip() else '')
         self.send_status.set_label(text)
         self.composer.revealer.set_reveal_child(bool(text))
+
+    def set_enter_sends(self, action, value):
+        action.set_state(value)
+        self.settings['enter_sends'] = value.get_boolean()
+        if not self.fixture:
+            try:
+                messages_settings.save(self.settings)
+            except OSError:
+                # The switch still works for this session; it just will not be remembered.
+                pass
+        self.update_composer()
+
+    def arm_enter(self, _controller, key, _code, modifiers):
+        """Remember an unmodified Return so guard_newline can recognise its newline."""
+        plain = not modifiers & (Gdk.ModifierType.SHIFT_MASK | Gdk.ModifierType.CONTROL_MASK
+                                 | Gdk.ModifierType.ALT_MASK | Gdk.ModifierType.SUPER_MASK)
+        if self.settings['enter_sends'] and plain and key in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+            self.enter_armed = True
+            GLib.timeout_add(80, self.disarm_enter)
+        return False
+
+    def disarm_enter(self):
+        self.enter_armed = False
+        return False
+
+    def guard_newline(self, buffer, _location, text, _length):
+        if not (self.enter_armed and text == '\n'):
+            return
+        # Swallow the newline: this Return means "send", not "new line".
+        self.enter_armed = False
+        buffer.stop_emission_by_name('insert-text')
+        GLib.idle_add(self.send_from_enter)
+
+    def send_from_enter(self):
+        if not self.closed and self.send.get_sensitive():
+            self.send_message()
+        return False
 
     def key_pressed(self, _controller, key, _code, modifiers):
         if key in (Gdk.KEY_Return, Gdk.KEY_KP_Enter) and modifiers & Gdk.ModifierType.CONTROL_MASK:
@@ -1081,7 +1137,9 @@ class Messages(Gtk.Application):
         sheet.set_titlebar(header)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin_start=20, margin_end=20, margin_top=16, margin_bottom=20)
         rows = [(_('New Message'), 'app.new-message'), (_('Search Conversations'), 'app.search'), (_('Refresh iPhone Inbox'), 'app.refresh'),
-                (_('Back to Conversations'), 'app.back'), (_('Send Message'), '<Control>Return')]
+                (_('Back to Conversations'), 'app.back'),
+                (_('Send Message'), 'Return' if self.settings['enter_sends'] else '<Control>Return'),
+                (_('New Line'), '<Shift>Return' if self.settings['enter_sends'] else 'Return')]
         for text, accel in rows:
             line = Gtk.Box(spacing=12)
             line.append(label(text, xalign=0, hexpand=True))

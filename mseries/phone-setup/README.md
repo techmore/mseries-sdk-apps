@@ -117,8 +117,13 @@ owns sending, recipient checks, history and group safety.
   native keycaps.
 - **Composer.** One rounded field with the send button inside it. The button
   slides in when there is something to send and shows a spinner while pending.
-  Ctrl+Enter sends and Enter adds a line, exactly as before; plain Enter does
-  not send because an input-method confirmation must never send by accident.
+  Ctrl+Enter sends and Enter adds a line by default. **Press Enter to Send** in the
+  menu (off by default, remembered in `~/.config/mseries/messages.json`, owner-only, on/off
+  switches only) makes Enter send and Shift+Enter add a line. It is input-method safe: a
+  plain Return is noted, and the message is sent only if a literal newline is then
+  inserted. When an input method uses the key to confirm a composition, the composed
+  text arrives instead and nothing is sent. A Return held longer than 80 ms before its
+  newline, a pasted newline and Ctrl+Enter behave as expected.
 - **Colour.** Outgoing bubbles use the stylesheet's `accent_bg_color` with
   `accent_fg_color`, so the user's accent colour and dark mode are honoured. The
   older `theme_selected_*` pair was not used for text: it measured 1.8:1 in dark
@@ -141,10 +146,10 @@ Code layout (all under `phone-setup/`): `messages.py` is the controller (state,
 worker thread, BlueFerry calls, dialogs); `messages_model.py` holds pure,
 GTK-free logic (message runs, time labels, previews, the send outbox, avatar
 tones); `messages_widgets.py` builds the widgets; `messages_style.py` holds the
-scoped stylesheet. The installer copies all four.
+scoped stylesheet; `messages_settings.py` stores the on/off preferences. The installer copies them all.
 
 Checked with the isolated fixture and Cairo rendering in light, dark and narrow
-layouts, with 36 model tests, 5 media tests and 56 GTK tests (one screenshot
+layouts, with 41 model tests, 5 media tests and 66 GTK tests (one screenshot
 test needs its environment variable and skips), including end-to-end tests that
 push realistic BlueFerry objects through the real refresh path. **Not verified:**
 the redesign has not been run against the live phone, and the owner's open
