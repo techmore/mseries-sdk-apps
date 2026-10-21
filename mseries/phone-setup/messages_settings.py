@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import tempfile
 
-DEFAULTS = {'enter_sends': False}
+DEFAULTS = {'enter_sends': True}
 
 
 def config_path():

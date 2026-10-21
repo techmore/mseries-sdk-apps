@@ -130,9 +130,10 @@ owns sending, recipient checks, history and group safety.
   native keycaps.
 - **Composer.** One rounded field with the send button inside it. The button
   slides in when there is something to send and shows a spinner while pending.
-  Ctrl+Enter sends and Enter adds a line by default. **Press Enter to Send** in the
-  menu (off by default, remembered in `~/.config/mseries/messages.json`, owner-only, on/off
-  switches only) makes Enter send and Shift+Enter add a line. It is input-method safe: a
+  Enter sends and Shift+Enter adds a line by default. **Press Enter to Send** in the
+  menu (on by default since 2026-10-21; turning it off is remembered in
+  `~/.config/mseries/messages.json`, owner-only, on/off switches only) makes Ctrl+Enter send
+  and Enter add a line instead. It is input-method safe: a
   plain Return is noted, and the message is sent only if a literal newline is then
   inserted. When an input method uses the key to confirm a composition, the composed
   text arrives instead and nothing is sent. A Return held longer than 80 ms before its

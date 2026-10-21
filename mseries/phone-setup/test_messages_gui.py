@@ -866,18 +866,19 @@ class MessagesUI(unittest.TestCase):
         self.addCleanup(setattr, app, 'fixture', True)
         with patch.dict(os.environ, {'XDG_CONFIG_HOME': folder}):
             action = app.lookup_action('enter-sends')
-            self.assertFalse(action.get_state().get_boolean())
-            action.activate(None);settle(.2)
-            self.assertTrue(action.get_state().get_boolean(), 'one activation toggles exactly once')
-            path = os.path.join(folder, 'mseries', 'messages.json')
-            self.assertEqual(json.load(open(path)), {'enter_sends': True})
-            self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+            self.assertTrue(action.get_state().get_boolean(), 'Enter sends by default')
             app.editor.get_buffer().set_text('Draft');settle(.3)
             self.assertIn('Enter to send · Shift+Enter', app.send_status.get_text())
             self.assertIn('(Enter)', app.send.get_tooltip_text())
             action.activate(None);settle(.2)
+            self.assertFalse(action.get_state().get_boolean(), 'one activation toggles exactly once')
+            path = os.path.join(folder, 'mseries', 'messages.json')
             self.assertEqual(json.load(open(path)), {'enter_sends': False})
+            self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
             self.assertIn('Ctrl+Enter to send', app.send_status.get_text())
+            action.activate(None);settle(.2)
+            self.assertEqual(json.load(open(path)), {'enter_sends': True})
+            self.assertIn('Enter to send · Shift+Enter', app.send_status.get_text())
 
     def test_fixture_never_touches_the_owners_preferences(self):
         import tempfile
