@@ -24,7 +24,8 @@ from gi.repository import Gdk, Gio, GLib, Granite, Gtk, Pango
 from blueferry.client import BackendClient
 from blueferry.bus import get_system_bus
 from blueferry.recipients import validate_recipient
-from messages_model import ConversationState, Outbox, contact_index, layout_messages, merge_inbox, resolve_contact_names
+from messages_model import (ConversationState, Outbox, blocks_group_confirmation, contact_index, group_roster, layout_messages,
+                            merge_inbox, needs_group_confirmation, resolve_contact_names, send_failure_reason)
 from message_media import load_preview, youtube_id
 from messages_style import build_style, missing_accent_names
 from messages_widgets import (AVATAR_PX, avatar, build_composer, build_notice, build_status, clear,
@@ -33,6 +34,7 @@ from messages_widgets import (AVATAR_PX, avatar, build_composer, build_notice, b
 from message_pins import PinStore, profile_key, read_snapshot, suggested_matches, matched_state, ordered_keys, effective_choices
 
 _ = gettext.gettext
+ngettext = gettext.ngettext
 APP_ID = 'io.elementary.mseries.Messages'
 # Below this width the window shows one pane at a time, like a phone.
 NARROW = 760
@@ -93,6 +95,7 @@ class Messages(Gtk.Application):
         self.pin_profile = None
         self.pin_store = None
         self.pin_pending = False
+        self.group_dialog = None
 
     def do_activate(self):
         if self.get_active_window():
@@ -182,7 +185,7 @@ class Messages(Gtk.Application):
         refresh.update_property([Gtk.AccessibleProperty.LABEL], [_('Refresh iPhone Inbox')])
         header.pack_end(refresh)
         menu = Gio.Menu()
-        for text, action, method in [(_('Import iPhone Pins…'), 'import-pins', self.import_pins), (_('Review Imported Pins…'), 'review-pins', self.review_pins), (_('Connect iPhone…'), 'setup', self.setup), (_('Advanced BlueFerry…'), 'advanced', self.advanced)]:
+        for text, action, method in [(_('Import iPhone Pins…'), 'import-pins', self.import_pins), (_('Review Imported Pins…'), 'review-pins', self.review_pins), (_('Connect iPhone…'), 'setup', self.setup), (_('Advanced BlueFerry…'), 'advanced', self.advanced), (_('Keyboard Shortcuts'), 'shortcuts', self.show_shortcuts)]:
             a = Gio.SimpleAction.new(action, None)
             a.connect('activate', method)
             self.add_action(a)
@@ -498,6 +501,7 @@ class Messages(Gtk.Application):
                 is_pinned = row.is_pinned = key in pinned
                 self.rows[key] = row
                 self.avatars[key] = (slot, portrait)
+                self.attach_row_menu(row, key)
                 self.list.append(row)
                 if is_pinned:
                     button = Gtk.ToggleButton(tooltip_text=thread['name'])
@@ -671,6 +675,45 @@ class Messages(Gtk.Application):
         # Stable handles for private interaction probes, never real account data.
         dialog.pin_controls = dropdowns, apply, error_label
         return dialog
+
+    def row_actions(self, thread):
+        """(label, callback) pairs for a conversation's context menu."""
+        actions = []
+        if thread.get('unread_count') and not thread.get('inbox_only') and not thread.get('new'):
+            actions.append((_('Mark as Read'), lambda: self.mark_read(thread)))
+        if thread.get('recipients'):
+            address = ', '.join(thread['recipients'])
+            actions.append((_('Copy Number or Address') if len(thread['recipients']) == 1 else _('Copy Numbers'),
+                            lambda: self.window.get_display().get_clipboard().set(address)))
+        return actions
+
+    def attach_row_menu(self, row, key):
+        """Right-click (or long-press) a conversation for quick actions."""
+        def show(gesture, *_args):
+            thread = self.threads.get(key)
+            actions = self.row_actions(thread) if thread else []
+            if not actions:
+                return
+            popover = Gtk.Popover(has_arrow=False, halign=Gtk.Align.START)
+            popover.set_parent(row)
+            menu = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            for text, callback in actions:
+                button = Gtk.Button(label=text, halign=Gtk.Align.FILL)
+                button.add_css_class('flat')
+                button.get_first_child().set_halign(Gtk.Align.START)
+                button.connect('clicked', lambda _b, cb=callback: (popover.popdown(), cb()))
+                menu.append(button)
+            popover.set_child(menu)
+            popover.connect('closed', lambda p: GLib.idle_add(p.unparent))
+            x, y = _args[-2:] if len(_args) >= 2 else (0, 0)
+            popover.set_pointing_to(Gdk.Rectangle(x=int(x), y=int(y), width=1, height=1))
+            popover.popup()
+        click = Gtk.GestureClick(button=3)
+        click.connect('pressed', show)
+        row.add_controller(click)
+        press = Gtk.GestureLongPress()
+        press.connect('pressed', lambda g, x, y: show(g, x, y))
+        row.add_controller(press)
 
     def filter_rows(self):
         query = self.search.get_text().casefold()
@@ -941,8 +984,63 @@ class Messages(Gtk.Application):
         thread = self.threads.get(self.model.selected)
         if not self.send.get_sensitive() or not thread:
             return
+        if blocks_group_confirmation(thread):
+            self.send_status.set_label(_('Add this group’s participants in Advanced BlueFerry before replying.'))
+            self.composer.revealer.set_reveal_child(True)
+            return
+        if needs_group_confirmation(thread):
+            # BlueFerry will not message a group until the user has seen who is in it.
+            self.confirm_group_send(thread)
+            return
+        self.start_send(thread)
+
+    def confirm_group_send(self, thread):
+        """Show every recipient in a native dialog; send only on an explicit yes."""
+        key, token = thread['key'], thread['confirmation_token']
+        roster = group_roster(thread, self.contact_names)
+        count = len(roster)
+        secondary = (ngettext('This message will go to this %d person.', 'This message will go to these %d people.', count) % count
+                     + ' ' + _('BlueFerry remembers the list and asks again only if the group changes.'))
+        if thread.get('roster_changed') or thread.get('unexpected_sender'):
+            secondary += ' ' + _('Someone who was not on the list has written to this group recently.')
+        dialog = Granite.MessageDialog.with_image_from_icon_name(_('Reply to this group?'), secondary, icon_for('system-users', 'avatar-default'), Gtk.ButtonsType.NONE)
+        dialog.set_transient_for(self.window)
+        dialog.set_modal(True)
+        people = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_top=6)
+        for name, address in roster:
+            row = Gtk.Box(spacing=10)
+            row.append(avatar(name or address, address, 's'))
+            texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.CENTER)
+            texts.append(label(name or address, xalign=0, ellipsize=Pango.EllipsizeMode.END))
+            if name:
+                texts.append(label(address, 'dim-label', xalign=0))
+            row.append(texts)
+            people.append(row)
+        dialog.get_custom_bin().append(Gtk.ScrolledWindow(child=people, hscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_height=True,
+                                                          propagate_natural_width=True, min_content_width=320, max_content_height=220))
+        dialog.add_button(_('Cancel'), Gtk.ResponseType.CANCEL)
+        go = dialog.add_button(ngettext('Send to %d Person', 'Send to %d People', count) % count, Gtk.ResponseType.ACCEPT)
+        go.add_css_class('suggested-action')
+        # Enter must never confirm a group send by accident.
+        dialog.set_default_response(Gtk.ResponseType.CANCEL)
+        def responded(_dialog, response):
+            dialog.destroy()
+            self.group_dialog = None
+            if response != Gtk.ResponseType.ACCEPT:
+                return
+            current = self.threads.get(key)
+            if not current or current.get('confirmation_token') != token:
+                self.send_status.set_label(_('The group changed. Review the participants and send again.'))
+                self.composer.revealer.set_reveal_child(True)
+                return
+            self.start_send(current, confirm_group=True)
+        dialog.connect('response', responded)
+        self.group_dialog = dialog
+        dialog.present()
+
+    def start_send(self, thread, confirm_group=False):
         try:
-            attempt = self.model.prepare(thread)
+            attempt = self.model.prepare(thread, confirm_group)
         except ValueError as error:
             self.send_status.set_label(str(error))
             self.composer.revealer.set_reveal_child(True)
@@ -956,7 +1054,7 @@ class Messages(Gtk.Application):
                 raise RuntimeError('Preview cannot send messages')
             client = BackendClient()
             if attempt.backend_thread:
-                return client.send_to_thread(attempt.key, attempt.body, expected_group_token=attempt.token)
+                return client.send_to_thread(attempt.key, attempt.body, confirm_group=attempt.confirm_group, expected_group_token=attempt.token)
             return client.send(attempt.recipient, attempt.body)
         def sent(_transfer, error):
             self.model.finish(attempt, not error)
@@ -964,13 +1062,41 @@ class Messages(Gtk.Application):
                 self.outbox.failed(entry)
             else:
                 self.outbox.delivered(entry)
+                if attempt.confirm_group and attempt.key in self.threads:
+                    # BlueFerry remembered the confirmation; do not ask again before the refresh lands.
+                    self.threads[attempt.key]['group_confirmed'] = True
             if self.model.selected == attempt.key:
                 self.editor.get_buffer().set_text(self.model.drafts.get(attempt.key, ''))
-            self.send_feedback[attempt.key] = _('Could not send. Your draft is kept; choose Send to retry.') if error else _('Sent through your iPhone')
+            self.send_feedback[attempt.key] = (_('Could not send: %s. Your draft is kept; choose Send to retry.') % send_failure_reason(error)) if error else _('Sent through your iPhone')
             self.update_composer()
             self.show_conversation()
             self.refresh()
         self.task(send, sent)
+
+    def show_shortcuts(self, *_args):
+        """Every shortcut in one native list; accelerators come from the actions themselves."""
+        sheet = Gtk.Window(title=_('Keyboard Shortcuts'), transient_for=self.window, modal=True, destroy_with_parent=True, default_width=380)
+        header = Gtk.HeaderBar()
+        header.set_title_widget(label(_('Keyboard Shortcuts'), 'title'))
+        sheet.set_titlebar(header)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin_start=20, margin_end=20, margin_top=16, margin_bottom=20)
+        rows = [(_('New Message'), 'app.new-message'), (_('Search Conversations'), 'app.search'), (_('Refresh iPhone Inbox'), 'app.refresh'),
+                (_('Back to Conversations'), 'app.back'), (_('Send Message'), '<Control>Return')]
+        for text, accel in rows:
+            line = Gtk.Box(spacing=12)
+            line.append(label(text, xalign=0, hexpand=True))
+            # Read the accelerator from the app ourselves; Granite's own action lookup
+            # showed nothing for these actions.
+            accel_string = (self.get_accels_for_action(accel) or [''])[0] if accel.startswith('app.') else accel
+            line.append(Granite.AccelLabel(label='', accel_string=accel_string))
+            box.append(line)
+        sheet.set_child(box)
+        keys = Gtk.EventControllerKey()
+        keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        keys.connect('key-pressed', lambda _c, key, _code, _mods: sheet.close() or True if key == Gdk.KEY_Escape else False)
+        sheet.add_controller(keys)
+        sheet.present()
+        return sheet
 
     def focus_search(self, *_args):
         if self.sidebar.get_visible():
@@ -1147,6 +1273,7 @@ class Messages(Gtk.Application):
             'demo2': dict(key='demo2', name='A very long contact name that should fit comfortably', recipients=['+15550100124'], reply_ready=True,
                           messages=[msg('demo4', 'This is a preview conversation.', False, at(days=1))], last_ts=at(days=1)),
             'family': dict(key='family', name='Family', recipients=['+15550100126', '+15550100127'], is_group=True, reply_ready=True,
+                           confirmation_token='fixture-roster', group_confirmed=False,
                            messages=[msg('fam1', 'Dinner at 7?', False, at(minutes=50), '+15550100126'),
                                      msg('fam2', 'I can bring dessert', False, at(minutes=48), '+15550100127'),
                                      msg('fam3', 'Perfect, see you both then', True, at(minutes=40))], last_ts=at(minutes=40)),

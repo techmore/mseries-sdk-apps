@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from messages import Messages, Gtk, GLib, Gdk
 from messages_widgets import photo_frame
+from unittest.mock import patch
 
 
 def settle(seconds=.25):
@@ -548,6 +549,145 @@ class MessagesUI(unittest.TestCase):
         self.assertEqual((texture.get_intrinsic_width(), texture.get_intrinsic_height()), (88, 88))
         self.assertIsNone(photo_frame(b'', 44))
         self.assertIsNone(photo_frame(b'\x00' * 64, 44))
+
+
+    # --- Group replies, failures, context menu, shortcuts -------------------
+
+    def send_with(self, key, text, **client_methods):
+        """Type text in a conversation and press Send against a fake client; return that client."""
+        from unittest.mock import MagicMock
+        app = self.app
+        run_inline(app)
+        app.refresh = lambda *_a: True
+        app.list.select_row(app.rows[key]);settle(.2)
+        app.editor.get_buffer().set_text(text)
+        client = MagicMock()
+        for name, value in client_methods.items():
+            setattr(client, name, value)
+        self.client = client
+        app.fixture = False
+        self.addCleanup(setattr, app, 'fixture', True)
+        self._patch = patch('messages.BackendClient', return_value=client)
+        self._patch.start()
+        self.addCleanup(self._patch.stop)
+        return client
+
+    def test_unconfirmed_group_asks_who_will_receive_it_before_sending(self):
+        from messages import Granite
+        app = self.app
+        client = self.send_with('family', 'Dinner is on me')
+        app.send_message();settle(.3)
+        dialog = app.group_dialog
+        self.assertIsInstance(dialog, Granite.MessageDialog)
+        client.send_to_thread.assert_not_called()
+        shown = ' '.join(w.get_label() for w in walk(dialog) if isinstance(w, Gtk.Label))
+        self.assertIn('+15550100126', shown)
+        self.assertIn('+15550100127', shown)
+        # The addresses must actually be readable, not ellipsized to nothing.
+        for address in ('+15550100126', '+15550100127'):
+            label = next(w for w in walk(dialog) if isinstance(w, Gtk.Label) and w.get_label() == address)
+            self.assertGreaterEqual(label.get_width(), 80, address + ' must have room to show')
+            self.assertFalse(label.get_layout().is_ellipsized(), address + ' is ellipsized')
+        self.assertIn('Send to 2 People', shown)
+        self.assertEqual(app.model.drafts['family'], 'Dinner is on me')
+        dialog.emit('response', Gtk.ResponseType.CANCEL);settle(.2)
+        client.send_to_thread.assert_not_called()
+        self.assertIsNone(app.group_dialog)
+        self.assertEqual(app.model.drafts['family'], 'Dinner is on me', 'cancel keeps the draft')
+
+    def test_pressing_enter_in_the_group_dialog_cancels_rather_than_sends(self):
+        app = self.app
+        client = self.send_with('family', 'Careful')
+        app.send_message();settle(.3)
+        default = app.group_dialog.get_default_widget()
+        self.assertIsNotNone(default)
+        self.assertEqual(default.get_label(), 'Cancel', 'the default button must be the safe one')
+        self.assertFalse(default.has_css_class('suggested-action'))
+        app.group_dialog.emit('response', Gtk.ResponseType.CANCEL);settle(.2)
+        client.send_to_thread.assert_not_called()
+
+    def test_confirming_sends_once_with_the_token_and_is_not_asked_again(self):
+        app = self.app
+        client = self.send_with('family', 'First', send_to_thread=lambda *a, **k: 'transfer')
+        client.send_to_thread = __import__('unittest.mock').mock.MagicMock(return_value='transfer')
+        app.send_message();settle(.3)
+        app.group_dialog.emit('response', Gtk.ResponseType.ACCEPT);settle(.4)
+        client.send_to_thread.assert_called_once_with('family', 'First', confirm_group=True, expected_group_token='fixture-roster')
+        self.assertTrue(app.threads['family']['group_confirmed'])
+        self.assertEqual(app.send_status.get_text(), 'Sent through your iPhone')
+        app.editor.get_buffer().set_text('Second')
+        app.send_message();settle(.3)
+        self.assertIsNone(app.group_dialog, 'already confirmed, so no second prompt')
+        self.assertEqual(client.send_to_thread.call_args_list[-1].kwargs['confirm_group'], False)
+
+    def test_group_that_changed_while_the_dialog_was_open_is_not_sent(self):
+        app = self.app
+        client = self.send_with('family', 'Hello')
+        app.send_message();settle(.3)
+        app.threads['family']['confirmation_token'] = 'roster-v2'
+        app.group_dialog.emit('response', Gtk.ResponseType.ACCEPT);settle(.3)
+        client.send_to_thread.assert_not_called()
+        self.assertIn('group changed', app.send_status.get_text())
+        self.assertEqual(app.model.drafts['family'], 'Hello')
+
+    def test_group_with_an_incomplete_roster_points_to_advanced_blueferry(self):
+        app = self.app
+        client = self.send_with('family', 'Hello')
+        app.threads['family']['participants_required'] = True
+        app.send_message();settle(.2)
+        self.assertIsNone(app.group_dialog)
+        client.send_to_thread.assert_not_called()
+        self.assertIn('Advanced BlueFerry', app.send_status.get_text())
+
+    def test_failure_shows_the_daemons_reason_not_a_generic_line(self):
+        app = self.app
+        client = self.send_with('demo', 'Hello')
+        client.send_to_thread.side_effect = Exception('OBEX connect failed: Forbidden')
+        app.send_message();settle(.3)
+        self.assertIn('Could not send', app.send_status.get_text())
+        self.assertIn('isn’t allowing message access', app.send_status.get_text())
+        self.assertEqual(app.model.drafts['demo'], 'Hello')
+
+    def test_conversation_context_menu_offers_mark_read_and_copy(self):
+        app = self.app
+        unread = [text for text, _cb in app.row_actions(app.threads['jordan'])]
+        read = [text for text, _cb in app.row_actions(app.threads['sam'])]
+        self.assertEqual(unread, ['Mark as Read', 'Copy Number or Address'])
+        self.assertEqual(read, ['Copy Number or Address'])
+        self.assertEqual([t for t, _c in app.row_actions(app.threads['family'])], ['Copy Numbers'])
+        row = app.rows['jordan']
+        click = next(c for c in row.observe_controllers() if isinstance(c, Gtk.GestureClick))
+        click.emit('pressed', 1, 12.0, 12.0);settle(.3)
+        popovers = [w for w in walk(row) if isinstance(w, Gtk.Popover)]
+        self.assertEqual(len(popovers), 1)
+        self.assertEqual([b.get_label() for b in walk(popovers[0]) if isinstance(b, Gtk.Button)], unread)
+        popovers[0].popdown();settle(.3)
+
+    def test_copy_action_puts_the_number_on_the_clipboard(self):
+        app = self.app
+        copy = dict(app.row_actions(app.threads['sam']))['Copy Number or Address']
+        copy();settle(.3)
+        done = []
+        app.window.get_display().get_clipboard().read_text_async(None, lambda cb, res: done.append(cb.read_text_finish(res)))
+        end = time.monotonic() + 3
+        while not done and time.monotonic() < end:
+            settle(.1)
+        self.assertEqual(done, ['+15550100128'])
+
+    def test_shortcuts_window_lists_every_shortcut(self):
+        from messages import Granite
+        app = self.app
+        sheet = app.show_shortcuts();settle(.3)
+        accelerators = [w for w in walk(sheet) if isinstance(w, Granite.AccelLabel)]
+        self.assertEqual(len(accelerators), 5)
+        keycaps = [w.get_label() for w in walk(sheet) if isinstance(w, Gtk.Label) and w.get_label() in ('Ctrl', 'Enter', 'Return', 'F5', 'N', 'F', 'R', 'Left', 'Alt')]
+        self.assertGreaterEqual(len(keycaps), 9, 'every row shows its keys: %s' % keycaps)
+        for accelerator in accelerators:
+            self.assertTrue(accelerator.get_first_child() is not None, 'an empty accelerator label draws nothing')
+        text = ' '.join(w.get_label() for w in walk(sheet) if isinstance(w, Gtk.Label))
+        for expected in ('New Message', 'Search Conversations', 'Refresh iPhone Inbox', 'Back to Conversations', 'Send Message'):
+            self.assertIn(expected, text)
+        sheet.close();settle(.2)
 
 
     def test_theme_screenshots(self):

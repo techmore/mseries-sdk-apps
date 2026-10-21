@@ -99,6 +99,22 @@ owns sending, recipient checks, history and group safety.
   contains it, so it is never doubled. A failed send removes the bubble and
   keeps the draft. When new messages arrive while you are scrolled up, a
   New Messages button offers a jump to the latest.
+- **Group replies.** BlueFerry refuses to message a group until a client has
+  shown who is in it and the user confirmed. Sending to an unconfirmed group now
+  opens a native Granite dialog listing every recipient (names when the phonebook
+  has exactly one match, otherwise the number), with **Cancel as the default
+  button** so Enter can never confirm it. Only the explicit Send button passes
+  `confirm_group` and the roster token to BlueFerry; if the roster changes while
+  the dialog is open nothing is sent. BlueFerry remembers the confirmation, so
+  the dialog appears once per group. A group whose participant list is
+  incomplete still goes to Advanced BlueFerry.
+- **Why a send failed.** A refused or failed send used to say only "Could not
+  send". It now gives BlueFerry's reason in plain words (no longer in history,
+  cannot tell who to reply to, group needs confirming, phone denying message
+  access, not connected, rate limited) and keeps the draft.
+- **Quick actions.** Right-click or long-press a conversation for Mark as Read
+  and Copy Number. **Keyboard Shortcuts** in the menu lists every shortcut with
+  native keycaps.
 - **Composer.** One rounded field with the send button inside it. The button
   slides in when there is something to send and shows a spinner while pending.
   Ctrl+Enter sends and Enter adds a line, exactly as before; plain Enter does
@@ -128,7 +144,7 @@ tones); `messages_widgets.py` builds the widgets; `messages_style.py` holds the
 scoped stylesheet. The installer copies all four.
 
 Checked with the isolated fixture and Cairo rendering in light, dark and narrow
-layouts, with 30 model tests, 5 media tests and 47 GTK tests (one screenshot
+layouts, with 36 model tests, 5 media tests and 56 GTK tests (one screenshot
 test needs its environment variable and skips), including end-to-end tests that
 push realistic BlueFerry objects through the real refresh path. **Not verified:**
 the redesign has not been run against the live phone, and the owner's open
