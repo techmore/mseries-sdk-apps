@@ -1,0 +1,26 @@
+[package]
+name = "mseries-updates"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-only"
+description = "Software Updates: a native Rust + Granite 7 front end for mseries-update (no update logic of its own)"
+
+[lib]
+name = "mseries_updates"
+
+[[bin]]
+name = "mseries-updates"
+path = "src/main.rs"
+
+# GTK needs the main thread and one display, so the render test is a single plain main(), not libtest.
+[[test]]
+name = "render"
+harness = false
+
+[dependencies]
+mseries-update-core = { path = "../mseries-update-core" }
+# granite-rs 3.3 does not enable a gtk4 feature itself, but gtk4-rs 0.11 gates gtk::Accessible behind v4_10;
+# turn on the GTK we actually ship (4.22) or granite-rs fails to compile (mseries/RUST-UPSTREAM-MAINTENANCE.md).
+gtk = { package = "gtk4", version = "0.11", features = ["v4_20"] }
+granite = { package = "granite-rs", version = "3.3", features = ["v7_8", "gtk_v4_20"] }

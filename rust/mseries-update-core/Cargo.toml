@@ -1,0 +1,18 @@
+[package]
+name = "mseries-update-core"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-only"
+description = "Reads `mseries-update status --json` (schema 1) and defines the only commands a UI may request; no GUI dependencies"
+
+[lib]
+name = "mseries_update_core"
+
+[[bin]]
+name = "mseries-update-helper"
+path = "src/bin/helper.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
