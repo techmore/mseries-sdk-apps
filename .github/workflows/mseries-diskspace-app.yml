@@ -1,0 +1,69 @@
+# Disk Space (Rust + Granite 7 disk usage analyzer): unit tests, a scan checked against du, the headless
+# render and interaction test under Xvfb, and a staged install. Touches no secrets and publishes nothing.
+name: Disk Space app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev, main]
+    paths:
+      - "rust/mseries-diskspace/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - "mseries/diskspace-app/**"
+      - ".github/workflows/mseries-diskspace-app.yml"
+  pull_request:
+    paths:
+      - "rust/mseries-diskspace/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - "mseries/diskspace-app/**"
+      - ".github/workflows/mseries-diskspace-app.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mseries-diskspace-app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: Disk Space app, render test (arm64)
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 45
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/../mseries-diskspace-target
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install build and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config git cargo rustc \
+            libgtk-4-dev libgranite-7-dev xvfb xauth dbus-x11 desktop-file-utils shellcheck
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ env.CARGO_TARGET_DIR }}
+          key: diskspace-app-${{ runner.arch }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: diskspace-app-${{ runner.arch }}-
+
+      - name: Style checks (bash -n, shellcheck)
+        run: bash mseries/validate.sh --only diskspace-app
+
+      - name: Tests, scan vs du, headless render under Xvfb, staged install
+        env:
+          MSERIES_DISKSPACE_SHOTS: ${{ runner.temp }}/diskspace-shots
+        run: bash mseries/diskspace-app/test.sh
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: disk-space-screenshots
+          path: ${{ runner.temp }}/diskspace-shots
+          if-no-files-found: ignore

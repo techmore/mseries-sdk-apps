@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Disk Space
+Comment=See what is using your disk and give the space back
+Exec=mseries-diskspace
+Icon=drive-harddisk
+Terminal=false
+Categories=GTK;System;Filesystem;
+Keywords=disk;space;storage;usage;ncdu;cleanup;
+StartupNotify=true
