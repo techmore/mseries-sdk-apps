@@ -1323,7 +1323,13 @@ class Messages(Gtk.Application):
                 msg('demo1', 'Made it home! How is the new desktop?', False, at(hours=3)),
                 msg('demo2', 'Even better now. Messages are right here with everything else.', True, at(hours=2, minutes=58)),
                 msg('demo2b', 'Links work too: https://elementary.io/docs/human-interface-guidelines', True, at(hours=2, minutes=58, seconds=-20)),
-                msg('demo3', 'That looks so much easier. See you for coffee tomorrow ☕', False, at(hours=2, minutes=55))]
+                msg('demo3', 'That looks so much easier. See you for coffee tomorrow ☕', False, at(hours=2, minutes=55)),
+                msg('demo5', 'Here is the whole plan so you have it in one place: we leave at nine, stop for coffee on the way, '
+                    'get to the trailhead by eleven, eat at the overlook around one, and aim to be back at the car before the '
+                    'light goes. Bring layers, water, and the good camera. Details and the map are at https://elementary.io/docs/learn.',
+                    False, at(hours=2, minutes=40)),
+                msg('demo6', '\ufffc', False, at(hours=2, minutes=39)),
+                msg('demo7', 'Love it. Sending the photo from the last trip too.\ufffc', True, at(hours=2, minutes=20))]
         self.status = dict(map=True)
         self.set_connection('ready')
         self.threads = {

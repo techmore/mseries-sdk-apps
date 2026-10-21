@@ -378,6 +378,27 @@ class MessagesUI(unittest.TestCase):
         self.assertIn('<a href="https://example.com/a">', bubble.get_label())
         self.assertNotIn('<b>', bubble.get_label(), 'markup in a message must be escaped')
 
+    def test_long_text_with_a_link_renders_whole_and_attachments_get_a_chip(self):
+        app = self.app
+        long = 'word ' * 120 + 'https://example.com/guide'
+        app.threads['demo']['messages'] = [msg(long, '2026-01-05T09:00:00', handle='a'),
+                                           msg('\ufffc', '2026-01-05T09:01:00', handle='b'),
+                                           msg('See this\ufffc', '2026-01-05T09:02:00', True, handle='c'),
+                                           msg('y' * 128, '2026-01-05T09:03:00', handle='d')]
+        app.threads['demo']['messages'][3]['phone_list'] = True
+        app.rendered = None
+        app.show_conversation();settle()
+        bubbles = with_class(app.messages, 'ms-bubble')
+        texts = [b.get_text() for b in bubbles]
+        self.assertEqual(texts[0], long, 'no characters are lost from a long message')
+        self.assertIn('<a href="https://example.com/guide">', bubbles[0].get_label())
+        self.assertEqual(len(with_class(app.messages, 'ms-attachment')), 2, 'one chip per attachment')
+        self.assertNotIn('', texts, 'an attachment-only message is not an empty bubble')
+        self.assertIn('See this', texts)
+        self.assertTrue(any(isinstance(w, Gtk.Label) and 'Shortened' in w.get_text() for w in walk(app.messages)),
+                        'a message cut at the phone cap says so')
+        self.assertEqual(sum(1 for w in walk(app.messages) if isinstance(w, Gtk.Label) and 'Shortened' in w.get_text()), 1)
+
     def test_send_button_and_placeholder_follow_the_draft(self):
         app = self.app
         app.editor.get_buffer().set_text('');settle(.3)

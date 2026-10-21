@@ -9,13 +9,42 @@ from datetime import datetime
 import gui_safety
 import messages_settings
 from messages_model import (AVATAR_TONES, ConversationState, Outbox, avatar_tone, conversation_preview,
-                            initials, layout_messages, merge_inbox, parse_timestamp, short_stamp,
+                            initials, layout_messages, merge_inbox, message_parts, parse_timestamp, short_stamp,
                             contact_index, resolve_contact_names, blocks_group_confirmation, group_roster,
                             lookup_contact_name, needs_group_confirmation, send_failure_reason, identity_keys)
 
 
 def thread(key='alice', **values):
     return dict(key=key, recipients=['+15550100123'], reply_ready=True, messages=[], **values)
+
+
+class MessageContentTests(unittest.TestCase):
+    def test_plain_text_is_shown_whole_and_untouched(self):
+        body = '  two spaces kept\n' + 'x' * 500
+        self.assertEqual(message_parts(dict(body=body)), (body, False, False))
+
+    def test_attachment_only_messages_are_recognised(self):
+        for body in ('', '   ', None, '\ufffc', ' \ufffc\ufffc '):
+            self.assertEqual(message_parts(dict(body=body)), ('', True, False), repr(body))
+
+    def test_an_attachment_mark_inside_text_keeps_the_text(self):
+        self.assertEqual(message_parts(dict(body='Look\ufffc')), ('Look', True, False))
+
+    def test_only_listing_messages_at_the_phone_cap_may_be_shortened(self):
+        long = 'y' * 128
+        self.assertTrue(message_parts(dict(body=long, phone_list=True))[2])
+        self.assertFalse(message_parts(dict(body=long))[2], 'a live message is whole')
+        self.assertFalse(message_parts(dict(body='y' * 40, phone_list=True))[2])
+        self.assertTrue(message_parts(dict(body='cut', body_truncated=True))[2], 'the backend flag is honoured')
+
+    def test_snapshot_messages_are_marked_as_coming_from_the_phone_listing(self):
+        rows = merge_inbox([], [dict(handle='h', sender='+15550100123', body='z' * 128)])
+        message = rows[0]['messages'][0]
+        self.assertTrue(message['phone_list'] and message_parts(message)[2])
+
+    def test_preview_names_an_attachment_instead_of_showing_nothing(self):
+        for body, expected in (('\ufffc', 'Attachment'), ('Photo\ufffc', 'Photo · Attachment'), ('Hi', 'Hi')):
+            self.assertEqual(conversation_preview(dict(messages=[dict(body=body)]))[0], expected)
 
 
 class RoutingTests(unittest.TestCase):
