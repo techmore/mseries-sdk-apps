@@ -168,6 +168,24 @@ push realistic BlueFerry objects through the real refresh path. **Not verified:*
 the redesign has not been run against the live phone, and the owner's open
 Messages window keeps the previous code until it is relaunched.
 
+### Crash on refresh and group texts — 2026-10-21
+
+**Window abort.** Message bubbles are selectable labels, so clicking a message puts keyboard
+focus inside the conversation. The next refresh rebuilt every bubble and GTK 4.22's AT-SPI
+layer aborted the whole app (`Gtk-CRITICAL gtk_at_spi_root_to_ref`, then `GLib-ERROR
+g_variant_new … '(so)'`, SIGABRT). A closed window cannot send. `release_focus` now moves
+focus out of the list or bubbles before they are rebuilt and restores it afterwards;
+`test_rebuilding_bubbles_never_destroys_the_focused_widget` fails without it.
+
+**Group texts under one sender.** iOS gives MAP only the sender (`ConversationId` is always 0
+and the recipient is just this phone); group membership comes only from ANCS notifications.
+With ANCS off (`ancs:false`, `ancs_authorized:false`, LE bearer failing with
+`le-connection-abort-by-local`) BlueFerry files a group text under whoever wrote it. When the
+daemon reports ANCS off, a direct conversation's composer says "Sends to this person only"
+and explains the cause in a tooltip. Turning on Share System Notifications for this computer
+in the iPhone's Bluetooth settings is what lets ANCS authorise; the LE failure itself is a
+BlueZ/controller issue tracked with the ANCS work above.
+
 ### Missed messages and sleep
 
 The app queries up to **200 recent inbox entries exposed by the iPhone** when

@@ -118,6 +118,52 @@ class MessagesUI(unittest.TestCase):
         self.app.stop_media_animation()
         self.assertFalse(self.app.media_timers)
 
+    def test_rebuilding_bubbles_never_destroys_the_focused_widget(self):
+        """GTK 4.22 aborts in AT-SPI if focused bubble text is destroyed by a refresh."""
+        app = self.app
+        app.window.present(); settle(.3)
+        bubbles = [w for w in walk(app.messages) if isinstance(w, Gtk.Label) and w.get_selectable()]
+        self.assertTrue(bubbles)
+        bubbles[-1].grab_focus(); settle(.1)
+        self.assertTrue(app.window.get_focus().is_ancestor(app.messages))
+        app.threads[app.model.selected]['messages'].append(dict(body='A new text arrives', outgoing=False, timestamp='Now'))
+        app.show_conversation(); settle(.2)
+        focus = app.window.get_focus()
+        self.assertFalse(focus is not None and focus.is_ancestor(app.messages), 'focus left on a destroyed bubble')
+        self.assertIs(focus, app.editor.get_focus_child() or focus)
+        self.assertTrue(any('A new text arrives' in w.get_label() for w in walk(app.messages) if isinstance(w, Gtk.Label)))
+
+    def test_rebuilding_the_conversation_list_keeps_focus_on_the_selected_row(self):
+        app = self.app
+        app.window.present(); settle(.3)
+        key = app.model.selected
+        app.rows[key].grab_focus(); settle(.1)
+        old_row = app.rows[key]
+        app.threads[key]['messages'].append(dict(body='Newest', outgoing=False, timestamp='Now'))
+        app.threads[key]['last_ts'] = 'Now'
+        app.populate(); settle(.2)
+        self.assertIsNot(app.rows[key], old_row, 'the list was rebuilt')
+        focus = app.window.get_focus()
+        self.assertIsNotNone(focus)
+        self.assertTrue(focus is app.rows[key] or focus.is_ancestor(app.rows[key]))
+
+    def test_direct_replies_say_so_when_iphone_group_info_is_unavailable(self):
+        app = self.app
+        direct = next(k for k, t in app.threads.items() if not t.get('is_group') and t.get('reply_ready'))
+        group = next(k for k, t in app.threads.items() if t.get('is_group') and t.get('reply_ready'))
+        for key, expect in ((direct, True), (group, False)):
+            app.list.select_row(app.rows[key]); settle(.1)
+            app.editor.get_buffer().set_text('Hello'); settle(.1)
+            self.assertNotIn('this person only', app.send_status.get_label(), 'fixture makes no claim about the phone')
+            app.status = dict(app.status, ancs=False)
+            app.update_composer()
+            self.assertEqual('Sends to this person only' in app.send_status.get_label(), expect)
+            self.assertIsNotNone(app.send_status.get_tooltip_text())
+            app.status = dict(app.status, ancs=True)
+            app.update_composer()
+            self.assertNotIn('this person only', app.send_status.get_label())
+            self.assertIsNone(app.send_status.get_tooltip_text())
+
     def test_offline_retains_conversations_and_disables_send(self):
         app = self.app
         app.editor.get_buffer().set_text('Keep offline')
