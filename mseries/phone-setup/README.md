@@ -187,6 +187,22 @@ and explains the cause in a tooltip. Turning on Share System Notifications for t
 in the iPhone's Bluetooth settings is what lets ANCS authorise; the LE failure itself is a
 BlueZ/controller issue tracked with the ANCS work above.
 
+### Reply and Tapbacks — 2026-10-21
+
+The phone's Bluetooth link carries iMessage as plain text only, so real iMessage threads, sent
+Tapbacks, typing and read receipts cannot be produced from here. What the text channel can do:
+
+- **Reply.** Right-click (or long-press) a bubble → Reply. A bar above the composer shows
+  what is being answered; the message goes out as `↪ “quoted text”` on its own line, then
+  your words. The quote also keeps the sent bubble and BlueFerry's echo identical. The
+  bar's × cancels; a successful send clears it. Copy Text is in the same menu because the
+  menu replaces the selectable label's own.
+- **Tapbacks.** An incoming `Liked “…”`, `Derek laughed at “…”`, `Reacted 🎉 to “…”` or
+  `Removed a like from “…”` folds onto the message it names as a small emoji chip (tooltip says
+  who). It matches the phone's 128-character shortened copy too. One reaction per person, a
+  newer one replaces it, and a Tapback whose target is not in the history stays an ordinary
+  bubble. Folding works on copies, so history and read-state are untouched.
+
 ### Missed messages and sleep
 
 The app queries up to **200 recent inbox entries exposed by the iPhone** when
