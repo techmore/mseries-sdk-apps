@@ -346,7 +346,7 @@ class SettingsTests(unittest.TestCase):
         for content in ('not json', '[]', '{"enter_sends": "yes"}', '{"enter_sends": 1}', ''):
             with open(self.path, 'w') as out:
                 out.write(content)
-            self.assertEqual(messages_settings.load(self.path), {'enter_sends': False}, content)
+            self.assertEqual(messages_settings.load(self.path), {'enter_sends': True}, content)
 
     def test_round_trip_keeps_only_known_boolean_switches(self):
         saved = messages_settings.save({'enter_sends': True, 'body': 'secret text', 'recipient': '+15550100123'}, self.path)
