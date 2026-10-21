@@ -76,7 +76,7 @@ def merge_inbox(threads, inbox):
             by_address[address] = thread
         thread['messages'].append(dict(handle=raw.get('handle', ''), body=raw.get('body', ''),
                                        timestamp=raw.get('timestamp', ''), outgoing=False,
-                                       read=raw.get('read', False), sender=raw.get('sender', '')))
+                                       read=raw.get('read', False), sender=raw.get('sender', ''), phone_list=True))
         if raw.get('read') is False:
             thread['unread_count'] = thread.get('unread_count', 0) + 1
         if raw.get('handle'):
@@ -223,13 +223,34 @@ def short_stamp(value, now=None):
     return f'{month} {parsed.day}' if parsed.year == now.year else f'{month} {parsed.day}, {parsed.year}'
 
 
+# iOS marks an inline attachment with U+FFFC, and the phone's Bluetooth message
+# service sends only text, so a photo or file arrives as that mark or as nothing.
+ATTACHMENT_MARK = '\ufffc'
+# The phone's inbox listing cuts each message at 128 characters and never says so.
+# A listing-only message this long may have lost its tail; live messages are whole.
+SHORTENED_AT = 120
+
+
+def message_parts(message):
+    """(text, has_attachment, shortened) for what a bubble should show."""
+    body = str(message.get('body') or '')
+    attachment = ATTACHMENT_MARK in body or not body.strip()
+    text = body.replace(ATTACHMENT_MARK, '').strip() if attachment else body
+    shortened = bool(message.get('body_truncated')) or (bool(message.get('phone_list')) and len(text) >= SHORTENED_AT)
+    return text, attachment, shortened
+
+
 def conversation_preview(thread):
     """(one-line preview, sent-by-me) for the newest message in a thread."""
     messages = thread.get('messages') or []
     if not messages:
         return '', False
     last = messages[-1]
-    return ' '.join(str(last.get('body', '')).split()), bool(last.get('outgoing'))
+    text, attachment, _shortened = message_parts(last)
+    preview = ' '.join(text.split())
+    if attachment:
+        preview = (preview + ' · ' if preview else '') + _('Attachment')
+    return preview, bool(last.get('outgoing'))
 
 
 def layout_messages(messages, is_group=False, now=None):

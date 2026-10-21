@@ -15,7 +15,7 @@ from gi.repository import Gdk, GdkPixbuf, GLib, Gtk, Pango
 from blueferry.message_links import linkify_message
 from blueferry.time_display import format_message_timestamp
 from message_media import media_links
-from messages_model import avatar_tone, conversation_preview, initials, short_stamp
+from messages_model import avatar_tone, conversation_preview, initials, message_parts, short_stamp
 
 _ = gettext.gettext
 AVATAR_PX = dict(s=34, m=44, l=54)
@@ -232,25 +232,44 @@ def message_widget(item, media=None):
     column.set_margin_top(8 if item['position'] in ('single', 'first') else 2)
     if item['show_sender']:
         column.append(label(message.get('sender', ''), 'ms-sender', xalign=0, ellipsize=Pango.EllipsizeMode.MIDDLE, max_width_chars=32))
-    bubble = Gtk.Label(wrap=True, selectable=True, xalign=0, max_width_chars=44,
-                       natural_wrap_mode=Gtk.NaturalWrapMode.NONE)
-    bubble.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
-    set_markup_safely(bubble, message.get('body', ''))
-    for css in ('ms-bubble', 'ms-outgoing' if outgoing else 'ms-incoming', 'ms-' + item['position']):
-        bubble.add_css_class(css)
-    if sending:
-        bubble.add_css_class('ms-sending')
+    text, attachment, shortened = message_parts(message)
     when = message.get('display_timestamp') or format_message_timestamp(message.get('timestamp'))
-    if when:
-        bubble.set_tooltip_text(when)
-    column.append(bubble)
+    direction = 'ms-outgoing' if outgoing else 'ms-incoming'
+    if text:
+        bubble = Gtk.Label(wrap=True, selectable=True, xalign=0, max_width_chars=44,
+                           natural_wrap_mode=Gtk.NaturalWrapMode.NONE)
+        bubble.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        set_markup_safely(bubble, text)
+        for css in ('ms-bubble', direction, 'ms-' + item['position']):
+            bubble.add_css_class(css)
+        if sending:
+            bubble.add_css_class('ms-sending')
+        if when:
+            bubble.set_tooltip_text(when)
+        column.append(bubble)
+    if attachment:
+        column.append(attachment_chip(direction, item['position'] if not text else 'single'))
     if media is not None:
-        for url in media_links(message.get('body', '')):
+        for url in media_links(text):
             column.append(media(url, outgoing))
+    if shortened:
+        column.append(label(_('Shortened by your iPhone · open it there for the rest'), 'ms-caption', xalign=1 if outgoing else 0))
     caption = _('Sending…') if sending else item['caption']
     if caption:
         column.append(label(caption, 'ms-caption', xalign=1 if outgoing else 0))
     return column
+
+
+def attachment_chip(direction, position):
+    """A bubble standing in for a photo or file the phone's Bluetooth link cannot carry."""
+    chip = Gtk.Box(spacing=8, halign=Gtk.Align.END if direction == 'ms-outgoing' else Gtk.Align.START)
+    for css in ('ms-chip', 'ms-attachment', direction, 'ms-' + position):
+        chip.add_css_class(css)
+    chip.append(Gtk.Image.new_from_icon_name('mail-attachment-symbolic'))
+    chip.append(label(_('Attachment'), xalign=0))
+    chip.set_tooltip_text(_('Your iPhone shares only the text of a message over Bluetooth. Open Messages on the iPhone to see this attachment.'))
+    chip.update_property([Gtk.AccessibleProperty.LABEL], [_('Attachment. Open Messages on your iPhone to see it.')])
+    return chip
 
 
 def stamp_widget(text):

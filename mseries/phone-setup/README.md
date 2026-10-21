@@ -89,6 +89,19 @@ owns sending, recipient checks, history and group safety.
   card under the bubble (see *Media-link previews* below). Sent links load at
   once; incoming ones offer Load Preview. The card is built by the controller
   because it owns the network pool and cache; `messages_widgets` only places it.
+- **Full text, attachments and links.** Messages received while BlueFerry runs
+  arrive whole (BlueFerry fetches the full message; a 456-character text and its
+  link render intact on this phone). The phone's inbox listing, which fills in
+  what arrived while the app was closed, cuts every message at 128 characters
+  without saying so. A message that came only from that listing and is at least
+  120 characters long is captioned **Shortened by your iPhone · open it there for
+  the rest** instead of looking complete; BlueFerry has no call that fetches the
+  full body of a listed message, so the app cannot recover it. The iPhone shares
+  only the text of a message over Bluetooth, so a photo or file arrives as an empty
+  body or iOS's object-replacement mark (U+FFFC). That is drawn as an **Attachment**
+  chip (also in the conversation list preview) rather than an empty bubble, with a
+  tooltip pointing to the iPhone. No MMS has been received on this phone yet, so
+  the chip is verified against fixtures and real-widget tests, not a real MMS.
 - **Conversation.** Header with the contact's avatar and addresses. Bubbles from
   the same person within five minutes form a run with tight spacing and a tail
   on the last bubble. Centred time headings appear after a 30-minute silence or
