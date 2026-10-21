@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Software Updates
+Comment=Check for, install and roll back M-series software updates
+Exec=mseries-updates
+Icon=software-update-available
+Terminal=false
+Categories=GTK;System;
+Keywords=update;upgrade;rollback;software;
+StartupNotify=true

@@ -1,0 +1,87 @@
+# Software Updates (Rust + Granite 7 front end for mseries-update): build, the headless render and
+# interaction test under Xvfb, the real updater's status JSON against the Rust parser, and a staged
+# install plus a real polkit check. Touches no secrets and publishes nothing.
+name: Software Updates app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev, main]
+    paths:
+      - "rust/mseries-update-core/**"
+      - "rust/mseries-updates/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - "mseries/updates-app/**"
+      - "mseries/update/**"
+      - ".github/workflows/mseries-updates-app.yml"
+  pull_request:
+    paths:
+      - "rust/mseries-update-core/**"
+      - "rust/mseries-updates/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - "mseries/updates-app/**"
+      - "mseries/update/**"
+      - ".github/workflows/mseries-updates-app.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mseries-updates-app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: Software Updates app, render and polkit (arm64)
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 45
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/../mseries-updates-target
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install build and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config git cargo rustc python3 \
+            libgtk-4-dev libgranite-7-dev xvfb xauth dbus-x11 desktop-file-utils polkitd
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ env.CARGO_TARGET_DIR }}
+          key: updates-app-${{ runner.arch }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: updates-app-${{ runner.arch }}-
+
+      - name: Style checks (bash -n, shellcheck)
+        run: |
+          sudo apt-get install -y --no-install-recommends shellcheck
+          bash mseries/validate.sh --only updates-app
+
+      - name: Tests, headless render under Xvfb, staged install
+        env:
+          MSERIES_UPDATES_SHOTS: ${{ runner.temp }}/updates-shots
+        run: bash mseries/updates-app/test.sh
+
+      - name: polkit accepts the action and it authorises only the helper
+        run: |
+          set -euo pipefail
+          sudo --preserve-env=CARGO_TARGET_DIR env PREFIX=/usr bash mseries/updates-app/install.sh --no-build
+          pkaction --action-id org.techmore.mseries.update --verbose | tee "$RUNNER_TEMP/pkaction.txt"
+          grep -q 'implicit active:.*auth_admin_keep' "$RUNNER_TEMP/pkaction.txt"
+          grep -q 'org.freedesktop.policykit.exec.path -> /usr/libexec/mseries-updates/mseries-update-helper' "$RUNNER_TEMP/pkaction.txt"
+          # The installed helper refuses anything off the allowlist even when asked directly.
+          ! /usr/libexec/mseries-updates/mseries-update-helper apply --now
+          sudo --preserve-env=CARGO_TARGET_DIR env PREFIX=/usr bash mseries/updates-app/install.sh --uninstall
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: software-updates-screenshots
+          path: ${{ runner.temp }}/updates-shots
+          if-no-files-found: ignore
