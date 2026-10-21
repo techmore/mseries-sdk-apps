@@ -6,6 +6,7 @@ import gettext
 from zlib import crc32
 from blueferry.events import canonical_address
 from blueferry.recipients import validate_recipient
+from blueferry.text_safety import terminal_text
 from blueferry.time_display import format_message_timestamp
 
 _ = gettext.gettext
@@ -21,19 +22,26 @@ def contact_index(records):
     return result
 
 
+def lookup_contact_name(address, index):
+    """The one phonebook name for this address, or '' when none or several match."""
+    key = canonical_address(address)
+    if not key:
+        return ''
+    names = index.get(key, set())
+    if not names and key.startswith('phone:'):
+        digits = key[6:]
+        alternate = '1'+digits if len(digits)==10 else digits[1:] if len(digits)==11 and digits.startswith('1') else ''
+        names = index.get('phone:'+alternate, set()) if alternate else set()
+    return next(iter(names)) if len(names) == 1 else ''
+
+
 def resolve_contact_names(threads, index):
     """Presentation only: never alter thread identities, groups or recipients."""
     for thread in threads:
         if thread.get('is_group') or len(thread.get('recipients', [])) != 1:
             continue
-        key = canonical_address(thread['recipients'][0])
-        names = index.get(key, set())
-        if not names and key and key.startswith('phone:'):
-            digits = key[6:]
-            alternate = '1'+digits if len(digits)==10 else digits[1:] if len(digits)==11 and digits.startswith('1') else ''
-            names = index.get('phone:'+alternate, set()) if alternate else set()
-        if len(names) == 1:
-            thread['name'] = next(iter(names))
+        if name := lookup_contact_name(thread['recipients'][0], index):
+            thread['name'] = name
     return threads
 
 
@@ -87,6 +95,8 @@ class SendAttempt:
     recipient: str
     token: str
     backend_thread: bool
+    # True only after the user confirmed the displayed participant list.
+    confirm_group: bool = False
 
 
 class ConversationState:
@@ -95,7 +105,7 @@ class ConversationState:
         self.drafts = {}
         self.pending = set()
 
-    def prepare(self, thread):
+    def prepare(self, thread, confirm_group=False):
         key = thread['key']
         body = self.drafts.get(key, '')
         if key in self.pending or not body.strip():
@@ -107,7 +117,8 @@ class ConversationState:
         if not backend_thread and len(recipients) != 1:
             raise ValueError('Choose one recipient.')
         recipient = validate_recipient(recipients[0]) if recipients else ''
-        attempt = SendAttempt(key, body, recipient, thread.get('confirmation_token', ''), backend_thread)
+        attempt = SendAttempt(key, body, recipient, thread.get('confirmation_token', ''), backend_thread,
+                              bool(confirm_group and thread.get('is_group')))
         self.pending.add(key)
         return attempt
 
@@ -115,6 +126,45 @@ class ConversationState:
         self.pending.discard(attempt.key)
         if success and self.drafts.get(attempt.key) == attempt.body:
             self.drafts.pop(attempt.key, None)
+
+
+# --- Group replies and failures -------------------------------------------
+# BlueFerry refuses to message a group until a client has shown its participants
+# and the user confirmed them. These helpers let the window do exactly that.
+
+def needs_group_confirmation(thread):
+    """A replyable group whose participant list the user has not confirmed yet."""
+    return bool(thread.get('is_group') and thread.get('reply_ready')
+                and thread.get('confirmation_token') and not thread.get('group_confirmed'))
+
+
+def blocks_group_confirmation(thread):
+    """The roster itself is incomplete, so it cannot be confirmed from here."""
+    return bool(thread.get('is_group') and thread.get('participants_required'))
+
+
+def group_roster(thread, index):
+    """[(name or '', address)] for every recipient the message would reach."""
+    return [(lookup_contact_name(address, index), address) for address in thread.get('recipients', [])]
+
+
+def send_failure_reason(error):
+    """A short, plain reason for a failed send, from BlueFerry's own wording."""
+    text = ' '.join(terminal_text(str(error or '')).split())
+    lowered = text.lower()
+    known = (
+        (('no longer exists',), _('this conversation is no longer in BlueFerry’s history')),
+        (('unambiguous reply',), _('BlueFerry can’t tell who to reply to')),
+        (('participant', 'confirm'), _('the group’s participants need confirming')),
+        (('group changed',), _('the group changed; review the participants')),
+        (('too many', 'rate limit'), _('too many messages in a short time; wait a minute')),
+        (('forbidden', 'denied', 'authoriz'), _('your iPhone isn’t allowing message access; check Bluetooth settings on the phone')),
+        (('not connected', 'not ready', 'obex', 'bluetooth', 'map '), _('your iPhone isn’t connected for messages')),
+    )
+    for needles, reason in known:
+        if any(needle in lowered for needle in needles):
+            return reason
+    return text[:140] if text else _('BlueFerry could not send it')
 
 
 # --- Presentation helpers -------------------------------------------------
