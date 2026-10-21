@@ -1,14 +1,17 @@
 import json
 import os
 import stat
+import subprocess
+import sys
 import tempfile
 import unittest
 from datetime import datetime
+import gui_safety
 import messages_settings
 from messages_model import (AVATAR_TONES, ConversationState, Outbox, avatar_tone, conversation_preview,
                             initials, layout_messages, merge_inbox, parse_timestamp, short_stamp,
                             contact_index, resolve_contact_names, blocks_group_confirmation, group_roster,
-                            lookup_contact_name, needs_group_confirmation, send_failure_reason)
+                            lookup_contact_name, needs_group_confirmation, send_failure_reason, identity_keys)
 
 
 def thread(key='alice', **values):
@@ -344,6 +347,110 @@ class SettingsTests(unittest.TestCase):
                 del os.environ['XDG_CONFIG_HOME']
             else:
                 os.environ['XDG_CONFIG_HOME'] = old
+
+
+class SnapshotIdentityTests(unittest.TestCase):
+    """The phone's inbox snapshot spells a number differently than BlueFerry's threads do."""
+
+    def direct(self, key, recipient, **values):
+        return dict(key=key, name='Mike', recipients=[recipient], is_group=False, reply_ready=True, messages=[], last_ts='', **values)
+
+    def snap(self, handle, sender, when, **values):
+        return dict(dict(handle=handle, sender=sender, body=handle, timestamp=when, read=True), **values)
+
+    def test_identity_keys_cover_formatting_and_the_north_american_twin(self):
+        self.assertEqual(identity_keys('+19086420729'), ('phone:19086420729', 'phone:9086420729'))
+        self.assertEqual(identity_keys('19086420729'), ('phone:19086420729', 'phone:9086420729'))
+        self.assertEqual(identity_keys('(908) 642-0729'), ('phone:9086420729', 'phone:19086420729'))
+        self.assertEqual(identity_keys('MChuisano@Me.com'), ('email:mchuisano@me.com',))
+        self.assertEqual(identity_keys('+442071838750'), ('phone:442071838750',), 'no twin outside the NANP lengths')
+        self.assertEqual(identity_keys('Bank Alert'), ())
+        self.assertEqual(identity_keys(''), ())
+
+    def test_snapshot_text_with_no_plus_joins_the_thread_instead_of_duplicating_it(self):
+        # The real case: the thread key is an Apple-ID email, its recipient is "+1…", and the
+        # snapshot reports the same number as "1…" without the plus.
+        thread_ = self.direct('address:email:mike@me.com', '+19086420729')
+        thread_['messages'] = [dict(handle='old', body='old', timestamp='2026-10-20T16:57:26', outgoing=False, read=True)]
+        result = merge_inbox([thread_], [self.snap('new1', '+19086420729', '2026-10-20T20:18:09', sender_phone_norm='19086420729', read=False),
+                                         self.snap('new2', '+19086420729', '2026-10-20T20:32:02', sender_phone_norm='19086420729', read=False)])
+        self.assertEqual(len(result), 1, 'one conversation for one person')
+        self.assertNotIn('inbox_only', result[0])
+        self.assertEqual([m['handle'] for m in result[0]['messages']], ['old', 'new1', 'new2'])
+        self.assertEqual(result[0]['last_ts'], '2026-10-20T20:32:02')
+        self.assertEqual(result[0]['unread_count'], 2)
+        self.assertEqual(result[0]['key'], 'address:email:mike@me.com', 'the backend route is untouched')
+
+    def test_ten_and_eleven_digit_forms_and_spacing_match_each_other(self):
+        for sender in ('9086420729', '19086420729', '+1 908-642-0729', '+19086420729'):
+            for recipient in ('+19086420729', '9086420729', '19086420729'):
+                result = merge_inbox([self.direct('t', recipient)], [self.snap('h', sender, '2026-10-20T10:00:00')])
+                self.assertEqual([len(r['messages']) for r in result], [1], '%s vs %s' % (sender, recipient))
+
+    def test_two_threads_claiming_one_number_are_never_guessed_between(self):
+        a, b = self.direct('a', '+19086420729'), self.direct('b', '9086420729')
+        result = merge_inbox([a, b], [self.snap('h1', '19086420729', '2026-10-20T10:00:00'), self.snap('h2', '+19086420729', '2026-10-20T10:05:00')])
+        by_key = {r['key']: r for r in result}
+        self.assertEqual(len(by_key['a']['messages']) + len(by_key['b']['messages']), 0, 'neither claimant gets the text')
+        extra = [r for r in result if r.get('inbox_only')]
+        self.assertEqual(len(extra), 1, 'both texts land together in one phone-only conversation')
+        self.assertEqual(len(extra[0]['messages']), 2)
+
+    def test_phone_only_texts_from_one_sender_share_a_conversation_whatever_the_spelling(self):
+        result = merge_inbox([], [self.snap('h1', '+17175550100', '2026-10-20T10:00:00'), self.snap('h2', '7175550100', '2026-10-20T10:05:00'),
+                                  self.snap('h3', '17175550100', '2026-10-20T10:06:00')])
+        self.assertEqual([len(r['messages']) for r in result], [3])
+
+    def test_groups_and_unknown_senders_are_still_left_alone(self):
+        group_ = dict(key='g', name='Family', recipients=['+19086420729', '+19086420730'], is_group=True, reply_ready=True, messages=[], last_ts='')
+        result = merge_inbox([group_], [self.snap('h', '19086420729', '2026-10-20T10:00:00'), self.snap('x', 'Bank Alert', '2026-10-20T10:01:00')])
+        by_key = {r['key']: r for r in result}
+        self.assertEqual(by_key['g']['messages'], [], 'a group never absorbs a direct text')
+        self.assertEqual(len(result), 2, 'the group plus one phone-only conversation; the unknown sender is dropped')
+
+    def test_a_sender_that_is_not_a_valid_recipient_is_still_dropped_never_made_a_route(self):
+        # "(908) 642-0729" is not a valid recipient, so it must not become a conversation.
+        result = merge_inbox([self.direct('t', '+19086420729')], [self.snap('h', '(908) 642-0729', '2026-10-20T10:00:00')])
+        self.assertEqual([len(r['messages']) for r in result], [0])
+
+    def test_different_numbers_are_not_merged(self):
+        result = merge_inbox([self.direct('t', '+19086420729')], [self.snap('h', '19086420730', '2026-10-20T10:00:00')])
+        self.assertEqual(sorted(len(r['messages']) for r in result), [0, 1])
+
+
+class GuiSafetyTests(unittest.TestCase):
+    """The GUI tests must never be able to open windows on a real desktop."""
+
+    def test_only_isolated_virtual_displays_are_accepted(self):
+        for display in (':99', ':100', ':102.0', ':90'):
+            self.assertTrue(gui_safety.check({'DISPLAY': display})[0], display)
+        for display in ('', ':0', ':0.0', ':1', ':1.0', ':10', ':89', 'host:99', 'localhost:0', ':abc'):
+            self.assertFalse(gui_safety.check({'DISPLAY': display})[0], repr(display))
+        self.assertFalse(gui_safety.check({})[0], 'no display at all')
+
+    def test_the_refusal_says_what_to_do(self):
+        reason = gui_safety.check({'DISPLAY': ':0'})[1]
+        self.assertIn('xvfb-run', reason)
+        self.assertIn('real desktop', reason)
+
+    def test_forcing_x11_removes_the_live_wayland_session_from_view(self):
+        env = {'DISPLAY': ':99', 'WAYLAND_DISPLAY': 'wayland-0', 'XDG_SESSION_TYPE': 'wayland'}
+        gui_safety.force_x11(env)
+        self.assertEqual(env['GDK_BACKEND'], 'x11')
+        self.assertNotIn('WAYLAND_DISPLAY', env)
+        self.assertEqual(env['DISPLAY'], ':99')
+
+    def test_the_gui_test_module_skips_itself_on_a_real_looking_display(self):
+        # DISPLAY=:5 and a Wayland socket that does not exist: even if the guard were
+        # broken nothing could connect to a real desktop, so this is harmless to run.
+        here = os.path.dirname(os.path.abspath(__file__))
+        runtime = tempfile.mkdtemp()
+        env = {'PATH': os.environ.get('PATH', ''), 'DISPLAY': ':5', 'WAYLAND_DISPLAY': 'no-such-socket', 'XDG_RUNTIME_DIR': runtime}
+        done = subprocess.run([sys.executable, '-W', 'ignore', os.path.join(here, 'test_messages_gui.py')],
+                              env=env, capture_output=True, text=True, timeout=60, cwd=here)
+        self.assertEqual(done.returncode, 0, done.stderr[-400:])
+        self.assertIn('skipped', done.stdout)
+        self.assertIn('real desktop', done.stdout)
 
 
 if __name__ == '__main__':

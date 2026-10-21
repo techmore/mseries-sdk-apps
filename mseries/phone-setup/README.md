@@ -168,6 +168,14 @@ window's last snapshot. The app does not download the full iCloud archive or
 recover a complete sent history. A real inbox read returned 11 entries on this
 phone; a controlled suspend/missed-message/reopen scenario remains unverified.
 
+**One person, one conversation.** Snapshot messages join a direct conversation by
+identity, not by string. BlueFerry's threads write a number as `+19086420729` while the phone's
+snapshot reports `19086420729`; those are the same phone (as are a 10-digit number and its
+`1`-prefixed form), so they now share one conversation. Before this, such a person appeared
+twice and their newest texts sat in a duplicate phone-only conversation while the real one
+looked stale. If two threads claim one number the text goes to a single phone-only
+conversation rather than to either, and a sender that is not a valid recipient is still dropped.
+
 ### Verification-code offers
 
 A separate native helper detects recent SMS verification codes and offers them
@@ -390,3 +398,12 @@ Preserve drafts, focus, selection, light/dark themes and narrow layouts. Test th
 actual behavior before claiming parity. Commit/push coherent changes and open
 PRs against dev. Preserve the running Bluetooth, audio, kernel and panel setup.
 ```
+
+### Running the GUI tests safely
+
+`test_messages_gui.py` opens and closes dozens of windows and sends key events, so it must
+never run against a live desktop. Run it only as `xvfb-run -a python3 test_messages_gui.py`.
+`gui_safety.py` enforces this: the module skips itself unless `DISPLAY` is an isolated virtual
+display (`:90` or higher, which is where `xvfb-run -a` starts), and it forces the X11 backend and
+removes `WAYLAND_DISPLAY`. The second part matters even under `xvfb-run`: with a Wayland session
+in the environment GTK otherwise opens the test windows on the real desktop.
