@@ -55,7 +55,7 @@ def lookup_contact_name(address, index):
 def resolve_contact_names(threads, index):
     """Presentation only: never alter thread identities, groups or recipients."""
     for thread in threads:
-        if thread.get('is_group') or len(thread.get('recipients', [])) != 1:
+        if thread.get('is_group') or thread.get('sender_alphanumeric') or len(thread.get('recipients', [])) != 1:
             continue
         if name := lookup_contact_name(thread['recipients'][0], index):
             thread['name'] = name
@@ -86,8 +86,6 @@ def merge_inbox(threads, inbox):
                 owners.setdefault(key, []).append(thread)
     phone_only = {}
     for raw in inbox:
-        if raw.get('handle') in handles:
-            continue
         sender = raw.get('sender_phone_norm') or raw.get('sender', '')
         address = address_key(sender)
         if not address:
@@ -101,14 +99,24 @@ def merge_inbox(threads, inbox):
         thread = candidates[0] if len(candidates) == 1 else None
         if thread is None:
             thread = next((phone_only[key] for key in keys if key in phone_only), None)
+        if thread is None and raw.get('handle') in handles:
+            continue
         if thread is None:
             key = 'inbox:' + address
             thread = dict(key=key, name=raw.get('contact_name') or raw.get('sender') or address,
-                          recipients=[address], is_group=False, reply_ready=True,
+                          recipients=[address], is_group=False, reply_ready=not bool(raw.get('sender_alphanumeric')),
                           messages=[], last_ts='', inbox_only=True)
             result[key] = thread
             for identity in keys or (address,):
                 phone_only[identity] = thread
+        # Newer BlueFerry marks sender IDs represented as keypad digits. Never
+        # promote those digits into a reply route, even for duplicate snapshots.
+        if raw.get('sender_alphanumeric'):
+            thread['reply_ready'] = False
+            thread['sender_alphanumeric'] = str(raw['sender_alphanumeric'])
+            thread['name'] = thread['sender_alphanumeric']
+        if raw.get('handle') in handles:
+            continue
         thread['messages'].append(dict(handle=raw.get('handle', ''), body=raw.get('body', ''),
                                        timestamp=raw.get('timestamp', ''), outgoing=False,
                                        read=raw.get('read', False), sender=raw.get('sender', ''), phone_list=True))
@@ -146,7 +154,7 @@ class ConversationState:
         if key in self.pending or not body.strip():
             raise ValueError('Write a message first.')
         if not thread.get('reply_ready'):
-            raise ValueError('Confirm this conversation’s participants in BlueFerry before replying.')
+            raise ValueError(reply_block_reason(thread))
         recipients = thread.get('recipients', [])
         backend_thread = not thread.get('inbox_only') and not thread.get('new')
         if not backend_thread and len(recipients) != 1:
@@ -166,6 +174,12 @@ class ConversationState:
 # --- Group replies and failures -------------------------------------------
 # BlueFerry refuses to message a group until a client has shown its participants
 # and the user confirmed them. These helpers let the window do exactly that.
+
+def reply_block_reason(thread):
+    if thread.get('is_group'):
+        return _('Confirm this group’s participants in Advanced BlueFerry before replying.')
+    return _('This sender cannot receive replies.')
+
 
 def needs_group_confirmation(thread):
     """A replyable group whose participant list the user has not confirmed yet."""

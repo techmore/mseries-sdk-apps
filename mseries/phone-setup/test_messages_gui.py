@@ -73,6 +73,19 @@ class MessagesUI(unittest.TestCase):
         self.app.quit()
         settle(.05)
 
+    def test_read_only_direct_sender_explains_reply_restriction(self):
+        app = self.app
+        app.threads['demo']['reply_ready'] = False
+        app.threads['demo']['sender_alphanumeric'] = 'Fixture Bank'
+        app.editor.get_buffer().set_text('Draft stays here')
+        app.update_composer()
+        self.assertFalse(app.send.get_sensitive())
+        self.assertEqual(app.send_status.get_label(), 'This sender cannot receive replies.')
+        self.assertEqual(app.model.drafts['demo'], 'Draft stays here')
+        app.editor.get_buffer().set_text('')
+        app.update_composer()
+        self.assertEqual(app.composer.placeholder.get_label(), 'This sender cannot receive replies.')
+
     def test_selection_draft_and_keyboard_focus(self):
         app = self.app
         app.editor.get_buffer().set_text('Unsent draft')

@@ -177,3 +177,27 @@ machine. Source/configure flags for the final client build match the earlier
 candidate except `--enable-client` replaces `--disable-client`. `--experimental`
 is a runtime daemon argument. Factory-image integration and post-reboot recovery
 are not qualified.
+
+## Upstream refresh — 2026-10-21
+
+BlueFerry main is now `69122b3bd8579093e2a9c7b3d05ad66ff38ab50f`, 51 commits
+ahead of our recorded `60fd7ef1` backend. This is a reviewed comparison, not a
+backend pin change or deployment. The existing public upstream watcher records
+this same new head. Changes include LE/media recovery, short-code conversations,
+alphanumeric sender IDs, confirmed phone-link dialing and WirePlumber role-key
+correction. BlueZ 5.85 still cannot qualify the newer bearer behavior.
+
+The [alphanumeric-sender fix](https://github.com/erikwb/blueferry/commit/96d7d04223b9e8f81193b117fa5edbe7adaca15d)
+marks keypad-spelled sender IDs read-only: replying to their digit representation
+could address a different phone owner. Native Messages already respects backend
+`reply_ready=false`. Its phone-snapshot adapter now also respects optional
+`sender_alphanumeric` metadata when synthesizing or updating a direct thread,
+including a duplicate message handle. Contact-name presentation preserves this
+explicit sender identity. Direct read-only conversations explain that replies
+are unavailable, rather than incorrectly asking to confirm group participants.
+
+This compatibility patch does not make the old backend detect sender IDs, add
+short-code support to old recipient validation, or qualify current upstream on
+the phone. Upgrade the actual BlueFerry backend separately after preserving our
+protocol and native adapter tests, reviewing all source changes, and authorizing
+any live service/device activation.

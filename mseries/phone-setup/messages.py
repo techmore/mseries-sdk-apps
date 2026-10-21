@@ -25,7 +25,7 @@ from blueferry.client import BackendClient
 from blueferry.bus import get_system_bus
 from blueferry.recipients import validate_recipient
 from messages_model import (ConversationState, Outbox, blocks_group_confirmation, contact_index, group_roster, layout_messages,
-                            merge_inbox, needs_group_confirmation, quote_snippet, reply_body, resolve_contact_names, send_failure_reason)
+                            merge_inbox, needs_group_confirmation, quote_snippet, reply_body, reply_block_reason, resolve_contact_names, send_failure_reason)
 from message_media import load_preview, youtube_id
 import messages_settings
 from messages_style import build_style, missing_accent_names
@@ -1026,7 +1026,7 @@ class Messages(Gtk.Application):
         if not thread:
             hint = _('Choose a conversation to write a message.')
         elif not thread.get('reply_ready'):
-            hint = _('Replies are off until the group’s participants are confirmed.')
+            hint = reply_block_reason(thread)
         elif not self.status.get('map'):
             hint = _('Offline · your draft is kept')
         else:
@@ -1037,7 +1037,7 @@ class Messages(Gtk.Application):
         if pending:
             text = _('Sending…')
         elif thread and not thread.get('reply_ready'):
-            text = _('Check the group participants in Advanced BlueFerry before replying.')
+            text = reply_block_reason(thread)
         elif thread:
             text = self.send_feedback.get(key) or (((_('Enter to send · Shift+Enter for a new line') if self.settings['enter_sends'] else _('Ctrl+Enter to send · Enter for a new line')) if self.status.get('map') else _('Offline · your draft is kept while this window is open')) if draft.strip() else '')
             if text and draft.strip() and self.status.get('map') and self.group_info_missing() and not thread.get('is_group') and key not in self.send_feedback:

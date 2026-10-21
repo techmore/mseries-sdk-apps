@@ -11,7 +11,7 @@ import messages_settings
 from messages_model import (AVATAR_TONES, ConversationState, Outbox, avatar_tone, conversation_preview,
                             initials, layout_messages, merge_inbox, message_parts, parse_timestamp, short_stamp,
                             contact_index, resolve_contact_names, blocks_group_confirmation, group_roster,
-                            lookup_contact_name, needs_group_confirmation, send_failure_reason, identity_keys)
+                            lookup_contact_name, needs_group_confirmation, send_failure_reason, identity_keys, reply_block_reason)
 
 
 def thread(key='alice', **values):
@@ -90,6 +90,32 @@ class RoutingTests(unittest.TestCase):
 
 
 class SnapshotTests(unittest.TestCase):
+    def test_alphanumeric_snapshot_sender_stays_read_only_and_keeps_name(self):
+        raw = dict(handle='bank', sender='3873363749', sender_alphanumeric='Fuse Energy', body='Notice')
+        rows = merge_inbox([], [raw])
+        resolve_contact_names(rows, contact_index([('Unrelated phone owner', ['3873363749'], [])]))
+        self.assertEqual(rows[0]['name'], 'Fuse Energy')
+        self.assertFalse(rows[0]['reply_ready'])
+        state = ConversationState()
+        state.drafts[rows[0]['key']] = 'Do not send'
+        with self.assertRaisesRegex(ValueError, 'cannot receive replies'):
+            state.prepare(rows[0])
+        self.assertFalse(state.pending)
+
+    def test_duplicate_snapshot_still_applies_sender_read_only_metadata(self):
+        existing = thread(name='Digits')
+        existing['recipients'] = ['3873363749']
+        existing['messages'] = [dict(handle='bank', body='Notice')]
+        rows = merge_inbox([existing], [dict(handle='bank', sender='3873363749',
+                                            sender_alphanumeric='Fuse Energy', body='Notice')])
+        self.assertEqual(len(rows[0]['messages']), 1)
+        self.assertFalse(rows[0]['reply_ready'])
+        self.assertTrue(existing['reply_ready'], 'input threads are not mutated')
+
+    def test_blocked_direct_sender_is_not_described_as_a_group(self):
+        self.assertEqual(reply_block_reason(dict(is_group=False)), 'This sender cannot receive replies.')
+        self.assertIn('group', reply_block_reason(dict(is_group=True)))
+
     def test_phonebook_names_use_unique_addresses_without_changing_routes(self):
         index=contact_index([('Alice',['+1 (555) 010-0123'],[]),('Email Person',[],['PERSON@example.com'])])
         rows=[thread(name='15550100123'),dict(key='email',name='person@example.com',recipients=['person@example.com'],messages=[])]
