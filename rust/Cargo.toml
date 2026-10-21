@@ -1,3 +1,11 @@
 [workspace]
 members = ["mseries-power", "granite-smoke", "pantheon-compositor", "mseries-update-core", "mseries-updates", "mseries-diskspace"]
 resolver = "2"
+
+# Smaller, faster binaries for the session components (the compositor runs on
+# every frame). Thin LTO keeps link time reasonable; one codegen unit lets
+# LLVM optimise across the whole crate. No `target-cpu`: the same package
+# must run on every M-series machine.
+[profile.release]
+lto = "thin"
+codegen-units = 1
