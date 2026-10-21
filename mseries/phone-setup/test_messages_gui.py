@@ -1,8 +1,23 @@
-"""Isolated GTK tests. Run with GDK_BACKEND=x11 xvfb-run -a python3 ... ."""
+"""Isolated GTK tests. Run with: xvfb-run -a python3 test_messages_gui.py
+
+These open and close many windows and send key events, so they refuse to run on a
+real desktop: the display must be an isolated virtual one and the X11 backend is
+forced (see gui_safety.py). Nothing here ever appears on the user's screen.
+"""
 import os
+import sys
 import time
 import unittest
 from pathlib import Path
+
+import gui_safety
+SAFE, WHY = gui_safety.check(os.environ)
+if not SAFE:
+    if __name__ == '__main__':
+        print('skipped: ' + WHY)
+        sys.exit(0)
+    raise unittest.SkipTest(WHY)
+gui_safety.force_x11(os.environ)
 from messages import Messages, Gtk, GLib, Gdk
 from messages_widgets import photo_frame
 from unittest.mock import patch
@@ -265,6 +280,13 @@ class MessagesUI(unittest.TestCase):
         self.assertIsNone(self.app.pin_state['snapshot'])
 
     # --- Native experience -------------------------------------------------
+
+    def test_runs_on_the_isolated_x11_display_never_a_live_session(self):
+        display = self.app.window.get_display()
+        self.assertIn('X11', type(display).__name__)
+        self.assertEqual(display.get_name(), os.environ['DISPLAY'])
+        self.assertNotIn('WAYLAND_DISPLAY', os.environ)
+        self.assertEqual(os.environ['GDK_BACKEND'], 'x11')
 
     def test_stylesheet_parses_cleanly_on_this_toolkit(self):
         self.assertEqual(self.app.css_errors, [])
