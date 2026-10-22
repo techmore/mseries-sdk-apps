@@ -10,6 +10,7 @@ pub mod handoff;
 pub mod index;
 pub mod look;
 pub mod markdown;
+pub mod palette;
 pub mod probe;
 pub mod repos;
 pub mod status;

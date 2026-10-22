@@ -168,6 +168,24 @@ fn main() {
         if let Some(path) = &shot_m2 {
             save_png(app.window(), path);
         }
+        // ---- command palette (Ctrl+K) --------------------------------------------------------------
+        let palette = app.palette();
+        pump(200);
+        palette.set_query("open usage");
+        pump(100);
+        let titles = palette.shown_titles();
+        assert_eq!(titles.first().map(String::as_str), Some("Open Usage"), "palette ranks the page first: {titles:?}");
+        palette.run(0);
+        pump(300);
+        assert_eq!(app.page(), "usage", "the palette opened the Usage page");
+        let palette = app.palette();
+        palette.set_query("hdmi");
+        pump(100);
+        assert!(palette.shown_titles().iter().any(|t| t.contains("HDMI")), "threads are in the palette");
+        palette.window().close();
+        pump(100);
+        println!("palette ok");
+
         // ---- milestone 3: usage ----------------------------------------------------------------
         app.show_usage();
         assert!(pump_until("usage", 90, || app.usage_page().summary().is_some()));

@@ -87,3 +87,8 @@ levelbar.usage-gauge block.full { background: @error_color; }
 .pill.agent { font-weight: 600; }
 .diag-row { padding: 8px 12px; }
 .diag-proc { font-size: 0.85em; }
+
+/* Command palette */
+.palette { border-radius: 8px; }
+.palette-list { background: transparent; }
+.palette-row { padding: 7px 8px; }
