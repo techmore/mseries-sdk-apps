@@ -43,6 +43,7 @@ Other entry points:
 | Ctrl+Shift+U | Usage |
 | Ctrl+, | Settings (appearance, defaults per project, server, notifications, renderer) |
 | Ctrl+Shift+T | Terminal pane for the open thread (the server's PTY, no local shell) |
+| Ctrl+Shift+S | SnapShot: screenshot through the portal, named after the focused window, attached to the draft |
 | Ctrl+Q | Quit |
 | Y / N | Allow once / deny the oldest waiting permission prompt (when not typing) |
 

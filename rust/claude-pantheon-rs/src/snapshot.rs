@@ -49,6 +49,7 @@ fn request_path(bus: &gio::DBusConnection, token: &str) -> String {
 }
 
 /// One screenshot through the portal; resolves with the PNG path the portal wrote.
+#[allow(deprecated)]
 pub async fn capture_screen(parent_window: &str) -> Result<PathBuf, SnapError> {
     let bus = session_bus()?;
     let token = format!("claudepantheon{}", glib::random_int());
@@ -77,7 +78,16 @@ pub async fn capture_screen(parent_window: &str) -> Result<PathBuf, SnapError> {
     options.insert("modal", false);
     let args = (parent_window, options.end()).to_variant();
     let call = bus
-        .call_future(Some(PORTAL), PORTAL_PATH, "org.freedesktop.portal.Screenshot", "Screenshot", Some(&args), None, gio::DBusCallFlags::NONE, 30_000)
+        .call_future(
+            Some(PORTAL),
+            PORTAL_PATH,
+            "org.freedesktop.portal.Screenshot",
+            "Screenshot",
+            Some(&args),
+            None,
+            gio::DBusCallFlags::NONE,
+            30_000,
+        )
         .await;
     if let Err(e) = call {
         bus.signal_unsubscribe(sub);
@@ -99,22 +109,42 @@ pub async fn capture_screen(parent_window: &str) -> Result<PathBuf, SnapError> {
 pub async fn active_window() -> Option<(String, u32)> {
     let session = session_bus().ok()?;
     let addr = session
-        .call_future(Some("org.a11y.Bus"), "/org/a11y/bus", "org.a11y.Bus", "GetAddress", None, None, gio::DBusCallFlags::NONE, 3_000)
+        .call_future(
+            Some("org.a11y.Bus"),
+            "/org/a11y/bus",
+            "org.a11y.Bus",
+            "GetAddress",
+            None,
+            None,
+            gio::DBusCallFlags::NONE,
+            3_000,
+        )
         .await
         .ok()?;
     let addr: String = addr.child_value(0).get()?;
-    let a11y = gio::DBusConnection::new_for_address_future(&addr, gio::DBusConnectionFlags::AUTHENTICATION_CLIENT).await.ok()?;
+    let a11y = gio::DBusConnection::for_address_future(&addr, gio::DBusConnectionFlags::AUTHENTICATION_CLIENT, None)
+        .await
+        .ok()?;
     let children = |bus_name: &str, path: &str| {
         let a11y = a11y.clone();
         let bus_name = bus_name.to_string();
         let path = path.to_string();
         async move {
             let v = a11y
-                .call_future(Some(&bus_name), &path, "org.a11y.atspi.Accessible", "GetChildren", None, None, gio::DBusCallFlags::NONE, 3_000)
+                .call_future(
+                    Some(&bus_name),
+                    &path,
+                    "org.a11y.atspi.Accessible",
+                    "GetChildren",
+                    None,
+                    None,
+                    gio::DBusCallFlags::NONE,
+                    3_000,
+                )
                 .await
                 .ok()?;
             let arr = v.child_value(0);
-            let mut out = Vec::new();
+            let mut out: Vec<(String, String)> = Vec::new();
             for i in 0..arr.n_children() {
                 let child = arr.child_value(i);
                 let name: String = child.child_value(0).get()?;
@@ -129,7 +159,16 @@ pub async fn active_window() -> Option<(String, u32)> {
         let Some(windows) = children(&app_bus, &app_path).await else { continue };
         for (win_bus, win_path) in windows {
             let state = a11y
-                .call_future(Some(&win_bus), &win_path, "org.a11y.atspi.Accessible", "GetState", None, None, gio::DBusCallFlags::NONE, 2_000)
+                .call_future(
+                    Some(&win_bus),
+                    &win_path,
+                    "org.a11y.atspi.Accessible",
+                    "GetState",
+                    None,
+                    None,
+                    gio::DBusCallFlags::NONE,
+                    2_000,
+                )
                 .await
                 .ok();
             let Some(state) = state else { continue };
@@ -155,7 +194,16 @@ pub async fn active_window() -> Option<(String, u32)> {
                 .and_then(|v| v.child_value(0).as_variant().and_then(|inner| inner.get::<String>()))
                 .unwrap_or_default();
             let pid = a11y
-                .call_future(Some(&app_bus), &app_path, "org.a11y.atspi.Application", "GetApplicationBusAddress", None, None, gio::DBusCallFlags::NONE, 1_000)
+                .call_future(
+                    Some(&app_bus),
+                    &app_path,
+                    "org.a11y.atspi.Application",
+                    "GetApplicationBusAddress",
+                    None,
+                    None,
+                    gio::DBusCallFlags::NONE,
+                    1_000,
+                )
                 .await
                 .ok()
                 .map(|_| 0u32);
@@ -192,10 +240,17 @@ pub async fn snap(parent_window: &str) -> Result<Capture, SnapError> {
 
 /// A file name for the attachment: the window title when known, else the time.
 pub fn attachment_name(c: &Capture) -> String {
-    let stamp = glib::DateTime::now_local().and_then(|d| d.format("%Y-%m-%d-%H%M%S")).map(|s| s.to_string()).unwrap_or_default();
+    let stamp = glib::DateTime::now_local()
+        .and_then(|d| d.format("%Y-%m-%d-%H%M%S"))
+        .map(|s| s.to_string())
+        .unwrap_or_default();
     match &c.window_title {
         Some(t) if !t.trim().is_empty() => {
-            let safe: String = t.chars().map(|ch| if ch.is_alphanumeric() || ch == '-' || ch == '_' { ch } else { '-' }).take(48).collect();
+            let safe: String = t
+                .chars()
+                .map(|ch| if ch.is_alphanumeric() || ch == '-' || ch == '_' { ch } else { '-' })
+                .take(48)
+                .collect();
             format!("snap-{}-{stamp}.png", safe.trim_matches('-'))
         }
         _ => format!("snap-{stamp}.png"),
@@ -227,7 +282,11 @@ mod tests {
 
     #[test]
     fn names_are_safe() {
-        let c = Capture { path: PathBuf::new(), window_title: Some("Code: main.rs — Claude/Pantheon".into()), pid: Some(1) };
+        let c = Capture {
+            path: PathBuf::new(),
+            window_title: Some("Code: main.rs — Claude/Pantheon".into()),
+            pid: Some(1),
+        };
         let n = attachment_name(&c);
         assert!(n.starts_with("snap-Code--main-rs") && n.ends_with(".png"), "{n}");
         assert!(attachment_name(&Capture::default()).starts_with("snap-"));

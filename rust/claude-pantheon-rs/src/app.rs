@@ -11,7 +11,9 @@ use crate::t3::model::{Provider, ServerConfig, Shell, ThreadShell, ThreadView, T
 use crate::t3::{self, Rpc, auth, ws::WsError};
 use crate::transcript::{self, Transcript};
 use crate::workflow::{self, Issue, PinnedRepo};
-use crate::{changes, composer, diagnostics, handoff, notify, palette, repos, settings, sidebar, terminal, usage};
+use crate::{
+    changes, composer, diagnostics, handoff, notify, palette, repos, settings, sidebar, snapshot, terminal, usage,
+};
 use futures_util::StreamExt;
 use granite::prelude::{PlaceholderExt, ToastExt};
 use gtk::{gdk, gio, glib, pango, prelude::*};
@@ -216,6 +218,7 @@ impl App {
                 ("Open Offline Twin", "win.offline"),
                 ("Close Thread", "win.close-thread"),
                 ("Terminal", "win.terminal"),
+                ("SnapShot (attach a screenshot)", "win.snapshot"),
             ]),
         );
         menu_model.append_section(
@@ -520,6 +523,7 @@ impl App {
             ("offline", &[], Box::new(|a| a.open_offline_twin())),
             ("close-thread", &["<Control>w"], Box::new(|a| a.close_thread())),
             ("terminal", &["<Control><Shift>t"], Box::new(|a| a.toggle_terminal())),
+            ("snapshot", &["<Control><Shift>s"], Box::new(|a| a.snapshot())),
             ("settings", &["<Control>comma"], Box::new(|a| a.settings())),
             ("reconnect", &[], Box::new(|a| a.connect_stored())),
             ("forget", &[], Box::new(|a| a.forget())),
@@ -1691,6 +1695,38 @@ impl App {
         self.terminal_revealer.set_reveal_child(true);
         self.terminal_pane.attach(rpc, thread_id, cwd);
         self.terminal_pane.grab_focus();
+    }
+
+    /// Ctrl+Shift+S: a screenshot through the portal, named after the focused window (AT-SPI),
+    /// uploaded and attached to the draft.
+    pub fn snapshot(self: &Rc<Self>) {
+        if self.conn.borrow().is_none() {
+            self.toast("Connect to the server to attach screenshots.");
+            return;
+        }
+        if self.live.borrow().is_none() && self.draft.borrow().is_none() {
+            self.toast("Open a thread or start a new one first.");
+            return;
+        }
+        self.entry.set_status("Taking a screenshot…");
+        let app = self.clone();
+        glib::spawn_future_local(async move {
+            match snapshot::snap("").await {
+                Ok(capture) => {
+                    let name = snapshot::attachment_name(&capture);
+                    match std::fs::read(&capture.path) {
+                        Ok(bytes) => {
+                            if let Some(t) = &capture.window_title {
+                                app.entry.set_status(&format!("Screenshot of “{t}”; uploading…"));
+                            }
+                            app.upload_attachment(bytes, name);
+                        }
+                        Err(e) => app.entry.set_status(&format!("Could not read the screenshot: {e}")),
+                    }
+                }
+                Err(e) => app.entry.set_status(&format!("Screenshot failed: {e}")),
+            }
+        });
     }
 
     pub fn terminal_pane(&self) -> &Rc<terminal::TerminalPane> {
