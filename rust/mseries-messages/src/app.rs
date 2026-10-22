@@ -3708,8 +3708,19 @@ mod tests {
             .register(None::<&gtk::gio::Cancellable>)
             .unwrap();
         let app = super::App::build(&application).expect("private session bus");
-        app.backend_available.set(false);
-        app.render_conversation(None);
+        let wait_for_refresh = || {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            let context = gtk::glib::MainContext::default();
+            while app.refresh_gate.in_flight.get() {
+                assert!(std::time::Instant::now() < deadline, "refresh timed out");
+                context.iteration(false);
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        };
+        wait_for_refresh();
+        assert!(!app.backend_available.get());
+        assert!(!app.state.borrow().map_ready);
+        assert!(app.status.has_css_class("warning"));
         assert_eq!(
             app.conversation_title.text(),
             "Connect iPhone to get started"
@@ -3723,6 +3734,11 @@ mod tests {
         app.state.borrow_mut().selected = Some("test-thread".into());
         app.go_back_to_conversations();
         assert!(app.state.borrow().selected.is_none());
+        assert_eq!(app.state.borrow().drafts["test-thread"], "unsent draft");
+        app.refresh_recent();
+        wait_for_refresh();
+        assert!(!app.backend_available.get());
+        assert!(!app.send_button.is_sensitive());
         assert_eq!(app.state.borrow().drafts["test-thread"], "unsent draft");
         app.window.close();
     }
