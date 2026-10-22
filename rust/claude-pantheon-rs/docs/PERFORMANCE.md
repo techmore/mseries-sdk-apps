@@ -79,6 +79,7 @@ start-up probe; the table tracks drift per feature.
 | #463 | install target, .desktop actions, D-Bus activation, metainfo, icons | 59 | 0.0 | 187 – 205 |
 | #464 | Wingpanel indicator (separate process in the panel; app unchanged apart from the open-thread action) | 59 | 0.0 | 190 – 205 |
 | #465 | .deb package (app + indicator), CI build and release-pipeline artifact; app unchanged | 49 | 0.0 | 230 – 511 (machine loaded by parallel builds, load 12; same binary as #464) |
+| #466 | CI job: fmt --check, clippy -D warnings, tests; 8 clippy fixes (type aliases, while-let, collapsed ifs) | 58 | 0.0 | 194 – 269 |
 
 ## Reproduce
 
