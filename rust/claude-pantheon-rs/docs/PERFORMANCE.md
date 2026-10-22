@@ -89,6 +89,8 @@ start-up probe; the table tracks drift per feature.
 | #473 | permission prompts as cards: Allow once / Allow for this thread / Deny with reason, Y/N keys, notification mirror | 65 | 0.0 | 193 – 212 |
 | #474 | Changes page: file tree with status, inline/side-by-side GtkSourceView diff, per-hunk copy, restore to checkpoint | 65 | 0.0 | 219 – 240 |
 | #475 | vte4 terminal pane fed from the server's terminal stream (hidden by default; libvte linked at start) | 65 | 0.0 | 247 – 257 |
+| #476 | Settings window (appearance, defaults per project, server, notifications, renderer) | 64 | 0.0 | 304 – 717 (machine at load 16–19 from other agents; the window is built only when opened) |
+| #477 | SnapShot: portal screenshot + AT-SPI window title, attached to the draft (Ctrl+Shift+S) | 66 | 0.0 | 206 – 235 (load 5; the #476 figures were load, not the branch) |
 
 ## Reproduce
 

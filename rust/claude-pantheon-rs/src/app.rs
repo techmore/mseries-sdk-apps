@@ -11,7 +11,9 @@ use crate::t3::model::{Provider, ServerConfig, Shell, ThreadShell, ThreadView, T
 use crate::t3::{self, Rpc, auth, ws::WsError};
 use crate::transcript::{self, Transcript};
 use crate::workflow::{self, Issue, PinnedRepo};
-use crate::{changes, composer, diagnostics, handoff, notify, palette, repos, sidebar, terminal, usage};
+use crate::{
+    changes, composer, diagnostics, handoff, notify, palette, repos, settings, sidebar, snapshot, terminal, usage,
+};
 use futures_util::StreamExt;
 use granite::prelude::{PlaceholderExt, ToastExt};
 use gtk::{gdk, gio, glib, pango, prelude::*};
@@ -119,6 +121,7 @@ pub struct App {
     auto_opened: Cell<bool>,
     palette: RefCell<Option<Rc<palette::Palette>>>,
     sidebar_cfg: RefCell<sidebar::SidebarConfig>,
+    settings: Rc<RefCell<settings::Settings>>,
     started: Instant,
 }
 
@@ -215,6 +218,7 @@ impl App {
                 ("Open Offline Twin", "win.offline"),
                 ("Close Thread", "win.close-thread"),
                 ("Terminal", "win.terminal"),
+                ("SnapShot (attach a screenshot)", "win.snapshot"),
             ]),
         );
         menu_model.append_section(
@@ -426,6 +430,7 @@ impl App {
             auto_opened: Cell::new(false),
             palette: RefCell::new(None),
             sidebar_cfg: RefCell::new(sidebar::SidebarConfig::load()),
+            settings: Rc::new(RefCell::new(settings::Settings::load())),
             started,
         });
 
@@ -446,6 +451,7 @@ impl App {
 
         app.wire(&new_chat);
         app.wire_composer();
+        app.settings.borrow().apply_appearance();
         app.window.present();
         app.reindex();
         if std::env::var_os("CLAUDE_PANTHEON_OFFLINE").is_none() {
@@ -517,6 +523,7 @@ impl App {
             ("offline", &[], Box::new(|a| a.open_offline_twin())),
             ("close-thread", &["<Control>w"], Box::new(|a| a.close_thread())),
             ("terminal", &["<Control><Shift>t"], Box::new(|a| a.toggle_terminal())),
+            ("snapshot", &["<Control><Shift>s"], Box::new(|a| a.snapshot())),
             ("settings", &["<Control>comma"], Box::new(|a| a.settings())),
             ("reconnect", &[], Box::new(|a| a.connect_stored())),
             ("forget", &[], Box::new(|a| a.forget())),
@@ -744,9 +751,48 @@ impl App {
         self.show_page("empty");
     }
 
-    /// Ctrl+,: the settings window lands with its own issue; until then say so.
+    /// Ctrl+,: the settings window.
     fn settings(self: &Rc<Self>) {
-        self.toast("Settings arrive with the settings-window issue; pairing lives in the menu for now.");
+        let providers: Vec<(String, String)> =
+            self.providers.borrow().iter().filter(|p| p.ready()).map(|p| (p.instance_id.clone(), p.name())).collect();
+        let (projects, server, server_label) = match self.conn.borrow().as_ref() {
+            Some(c) => (
+                c.shell.projects.iter().map(|p| (p.id.clone(), p.title.clone())).collect(),
+                Some(c.cred.server.clone()),
+                Some(c.cred.label.clone()),
+            ),
+            None => (Vec::new(), None, None),
+        };
+        let keyring = std::env::var_os("PATH")
+            .map(|p| std::env::split_paths(&p).any(|d| d.join("secret-tool").is_file()))
+            .unwrap_or(false);
+        let a = self.clone();
+        let b = self.clone();
+        settings::SettingsWindow::open(
+            &self.window,
+            self.settings.clone(),
+            settings::Context {
+                providers,
+                projects,
+                server,
+                server_label,
+                keyring,
+                on_pair: Rc::new(move || {
+                    a.show_page("pair");
+                    a.window.present();
+                }),
+                on_unpair: Rc::new(move || b.forget()),
+            },
+        );
+    }
+
+    /// Applies the stored defaults (provider and permission mode) to the composer for a project.
+    fn apply_project_defaults(&self, project_id: &str) {
+        let (provider, mode) = self.settings.borrow().defaults_for(project_id);
+        if let Some(p) = provider {
+            self.select_provider(&p, None);
+        }
+        self.select_mode(&mode);
     }
 
     /// About: version, server and provider state, in a Granite-styled dialog.
@@ -1235,6 +1281,10 @@ impl App {
     /// The dock badge counts running threads; the bar shows while any turn runs (the server reports
     /// no fraction, so it sits at the half mark as a "working" indicator).
     fn refresh_launcher(&self) {
+        if !self.settings.borrow().dock_badge {
+            notify::launcher_entry(0, None);
+            return;
+        }
         let running =
             self.conn.borrow().as_ref().map(|c| c.shell.threads.iter().filter(|t| t.is_running()).count()).unwrap_or(0);
         notify::launcher_entry(running as i64, (running > 0).then_some(0.5));
@@ -1244,6 +1294,12 @@ impl App {
     fn notify_background(&self, kind: &str, thread_id: &str, title: &str, body: &str, answer: bool) {
         if self.window.is_active() {
             return;
+        }
+        {
+            let s = self.settings.borrow();
+            if (answer && !s.notify_prompts) || (!answer && !s.notify_turn_finished) {
+                return;
+            }
         }
         let Some(application) = self.window.application() else { return };
         notify::notify(&application, &format!("{kind}:{thread_id}"), title, body, thread_id, answer);
@@ -1639,6 +1695,38 @@ impl App {
         self.terminal_revealer.set_reveal_child(true);
         self.terminal_pane.attach(rpc, thread_id, cwd);
         self.terminal_pane.grab_focus();
+    }
+
+    /// Ctrl+Shift+S: a screenshot through the portal, named after the focused window (AT-SPI),
+    /// uploaded and attached to the draft.
+    pub fn snapshot(self: &Rc<Self>) {
+        if self.conn.borrow().is_none() {
+            self.toast("Connect to the server to attach screenshots.");
+            return;
+        }
+        if self.live.borrow().is_none() && self.draft.borrow().is_none() {
+            self.toast("Open a thread or start a new one first.");
+            return;
+        }
+        self.entry.set_status("Taking a screenshot…");
+        let app = self.clone();
+        glib::spawn_future_local(async move {
+            match snapshot::snap("").await {
+                Ok(capture) => {
+                    let name = snapshot::attachment_name(&capture);
+                    match std::fs::read(&capture.path) {
+                        Ok(bytes) => {
+                            if let Some(t) = &capture.window_title {
+                                app.entry.set_status(&format!("Screenshot of “{t}”; uploading…"));
+                            }
+                            app.upload_attachment(bytes, name);
+                        }
+                        Err(e) => app.entry.set_status(&format!("Could not read the screenshot: {e}")),
+                    }
+                }
+                Err(e) => app.entry.set_status(&format!("Screenshot failed: {e}")),
+            }
+        });
     }
 
     pub fn terminal_pane(&self) -> &Rc<terminal::TerminalPane> {
@@ -2199,6 +2287,7 @@ impl App {
         *self.current_session.borrow_mut() = None;
         *self.transcript.borrow_mut() = None;
         *self.draft.borrow_mut() = Some(Draft { project_id: project.id.clone() });
+        self.apply_project_defaults(&project.id);
         self.entry.set_draft_key(Some(format!("draft:{}", project.id)));
         self.list.unselect_all();
         self.clear_chat();
