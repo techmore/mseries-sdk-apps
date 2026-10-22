@@ -895,7 +895,7 @@ impl App {
         }
         {
             let app = Rc::downgrade(self);
-            let dialog = dialog.clone();
+            let dialog = dialog.downgrade();
             let matches = matches.clone();
             results.connect_row_activated(move |_, row| {
                 let Some(app) = app.upgrade() else { return };
@@ -903,13 +903,15 @@ impl App {
                     return;
                 };
                 app.start_direct_conversation(contact.name, contact.address);
-                dialog.close();
+                if let Some(dialog) = dialog.upgrade() {
+                    dialog.close();
+                }
                 app.editor.grab_focus();
             });
         }
         {
             let app = Rc::downgrade(self);
-            let dialog = dialog.clone();
+            let dialog = dialog.downgrade();
             let query = query.clone();
             let current = current.clone();
             start.connect_clicked(move |_| {
@@ -922,14 +924,16 @@ impl App {
                     .or_else(|| current.borrow().clone());
                 if let Some(contact) = contact {
                     app.start_direct_conversation(contact.name, contact.address);
-                    dialog.close();
+                    if let Some(dialog) = dialog.upgrade() {
+                        dialog.close();
+                    }
                     app.editor.grab_focus();
                 }
             });
         }
         {
             let app = Rc::downgrade(self);
-            let dialog = dialog.clone();
+            let dialog = dialog.downgrade();
             let query_for_activate = query.clone();
             let current = current.clone();
             query.connect_activate(move |_| {
@@ -942,7 +946,9 @@ impl App {
                     .or_else(|| current.borrow().clone());
                 if let Some(contact) = contact {
                     app.start_direct_conversation(contact.name, contact.address);
-                    dialog.close();
+                    if let Some(dialog) = dialog.upgrade() {
+                        dialog.close();
+                    }
                     app.editor.grab_focus();
                 }
             });
@@ -1027,6 +1033,29 @@ impl App {
                 glib::Propagation::Proceed
             });
         }
+        let keys = gtk::EventControllerKey::new();
+        keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+        {
+            let results = results.clone();
+            let dialog = dialog.downgrade();
+            let query = query.clone();
+            keys.connect_key_pressed(move |_, key, _, _| {
+                if key == gtk::gdk::Key::Down && query.has_focus() {
+                    if let Some(row) = results.row_at_index(0) {
+                        results.select_row(Some(&row));
+                        row.grab_focus();
+                        return glib::Propagation::Stop;
+                    }
+                } else if key == gtk::gdk::Key::Escape {
+                    if let Some(dialog) = dialog.upgrade() {
+                        dialog.close();
+                    }
+                    return glib::Propagation::Stop;
+                }
+                glib::Propagation::Proceed
+            });
+        }
+        dialog.add_controller(keys);
         dialog.present();
         query.grab_focus();
     }
