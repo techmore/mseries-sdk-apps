@@ -43,8 +43,11 @@ selected an auxiliary title-matching X11 window; restricting the search to
 visible windows resolved the false failure. Both Paned children now preserve their minimum widths rather than shrinking
 visible controls below their usable size. Compact navigation still hides the
 inactive child explicitly. The same private-Xvfb resize test passes without
-the prior zero-width GtkBox warnings. Enlarged text, comprehensive allocated
-content bounds, visual review and assistive technology remain unqualified. CI execution, visual/accessibility and connected-phone acceptance remain
+the prior zero-width GtkBox warnings. The same test increases GTK’s font to
+Sans 18 at a 1040-pixel window, verifies increased text metrics and automatic
+compact navigation, restores the prior font, and verifies regular two-pane
+layout returns. This private-session font-change regression passes. Comprehensive
+allocated content bounds, visual review and assistive technology remain unqualified. CI execution, visual/accessibility and connected-phone acceptance remain
 unverified. The locally built Debian package remains uninstalled under build/.
 
 ## Messages isolated GTK recovery regression — 2026-10-22

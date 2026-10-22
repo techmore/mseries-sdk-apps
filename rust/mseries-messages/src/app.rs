@@ -3902,6 +3902,18 @@ mod tests {
         assert!(app.sidebar.is_visible());
         assert!(app.detail.is_visible());
         assert!(!app.back_button.is_visible());
+        let settings = gtk::Settings::default().unwrap();
+        let original_font = settings.property::<String>("gtk-font-name");
+        let normal_text_unit = mseries_pantheon_kit::text_unit(&app.window, 1.0);
+        settings.set_property("gtk-font-name", "Sans 18");
+        wait_for_layout(true);
+        assert!(mseries_pantheon_kit::text_unit(&app.window, 1.0) > normal_text_unit);
+        assert!(!app.sidebar.is_visible());
+        assert!(app.detail.is_visible());
+        settings.set_property("gtk-font-name", &original_font);
+        wait_for_layout(false);
+        assert!(app.sidebar.is_visible());
+        assert!(app.detail.is_visible());
         let buffer = app.editor.buffer();
         assert_eq!(
             buffer.text(&buffer.start_iter(), &buffer.end_iter(), false),
