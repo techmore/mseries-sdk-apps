@@ -27,7 +27,12 @@ and retention of the uncertain bubble and draft. No real phone or recipient is
 reachable through this private-bus fixture.
 The passing GTK fixture also advertises unsupported API v99, verifies the API-v2
 error, disabled sending and preserved draft, then restores v2 and verifies recovery.
-Strict combined SDK/Messages Clippy across all targets passes. CI execution, visual/accessibility and connected-phone acceptance remain
+Strict combined SDK/Messages Clippy across all targets passes.
+A delayed-send GTK scenario also passes: the fixture holds a response, the app
+switches phones, and the old success response leaves the active phone’s same-key,
+same-body draft/outbox untouched. The parked send remains OutcomeUnknown. The
+post-response check drains the event loop for 100 ms; deterministic callback
+completion instrumentation would strengthen this timing-sensitive assertion. CI execution, visual/accessibility and connected-phone acceptance remain
 unverified. The locally built Debian package remains uninstalled under build/.
 
 ## Messages isolated GTK recovery regression — 2026-10-22

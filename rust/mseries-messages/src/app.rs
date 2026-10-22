@@ -3768,12 +3768,20 @@ mod tests {
         let fixture_api_version = api_version.clone();
         let send_mode = std::rc::Rc::new(std::cell::Cell::new(0_u8));
         let fixture_send_mode = send_mode.clone();
+        let delayed_send = std::rc::Rc::new(std::cell::RefCell::new(
+            None::<gtk::gio::DBusMethodInvocation>,
+        ));
+        let fixture_delayed_send = delayed_send.clone();
         let switch_during_inbox = std::rc::Rc::new(std::cell::Cell::new(false));
         let switch_request = switch_during_inbox.clone();
         let registration = bus
             .register_object("/io/weirdware/BlueFerry", &node.interfaces()[0])
             .method_call(move |_, _, _, _, method, _, invocation| {
                 if method == "SendToThreadChecked" {
+                    if fixture_send_mode.get() == 3 {
+                        *fixture_delayed_send.borrow_mut() = Some(invocation);
+                        return;
+                    }
                     match fixture_send_mode.get() {
                         0 => invocation.return_value(Some(&().to_variant())),
                         1 => invocation.return_dbus_error("io.weirdware.BlueFerry.Error.Failed", "Synthetic known failure"),
@@ -3925,6 +3933,40 @@ mod tests {
         assert_eq!(
             app.state.borrow().drafts["shared-key"],
             "Synthetic uncertain draft"
+        );
+        send_mode.set(3);
+        app.select_thread("shared-key");
+        app.editor.buffer().set_text("A draft");
+        app.send_current();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while delayed_send.borrow().is_none() {
+            assert!(std::time::Instant::now() < deadline);
+            gtk::glib::MainContext::default().iteration(false);
+        }
+        *fixture_profile.borrow_mut() = Some(phone_a.into());
+        app.refresh_recent();
+        wait_for_refresh();
+        assert_eq!(app.state.borrow().drafts["shared-key"], "A draft");
+        let active_outbox_count = app.state.borrow().outbox.len();
+        delayed_send
+            .borrow_mut()
+            .take()
+            .unwrap()
+            .return_value(Some(&().to_variant()));
+        let drain_until = std::time::Instant::now() + std::time::Duration::from_millis(100);
+        while std::time::Instant::now() < drain_until {
+            gtk::glib::MainContext::default().iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(app.state.borrow().drafts["shared-key"], "A draft");
+        assert_eq!(app.state.borrow().outbox.len(), active_outbox_count);
+        assert_eq!(
+            app.parked_phone_states.borrow()[phone_b]
+                .outbox
+                .last()
+                .unwrap()
+                .status,
+            super::OutboxStatus::OutcomeUnknown
         );
         bus.unregister_object(registration).unwrap();
         app.window.close();
