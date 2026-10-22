@@ -11,6 +11,11 @@ class KeyringTests(unittest.TestCase):
     def test_real_secret_service_roundtrip_and_phone_isolation(self):
         subprocess.run(['gnome-keyring-daemon', '--start', '--unlock', '--components=secrets'],
                        input=b'fixture-only-password', check=True, capture_output=True, timeout=10)
+        import gi
+        gi.require_version('Secret', '1')
+        from gi.repository import Secret
+        Secret.Collection.create_sync(None, 'Private Messages pin fixture', Secret.COLLECTION_DEFAULT,
+                                      Secret.CollectionCreateFlags.NONE, None)
         first, second = PinStore('fixture-phone-one'), PinStore('fixture-phone-two')
         self.assertIsNone(first.load()['snapshot'])
         state = matched_state(snapshot(), ['alex', None], threads())
