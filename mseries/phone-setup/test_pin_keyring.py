@@ -11,8 +11,9 @@ class KeyringTests(unittest.TestCase):
         import gi
         gi.require_version('Secret', '1')
         from gi.repository import Secret
-        Secret.Collection.create_sync(None, 'Private Messages pin fixture', Secret.COLLECTION_DEFAULT,
-                                      Secret.CollectionCreateFlags.NONE, None)
+        # test-pin-keyring.sh provisions the default login collection through
+        # gnome-keyring-daemon --unlock. Creating it again through libsecret
+        # triggers a collection prompt and is unsupported in this headless bus.
         first, second = PinStore('fixture-phone-one'), PinStore('fixture-phone-two')
         self.assertIsNone(first.load()['snapshot'])
         state = matched_state(snapshot(), ['alex', None], threads())
