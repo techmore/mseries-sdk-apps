@@ -1,3 +1,13 @@
+## Messages confirmation and read callback guards — 2026-10-22
+
+Group confirmation refuses to dispatch after an observed phone-profile change
+and asks the user to review the conversation again. Retained Mark as Read row
+actions reject a changed profile; both read callback paths ignore old-phone
+results. The existing 14 Messages library tests pass, with formatting and diff
+checks clean; they do not exercise these GTK callbacks. Synthetic delayed-response
+and dialog interaction coverage, per-phone draft/outbox retention and live
+phone acceptance remain open. No messages were sent during validation.
+
 ## Messages stale send/favorite responses — 2026-10-22
 
 Send and favorite completion callbacks now capture the phone-profile generation

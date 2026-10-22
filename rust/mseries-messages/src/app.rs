@@ -1674,6 +1674,7 @@ impl App {
             mseries_pantheon_kit::set_accessible_label(&mark_read, "Mark conversation as read");
             let weak_app = Rc::downgrade(self);
             let key = thread.key.clone();
+            let phone_generation = self.pin_load_generation.get();
             let mark_popover = popover.downgrade();
             mark_read.connect_clicked(move |_| {
                 if let Some(popover) = mark_popover.upgrade() {
@@ -1682,19 +1683,26 @@ impl App {
                 let Some(app) = weak_app.upgrade() else {
                     return;
                 };
+                if app.pin_load_generation.get() != phone_generation {
+                    return;
+                }
                 let backend = app.backend.clone();
                 let weak_app = Rc::downgrade(&app);
                 let key = key.clone();
                 glib::MainContext::default().spawn_local(async move {
                     match backend.mark_read(&key).await {
                         Ok(()) => {
-                            if let Some(app) = weak_app.upgrade() {
+                            if let Some(app) = weak_app.upgrade()
+                                && app.pin_load_generation.get() == phone_generation
+                            {
                                 app.feedback.set_text("Conversation marked as read.");
                                 app.refresh();
                             }
                         }
                         Err(error) => {
-                            if let Some(app) = weak_app.upgrade() {
+                            if let Some(app) = weak_app.upgrade()
+                                && app.pin_load_generation.get() == phone_generation
+                            {
                                 app.status.set_text(&format!(
                                     "Could not mark conversation read: {error}"
                                 ));
@@ -2293,12 +2301,14 @@ impl App {
         self.show_selected_conversation();
         self.sync_favorite_selection();
         if let Some(thread) = thread.filter(|thread| !thread.local_only && thread.unread() > 0) {
+            let phone_generation = self.pin_load_generation.get();
             let backend = self.backend.clone();
             let weak = Rc::downgrade(self);
             let key = thread.key.clone();
             glib::MainContext::default().spawn_local(async move {
                 if let Err(error) = backend.mark_read(&key).await
                     && let Some(app) = weak.upgrade()
+                    && app.pin_load_generation.get() == phone_generation
                 {
                     app.status
                         .set_text(&format!("Could not mark conversation read: {error}"));
@@ -2905,6 +2915,7 @@ impl App {
             .default_button(0)
             .modal(true)
             .build();
+        let phone_generation = self.pin_load_generation.get();
         let weak = Rc::downgrade(self);
         let key = thread.key;
         let token = thread.confirmation_token;
@@ -2915,6 +2926,12 @@ impl App {
                 if response == Ok(1)
                     && let Some(app) = weak.upgrade()
                 {
+                    if app.pin_load_generation.get() != phone_generation {
+                        app.feedback.set_text(
+                            "The connected phone changed. Review the conversation before sending.",
+                        );
+                        return;
+                    }
                     app.dispatch_send(key.clone(), body.clone(), true, token.clone(), None);
                 }
             },
