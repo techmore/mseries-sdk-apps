@@ -1,7 +1,7 @@
 //! Chat widgets shared by the offline transcript view and the live T3 thread view: user bubbles,
 //! assistant Markdown, collapsed tool rows, diffs and permission prompts.
 
-use crate::markdown::{self, Segment};
+use crate::markdown::Segment;
 use crate::t3::model::TurnItem;
 use crate::transcript::{self, Block, Role, ToolResult, Turn};
 use gtk::{pango, prelude::*};
@@ -73,11 +73,9 @@ pub fn segment_widget(seg: &Segment) -> gtk::Widget {
     }
 }
 
-/// Assistant prose as a column of paragraphs and code blocks.
+/// Assistant prose as a column of paragraphs, lists, quotes, tables and highlighted code blocks.
 pub fn assistant_text(text: &str, into: &gtk::Box) {
-    for seg in markdown::render(text) {
-        into.append(&segment_widget(&seg));
-    }
+    crate::render::render_into(text, into);
 }
 
 fn tool_icon(name: &str) -> &'static str {

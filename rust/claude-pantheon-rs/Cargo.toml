@@ -15,6 +15,8 @@ serde_json = "1"
 rayon = "1.10"
 futures-channel = "0.3"
 futures-util = { version = "0.3", default-features = false }
+pulldown-cmark = { version = "0.13", default-features = false }
+sourceview5 = "0.11"
 
 [[test]]
 name = "render"

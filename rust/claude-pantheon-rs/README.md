@@ -80,6 +80,7 @@ the desktop app (`~/.config/Claude/claude-code/<version>/<hash>/claude`) when th
 | `src/transcript.rs`, `index.rs` | JSONL parser and the cached session index (`~/.cache/claude-pantheon-rs`) |
 | `src/app.rs` | the window: sidebar, live thread, composer, pages |
 | `src/chat.rs` | message, tool-row, diff and permission-prompt widgets |
+| `src/render.rs` | Markdown (pulldown-cmark) as widgets; fenced code in GtkSourceView 5 with copy and wrap |
 | `src/usage.rs` | Usage page (CodexBar style) and plan-window gauges |
 | `src/workflow.rs`, `repos.rs` | pinned repos, issue backlog via `gh api`, "Start on this", the runner as T3 scheduled tasks |
 | `src/handoff.rs` | "Hand Off to Repo": structured summary appended to the project's handoff doc, optional commit |
