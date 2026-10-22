@@ -1,3 +1,15 @@
+## Native release screenshot regression passes — 2026-10-22
+
+The optimized native-drm binary now passes the complete nested screenshot/shelf
+batch, including a failing canberra stub and successful pw-play fallback request.
+Receipt /tmp/pantheon-capture-probe.WSwBbB. The host has pw-play and the freedesktop
+camera-shutter asset; audible playback remains unverified. Session lock now clears
+selection/pending region requests (source/build checked, not lock integration).
+Packaging now honors Cargo metadata’s configured target directory and uses locked
+resolution; runtime dependencies include pipewire-bin and sound-theme-freedesktop.
+Native release rebuilt after these fixes; no running compositor was restarted.
+Next: package and stage the exact binary, then owner-session acceptance after login.
+
 ## Screenshot workflow milestone: nested batch passes — 2026-10-22
 
 Implemented modal selection-key handling, Space capture of the hovered window,
