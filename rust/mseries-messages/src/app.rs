@@ -3709,6 +3709,7 @@ mod tests {
         );
         gtk::init().expect("isolated GTK display");
         granite::init();
+        mseries_pantheon_kit::install_css(&gtk::gdk::Display::default().unwrap());
         let application = gtk::Application::builder()
             .application_id("io.elementary.mseries.MessagesRust.Test")
             .build();
@@ -3892,11 +3893,39 @@ mod tests {
                     .success()
             );
         };
+        let capture = |name: &str| {
+            let Ok(directory) = std::env::var("MSERIES_MESSAGES_GUI_CAPTURE_DIR") else {
+                return;
+            };
+            std::fs::create_dir_all(&directory).unwrap();
+            app.window.queue_draw();
+            let until = std::time::Instant::now() + std::time::Duration::from_millis(100);
+            while std::time::Instant::now() < until {
+                gtk::glib::MainContext::default().iteration(false);
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            let snapshot = gtk::Snapshot::new();
+            let paintable = gtk::WidgetPaintable::new(Some(&app.window));
+            paintable.snapshot(
+                &snapshot,
+                f64::from(app.window.width()),
+                f64::from(app.window.height()),
+            );
+            let node = snapshot.to_node().expect("rendered window node");
+            app.window
+                .renderer()
+                .unwrap()
+                .render_texture(&node, None)
+                .save_to_png(std::path::Path::new(&directory).join(format!("{name}.png")))
+                .unwrap();
+        };
+        capture("regular");
         resize("520");
         wait_for_layout(true);
         assert!(!app.sidebar.is_visible());
         assert!(app.detail.is_visible());
         assert!(app.back_button.is_visible());
+        capture("compact");
         resize("1040");
         wait_for_layout(false);
         assert!(app.sidebar.is_visible());

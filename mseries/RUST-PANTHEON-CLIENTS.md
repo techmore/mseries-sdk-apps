@@ -46,7 +46,13 @@ inactive child explicitly. The same private-Xvfb resize test passes without
 the prior zero-width GtkBox warnings. The same test increases GTK’s font to
 Sans 18 at a 1040-pixel window, verifies increased text metrics and automatic
 compact navigation, restores the prior font, and verifies regular two-pane
-layout returns. This private-session font-change regression passes. Comprehensive
+layout returns. This private-session font-change regression passes.
+Set `MSERIES_MESSAGES_GUI_CAPTURE_DIR` when running the GUI script to save
+regular/compact GTK render snapshots. The fixture now installs SDK CSS as main
+does. Captures in /tmp/messages-fixture-review were inspected: the dark fixture
+shows conversation, history, Back, composer and Send without clipping at
+1040/520 pixels. This is one short synthetic conversation, not light/dark,
+long-content or owner-theme qualification. Comprehensive
 allocated content bounds, visual review and assistive technology remain unqualified. CI execution, visual/accessibility and connected-phone acceptance remain
 unverified. The locally built Debian package remains uninstalled under build/.
 
