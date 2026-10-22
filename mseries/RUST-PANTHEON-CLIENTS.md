@@ -40,9 +40,11 @@ two-pane restoration while retaining the composer draft. It also resizes the vis
 the SDK’s compact/regular classes and matching pane visibility. The test passes
 on bare private Xvfb; xdotool is now a harness/CI dependency. An initial probe
 selected an auxiliary title-matching X11 window; restricting the search to
-visible windows resolved the false failure. GTK emits a transient zero-width
-GtkBox measurement warning during transitions; allocated content bounds,
-enlarged text, visual review and assistive technology remain unqualified. CI execution, visual/accessibility and connected-phone acceptance remain
+visible windows resolved the false failure. Both Paned children now preserve their minimum widths rather than shrinking
+visible controls below their usable size. Compact navigation still hides the
+inactive child explicitly. The same private-Xvfb resize test passes without
+the prior zero-width GtkBox warnings. Enlarged text, comprehensive allocated
+content bounds, visual review and assistive technology remain unqualified. CI execution, visual/accessibility and connected-phone acceptance remain
 unverified. The locally built Debian package remains uninstalled under build/.
 
 ## Messages isolated GTK recovery regression — 2026-10-22

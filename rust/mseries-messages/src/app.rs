@@ -817,8 +817,10 @@ impl App {
         pane.set_start_child(Some(&sidebar));
         pane.set_end_child(Some(&detail));
         pane.set_position(mseries_pantheon_kit::text_unit(&pane, 19.0));
-        pane.set_shrink_start_child(true);
-        pane.set_shrink_end_child(true);
+        // Compact navigation hides a pane explicitly; the divider must not
+        // squeeze visible controls below their minimum usable widths.
+        pane.set_shrink_start_child(false);
+        pane.set_shrink_end_child(false);
         pane.set_vexpand(true);
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
         root.append(&pane);
