@@ -56,8 +56,11 @@ refresh, Ctrl+N to start a message, and Escape to clear a focused search or
 return from a selected conversation to the compact conversation list. Search,
 conversation list, favorite control and composer expose accessible names
 through the SDK. The conversation header can explicitly copy its recipient
-addresses to the clipboard. Sending remains tied to the explicit Send button.
-Full keyboard and assistive-technology review is still required.
+addresses to the clipboard. Conversation rows also provide right-click and
+long-press actions to mark an unread thread as read or copy its recipient
+address(es), matching the qualified client's quick actions. Sending remains
+tied to the explicit Send button. Full keyboard and assistive-technology review
+is still required.
 
 The SDK also folds text-form iPhone Tapbacks onto the earlier message they
 quote, including reaction changes and removals. Unmatched Tapbacks stay visible

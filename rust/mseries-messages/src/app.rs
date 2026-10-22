@@ -928,6 +928,14 @@ impl App {
             );
             content.append(&copy);
             row.set_child(Some(&content));
+            let recipients = thread.recipients.join(", ");
+            let accessible_name = if recipients.is_empty() {
+                format!("{} conversation", thread.name)
+            } else {
+                format!("{} conversation with {}", thread.name, recipients)
+            };
+            mseries_pantheon_kit::set_accessible_label(&row, &accessible_name);
+            self.attach_thread_actions(&row, thread);
             if selected.as_deref() == Some(thread.key.as_str()) {
                 selected_index = Some(order.len() as i32);
             }
@@ -946,6 +954,110 @@ impl App {
         }
         let selected = self.state.borrow().selected.clone();
         self.rebuild_favorites(&threads, selected.as_deref());
+    }
+
+    fn attach_thread_actions(self: &Rc<Self>, row: &gtk::ListBoxRow, thread: &Thread) {
+        let popover = gtk::Popover::new();
+        popover.set_has_arrow(false);
+        let actions = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        mseries_pantheon_kit::set_margins_text_units(&actions, 0.45, 0.45, 0.45, 0.45);
+
+        if thread.unread() > 0 && !thread.local_only {
+            let mark_read = gtk::Button::with_label("Mark as Read");
+            mark_read.add_css_class("flat");
+            mseries_pantheon_kit::set_accessible_label(&mark_read, "Mark conversation as read");
+            let weak_app = Rc::downgrade(self);
+            let key = thread.key.clone();
+            let mark_popover = popover.downgrade();
+            mark_read.connect_clicked(move |_| {
+                if let Some(popover) = mark_popover.upgrade() {
+                    popover.popdown();
+                }
+                let Some(app) = weak_app.upgrade() else {
+                    return;
+                };
+                let backend = app.backend.clone();
+                let weak_app = Rc::downgrade(&app);
+                let key = key.clone();
+                glib::MainContext::default().spawn_local(async move {
+                    match backend.mark_read(&key).await {
+                        Ok(()) => {
+                            if let Some(app) = weak_app.upgrade() {
+                                app.feedback.set_text("Conversation marked as read.");
+                                app.refresh();
+                            }
+                        }
+                        Err(error) => {
+                            if let Some(app) = weak_app.upgrade() {
+                                app.status.set_text(&format!(
+                                    "Could not mark conversation read: {error}"
+                                ));
+                            }
+                        }
+                    }
+                });
+            });
+            actions.append(&mark_read);
+        }
+
+        if !thread.recipients.is_empty() {
+            let label = if thread.recipients.len() == 1 {
+                "Copy Address"
+            } else {
+                "Copy Addresses"
+            };
+            let copy = gtk::Button::with_label(label);
+            copy.add_css_class("flat");
+            mseries_pantheon_kit::set_accessible_label(&copy, label);
+            let recipients = thread.recipients.join(", ");
+            let feedback = if thread.recipients.len() == 1 {
+                "Recipient address copied."
+            } else {
+                "Recipient addresses copied."
+            };
+            let weak_app = Rc::downgrade(self);
+            let copy_popover = popover.downgrade();
+            copy.connect_clicked(move |_| {
+                if let Some(popover) = copy_popover.upgrade() {
+                    popover.popdown();
+                }
+                if let Some(app) = weak_app.upgrade() {
+                    gtk::prelude::WidgetExt::display(&app.window)
+                        .clipboard()
+                        .set_text(&recipients);
+                    app.feedback.set_text(feedback);
+                }
+            });
+            actions.append(&copy);
+        }
+
+        if actions.first_child().is_none() {
+            return;
+        }
+        popover.set_child(Some(&actions));
+        popover.set_parent(row);
+
+        let right_click = gtk::GestureClick::builder().button(3).build();
+        right_click.set_propagation_phase(gtk::PropagationPhase::Capture);
+        let right_popover = popover.clone();
+        right_click.connect_pressed(move |gesture, _, x, y| {
+            right_popover
+                .set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+            right_popover.popup();
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+        });
+        row.add_controller(right_click);
+
+        let long_press = gtk::GestureLongPress::new();
+        long_press.set_propagation_phase(gtk::PropagationPhase::Capture);
+        let long_popover = popover.clone();
+        long_press.connect_pressed(move |gesture, x, y| {
+            long_popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+            long_popover.popup();
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+        });
+        row.add_controller(long_press);
+        row.connect_destroy(move |_| popover.unparent());
     }
 
     fn rebuild_favorites(self: &Rc<Self>, threads: &[Thread], selected: Option<&str>) {
