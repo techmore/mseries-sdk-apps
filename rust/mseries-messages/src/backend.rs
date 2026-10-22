@@ -7,6 +7,7 @@ const MESSAGES_IFACE: &str = "io.weirdware.BlueFerry.Messages1";
 const EVENTS_IFACE: &str = "io.weirdware.BlueFerry.Events1";
 const API_VERSION: u64 = 2;
 const STATUS_TIMEOUT_MS: i32 = 10_000;
+const CONTACT_TIMEOUT_MS: i32 = 8_000;
 const SNAPSHOT_TIMEOUT_MS: i32 = 20_000;
 const SEND_TIMEOUT_MS: i32 = 240_000;
 
@@ -72,6 +73,22 @@ impl Backend {
             .map_err(|error| format!("BlueFerry returned invalid conversation JSON: {error}"))
     }
 
+    pub async fn find_contacts(
+        &self,
+        query: &str,
+    ) -> Result<Vec<crate::model::ContactMatch>, String> {
+        let args = (query,).to_variant();
+        let result = self
+            .call("FindContacts", Some(&args), CONTACT_TIMEOUT_MS)
+            .await?;
+        let json: String = result
+            .child_value(0)
+            .get()
+            .ok_or_else(|| "BlueFerry returned an invalid contact search response".to_string())?;
+        serde_json::from_str(&json)
+            .map_err(|error| format!("BlueFerry returned invalid contact JSON: {error}"))
+    }
+
     pub async fn mark_read(&self, key: &str) -> Result<(), String> {
         let args = (key,).to_variant();
         self.call("MarkThreadRead", Some(&args), SNAPSHOT_TIMEOUT_MS)
@@ -86,7 +103,7 @@ impl Backend {
             .map(|_| ())
     }
 
-    pub async fn send(
+    pub async fn send_to_thread(
         &self,
         key: &str,
         body: &str,
@@ -95,6 +112,13 @@ impl Backend {
     ) -> Result<(), String> {
         let args = (key, body, confirm_group, expected_group_token).to_variant();
         self.call("SendToThreadChecked", Some(&args), SEND_TIMEOUT_MS)
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn send_to_recipient(&self, recipient: &str, body: &str) -> Result<(), String> {
+        let args = (recipient, body).to_variant();
+        self.call("Send", Some(&args), SEND_TIMEOUT_MS)
             .await
             .map(|_| ())
     }

@@ -23,17 +23,21 @@ MAP connection.
 
 The preview currently supports conversation search, message history, in-memory
 per-thread drafts, favorites, read state, checked replies, history invalidation,
-and a participant-review dialog before a group send. It installs beside the
-existing Python GTK/Granite Messages app. The Python app remains the qualified
-client until the Rust app reaches feature and accessibility parity and passes
-the owner's live phone acceptance.
+and a participant-review dialog before a group send. The Rust app now also has
+a new-message picker that searches contacts through BlueFerry's supported
+`FindContacts` API, validates direct phone/email destinations, and sends via
+BlueFerry's supported `Send` method. New conversations stay local to the app
+until BlueFerry reports the resulting thread. It installs beside the existing
+Python GTK/Granite Messages app. The Python app remains the qualified client
+until the Rust app reaches feature and accessibility parity and passes the
+owner's live phone acceptance.
 
-Parity work still includes the new-message/contact picker, favorite layout and
-imported iPhone pins, contact photos, safe link previews, detailed delivery and
-retry feedback, message actions, accessibility/keyboard and narrow-window
-behavior, localization, package/launcher handoff, and fixture plus private GUI
-and owner-phone qualification. Those are migration gates, not claims about the
-current prototype.
+Parity work still includes favorite layout and imported iPhone pins, contact
+photos, safe link previews, detailed delivery and retry feedback, message
+actions, accessibility/keyboard and narrow-window behavior, localization,
+package/launcher handoff, and fixture plus private GUI and owner-phone
+qualification. Those are migration gates, not claims about the current
+prototype. The contact picker itself still needs runtime and phone acceptance.
 
 ## Signal
 

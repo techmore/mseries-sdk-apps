@@ -1,5 +1,5 @@
 use crate::backend::Backend;
-use crate::model::Thread;
+use crate::model::{ContactMatch, Message, Thread};
 use granite::prelude::PlaceholderExt;
 use gtk::{gio, glib, prelude::*};
 use std::cell::{Cell, RefCell};
@@ -60,6 +60,10 @@ impl App {
         let title = gtk::Label::new(Some("Messages"));
         title.add_css_class("title");
         header.set_title_widget(Some(&title));
+        let new_message = gtk::Button::from_icon_name("mail-message-new-symbolic");
+        new_message.set_tooltip_text(Some("New message"));
+        mseries_pantheon_kit::set_accessible_label(&new_message, "New message");
+        header.pack_start(&new_message);
         let refresh = gtk::Button::from_icon_name("view-refresh-symbolic");
         refresh.set_tooltip_text(Some("Refresh conversations"));
         mseries_pantheon_kit::set_accessible_label(&refresh, "Refresh conversations");
@@ -207,7 +211,7 @@ impl App {
             syncing_star: Cell::new(false),
             state: RefCell::new(State::default()),
         });
-        app.connect_signals(&refresh);
+        app.connect_signals(&refresh, &new_message);
         app.connect_responsive_layout();
         app.watch_history();
         app.window.present();
@@ -215,11 +219,18 @@ impl App {
         Some(app)
     }
 
-    fn connect_signals(self: &Rc<Self>, refresh: &gtk::Button) {
+    fn connect_signals(self: &Rc<Self>, refresh: &gtk::Button, new_message: &gtk::Button) {
         let weak = Rc::downgrade(self);
         refresh.connect_clicked(move |_| {
             if let Some(app) = weak.upgrade() {
                 app.refresh();
+            }
+        });
+
+        let weak = Rc::downgrade(self);
+        new_message.connect_clicked(move |_| {
+            if let Some(app) = weak.upgrade() {
+                app.show_new_message_dialog();
             }
         });
 
@@ -361,10 +372,45 @@ impl App {
                         } else {
                             detail
                         });
-                        app.state.borrow_mut().threads = threads
+                        let mut state = app.state.borrow_mut();
+                        let mut server_threads: Vec<Thread> = threads
                             .into_iter()
                             .filter(|thread| !thread.key.is_empty())
                             .collect();
+                        let local_threads = state
+                            .threads
+                            .iter()
+                            .filter(|thread| thread.local_only)
+                            .cloned()
+                            .collect::<Vec<_>>();
+                        let mut keep_local = Vec::new();
+                        for local in local_threads {
+                            if state.pending.contains(&local.key) {
+                                keep_local.push(local);
+                                continue;
+                            }
+                            let address =
+                                local.recipients.first().map(String::as_str).unwrap_or("");
+                            if let Some(server) = server_threads.iter().find(|server| {
+                                !server.is_group
+                                    && server.recipients.iter().any(|recipient| {
+                                        normalize_recipient(recipient).as_deref() == Some(address)
+                                    })
+                            }) {
+                                let server_key = server.key.clone();
+                                if state.selected.as_deref() == Some(local.key.as_str()) {
+                                    state.selected = Some(server_key.clone());
+                                }
+                                if let Some(draft) = state.drafts.remove(&local.key) {
+                                    state.drafts.entry(server_key).or_insert(draft);
+                                }
+                            } else {
+                                keep_local.push(local);
+                            }
+                        }
+                        server_threads.extend(keep_local);
+                        state.threads = server_threads;
+                        drop(state);
                         app.rebuild_sidebar();
                     }
                     Err(error) => app.status.set_text(&error),
@@ -467,7 +513,7 @@ impl App {
         };
         self.render_conversation(thread.clone());
         self.show_selected_conversation();
-        if let Some(thread) = thread.filter(|thread| thread.unread() > 0) {
+        if let Some(thread) = thread.filter(|thread| !thread.local_only && thread.unread() > 0) {
             let backend = self.backend.clone();
             let weak = Rc::downgrade(self);
             let key = thread.key.clone();
@@ -488,7 +534,7 @@ impl App {
         }
         if let Some(thread) = thread {
             self.conversation_title.set_text(&thread.name);
-            self.star_button.set_sensitive(true);
+            self.star_button.set_sensitive(!thread.local_only);
             self.syncing_star.set(true);
             self.star_button.set_active(thread.starred);
             self.syncing_star.set(false);
@@ -537,17 +583,19 @@ impl App {
                 text.add_css_class("card");
                 text.add_css_class("pantheon-surface");
                 bubble.append(&text);
-                let timestamp = gtk::Label::builder()
-                    .label(&message.timestamp)
-                    .xalign(if message.outgoing { 1.0 } else { 0.0 })
-                    .build();
-                timestamp.add_css_class("caption");
-                timestamp.add_css_class("dim-label");
-                bubble.append(&timestamp);
+                if !message.timestamp.is_empty() {
+                    let timestamp = gtk::Label::builder()
+                        .label(&message.timestamp)
+                        .xalign(if message.outgoing { 1.0 } else { 0.0 })
+                        .build();
+                    timestamp.add_css_class("caption");
+                    timestamp.add_css_class("dim-label");
+                    bubble.append(&timestamp);
+                }
                 self.messages.append(&bubble);
             }
-            let permitted =
-                thread.reply_ready && !thread.participants_required && !thread.roster_changed;
+            let permitted = thread.local_only
+                || (thread.reply_ready && !thread.participants_required && !thread.roster_changed);
             self.editor.set_sensitive(permitted);
             self.send_button
                 .set_sensitive(permitted && !self.state.borrow().pending.contains(&thread.key));
@@ -617,6 +665,21 @@ impl App {
             .find(|thread| thread.key == key)
             .cloned();
         let Some(thread) = thread else { return };
+        if thread.local_only {
+            let Some(recipient) = thread.recipients.first() else {
+                self.status
+                    .set_text("Choose a valid phone number or email address first.");
+                return;
+            };
+            self.dispatch_send(
+                thread.key,
+                body,
+                false,
+                String::new(),
+                Some(recipient.clone()),
+            );
+            return;
+        }
         if !thread.reply_ready || thread.participants_required || thread.roster_changed {
             self.status.set_text("BlueFerry has blocked replies to this conversation. Review its status before sending.");
             return;
@@ -624,7 +687,7 @@ impl App {
         if thread.is_group && !thread.group_confirmed {
             self.confirm_group(thread, body);
         } else {
-            self.dispatch_send(thread.key, body, false, thread.confirmation_token);
+            self.dispatch_send(thread.key, body, false, thread.confirmation_token, None);
         }
     }
 
@@ -656,7 +719,7 @@ impl App {
                 if response == Ok(1)
                     && let Some(app) = weak.upgrade()
                 {
-                    app.dispatch_send(key.clone(), body.clone(), true, token.clone());
+                    app.dispatch_send(key.clone(), body.clone(), true, token.clone(), None);
                 }
             },
         );
@@ -668,6 +731,7 @@ impl App {
         body: String,
         confirm_group: bool,
         token: String,
+        recipient: Option<String>,
     ) {
         if self.state.borrow().pending.contains(&key) {
             return;
@@ -685,7 +749,13 @@ impl App {
         let backend = self.backend.clone();
         let weak = Rc::downgrade(self);
         glib::MainContext::default().spawn_local(async move {
-            let result = backend.send(&key, &body, confirm_group, &token).await;
+            let result = if let Some(recipient) = recipient {
+                backend.send_to_recipient(&recipient, &body).await
+            } else {
+                backend
+                    .send_to_thread(&key, &body, confirm_group, &token)
+                    .await
+            };
             if let Some(app) = weak.upgrade() {
                 {
                     let mut state = app.state.borrow_mut();
@@ -696,7 +766,27 @@ impl App {
                     }
                 }
                 match result {
-                    Ok(()) => app.feedback.set_text("Message sent through your iPhone."),
+                    Ok(()) => {
+                        app.feedback.set_text("Message sent through your iPhone.");
+                        if app.state.borrow().selected.as_deref() == Some(key.as_str()) {
+                            app.editor.buffer().set_text("");
+                        }
+                        app.state.borrow_mut().drafts.remove(&key);
+                        if let Some(thread) = app
+                            .state
+                            .borrow_mut()
+                            .threads
+                            .iter_mut()
+                            .find(|thread| thread.key == key && thread.local_only)
+                        {
+                            thread.messages.push(Message {
+                                body: body.clone(),
+                                outgoing: true,
+                                read: true,
+                                ..Message::default()
+                            });
+                        }
+                    }
                     Err(error) => app.feedback.set_text(&format!(
                         "Could not send. Your draft is kept; choose Send to retry. {error}"
                     )),
@@ -705,4 +795,384 @@ impl App {
             }
         });
     }
+
+    fn show_new_message_dialog(self: &Rc<Self>) {
+        let dialog = gtk::Window::builder()
+            .title("New Message")
+            .transient_for(&self.window)
+            .modal(true)
+            .destroy_with_parent(true)
+            .default_width(440)
+            .default_height(500)
+            .build();
+        let header = gtk::HeaderBar::new();
+        let title = gtk::Label::new(Some("New Message"));
+        title.add_css_class("title");
+        header.set_title_widget(Some(&title));
+        let cancel = gtk::Button::with_label("Cancel");
+        cancel.set_action_name(Some("window.close"));
+        header.pack_start(&cancel);
+        dialog.set_titlebar(Some(&header));
+
+        let query = gtk::SearchEntry::builder()
+            .placeholder_text("Name, phone number, or email")
+            .build();
+        mseries_pantheon_kit::set_accessible_label(&query, "To");
+        let hint = gtk::Label::builder()
+            .label("Choose a contact or enter a complete address.")
+            .xalign(0.0)
+            .wrap(true)
+            .build();
+        hint.add_css_class("dim-label");
+        let results = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::Single)
+            .activate_on_single_click(false)
+            .css_classes(["navigation-sidebar"])
+            .build();
+        let results_scroll = gtk::ScrolledWindow::builder()
+            .child(&results)
+            .vexpand(true)
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .build();
+        let start = gtk::Button::with_label("Start Conversation");
+        start.add_css_class("suggested-action");
+        start.set_sensitive(false);
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        mseries_pantheon_kit::set_box_spacing_text_units(&content, 0.65);
+        mseries_pantheon_kit::set_margins_text_units(&content, 1.0, 1.0, 1.0, 1.0);
+        content.append(&query);
+        content.append(&hint);
+        content.append(&results_scroll);
+        content.append(&start);
+        dialog.set_child(Some(&content));
+        dialog.set_default_widget(Some(&start));
+
+        let mut recents = self
+            .state
+            .borrow()
+            .threads
+            .iter()
+            .filter(|thread| !thread.local_only && !thread.is_group && thread.recipients.len() == 1)
+            .map(|thread| {
+                (
+                    thread.last_ts.clone(),
+                    ContactMatch {
+                        name: thread.name.clone(),
+                        address: thread.recipients[0].clone(),
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        recents.sort_by(|left, right| right.0.cmp(&left.0));
+        let recents = recents
+            .into_iter()
+            .take(8)
+            .map(|(_, contact)| contact)
+            .collect::<Vec<_>>();
+        let matches = Rc::new(RefCell::new(recents.clone()));
+        let current = Rc::new(RefCell::new(None::<ContactMatch>));
+        let generation = Rc::new(Cell::new(0_u64));
+        let alive = Rc::new(Cell::new(true));
+        append_contact_rows(&results, &recents);
+        hint.set_text(if recents.is_empty() {
+            "Choose a contact or enter a complete address."
+        } else {
+            "Recent conversations"
+        });
+
+        {
+            let current = current.clone();
+            let matches = matches.clone();
+            let query = query.clone();
+            let start = start.clone();
+            results.connect_row_selected(move |_, row| {
+                *current.borrow_mut() =
+                    row.and_then(|row| matches.borrow().get(row.index() as usize).cloned());
+                start.set_sensitive(
+                    normalize_recipient(&query.text()).is_some() || current.borrow().is_some(),
+                );
+            });
+        }
+        {
+            let app = Rc::downgrade(self);
+            let dialog = dialog.clone();
+            let matches = matches.clone();
+            results.connect_row_activated(move |_, row| {
+                let Some(app) = app.upgrade() else { return };
+                let Some(contact) = matches.borrow().get(row.index() as usize).cloned() else {
+                    return;
+                };
+                app.start_direct_conversation(contact.name, contact.address);
+                dialog.close();
+                app.editor.grab_focus();
+            });
+        }
+        {
+            let app = Rc::downgrade(self);
+            let dialog = dialog.clone();
+            let query = query.clone();
+            let current = current.clone();
+            start.connect_clicked(move |_| {
+                let Some(app) = app.upgrade() else { return };
+                let contact = normalize_recipient(&query.text())
+                    .map(|address| ContactMatch {
+                        name: String::new(),
+                        address,
+                    })
+                    .or_else(|| current.borrow().clone());
+                if let Some(contact) = contact {
+                    app.start_direct_conversation(contact.name, contact.address);
+                    dialog.close();
+                    app.editor.grab_focus();
+                }
+            });
+        }
+        {
+            let app = Rc::downgrade(self);
+            let dialog = dialog.clone();
+            let query_for_activate = query.clone();
+            let current = current.clone();
+            query.connect_activate(move |_| {
+                let Some(app) = app.upgrade() else { return };
+                let contact = normalize_recipient(&query_for_activate.text())
+                    .map(|address| ContactMatch {
+                        name: String::new(),
+                        address,
+                    })
+                    .or_else(|| current.borrow().clone());
+                if let Some(contact) = contact {
+                    app.start_direct_conversation(contact.name, contact.address);
+                    dialog.close();
+                    app.editor.grab_focus();
+                }
+            });
+        }
+        {
+            let app = Rc::downgrade(self);
+            let results = results.clone();
+            let matches = matches.clone();
+            let current = current.clone();
+            let hint = hint.clone();
+            let start = start.clone();
+            let generation = generation.clone();
+            let alive = alive.clone();
+            query.connect_search_changed(move |entry| {
+                let next = generation.get().wrapping_add(1);
+                generation.set(next);
+                *current.borrow_mut() = None;
+                let text = entry.text().to_string();
+                let valid = normalize_recipient(&text).is_some();
+                if text.chars().count() < 2 {
+                    while let Some(child) = results.first_child() {
+                        results.remove(&child);
+                    }
+                    *matches.borrow_mut() = recents.clone();
+                    append_contact_rows(&results, &recents);
+                    hint.set_text(if recents.is_empty() {
+                        "Choose a contact or enter a complete address."
+                    } else {
+                        "Recent conversations"
+                    });
+                    start.set_sensitive(valid);
+                    return;
+                }
+                while let Some(child) = results.first_child() {
+                    results.remove(&child);
+                }
+                *matches.borrow_mut() = Vec::new();
+                hint.set_text("Searching contacts…");
+                start.set_sensitive(valid);
+                let Some(app) = app.upgrade() else { return };
+                let backend = app.backend.clone();
+                let results = results.clone();
+                let matches = matches.clone();
+                let hint = hint.clone();
+                let start = start.clone();
+                let generation = generation.clone();
+                let alive = alive.clone();
+                glib::MainContext::default().spawn_local(async move {
+                    let result = backend.find_contacts(&text).await;
+                    if !alive.get() || generation.get() != next {
+                        return;
+                    }
+                    let (contacts, search_failed) = match result {
+                        Ok(contacts) => (contacts.into_iter().take(30).collect::<Vec<_>>(), false),
+                        Err(error) => {
+                            hint.set_text(&format!("Could not search contacts: {error}"));
+                            (Vec::new(), true)
+                        }
+                    };
+                    while let Some(child) = results.first_child() {
+                        results.remove(&child);
+                    }
+                    *matches.borrow_mut() = contacts.clone();
+                    append_contact_rows(&results, &contacts);
+                    if !contacts.is_empty() {
+                        hint.set_text("Choose the address you want to message.");
+                    } else if !search_failed {
+                        hint.set_text(
+                            "No matching contacts. A complete number or email works too.",
+                        );
+                    }
+                    start.set_sensitive(valid);
+                });
+            });
+        }
+        {
+            let generation = generation.clone();
+            let alive = alive.clone();
+            dialog.connect_close_request(move |_| {
+                alive.set(false);
+                generation.set(generation.get().wrapping_add(1));
+                glib::Propagation::Proceed
+            });
+        }
+        dialog.present();
+        query.grab_focus();
+    }
+
+    fn start_direct_conversation(self: &Rc<Self>, name: String, address: String) {
+        let Some(address) = normalize_recipient(&address) else {
+            self.feedback
+                .set_text("Enter a complete phone number or email address.");
+            return;
+        };
+        let existing = self
+            .state
+            .borrow()
+            .threads
+            .iter()
+            .find(|thread| {
+                !thread.is_group
+                    && thread.recipients.iter().any(|recipient| {
+                        normalize_recipient(recipient).as_deref() == Some(address.as_str())
+                    })
+            })
+            .map(|thread| thread.key.clone());
+        if let Some(key) = existing {
+            self.state.borrow_mut().selected = Some(key.clone());
+            self.search.set_text("");
+            self.rebuild_sidebar();
+            self.select_thread(&key);
+            self.editor.grab_focus();
+            return;
+        }
+        let key = format!("local:{address}");
+        {
+            let mut state = self.state.borrow_mut();
+            state.selected = Some(key.clone());
+            if !state.threads.iter().any(|thread| thread.key == key) {
+                state.threads.push(Thread {
+                    key: key.clone(),
+                    name: if name.trim().is_empty() {
+                        address.clone()
+                    } else {
+                        name
+                    },
+                    recipients: vec![address],
+                    reply_ready: true,
+                    local_only: true,
+                    ..Thread::default()
+                });
+            }
+        }
+        self.search.set_text("");
+        self.rebuild_sidebar();
+        self.select_thread(&key);
+        self.editor.grab_focus();
+    }
+}
+
+fn append_contact_rows(list: &gtk::ListBox, contacts: &[ContactMatch]) {
+    for contact in contacts {
+        let row = gtk::ListBoxRow::new();
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        mseries_pantheon_kit::set_margins_text_units(&content, 0.45, 0.65, 0.45, 0.65);
+        let display_name = if contact.name.is_empty() {
+            &contact.address
+        } else {
+            &contact.name
+        };
+        let name = gtk::Label::builder()
+            .label(display_name)
+            .xalign(0.0)
+            .ellipsize(gtk::pango::EllipsizeMode::End)
+            .build();
+        name.add_css_class("heading");
+        content.append(&name);
+        if !contact.name.is_empty() {
+            let address = gtk::Label::builder()
+                .label(&contact.address)
+                .xalign(0.0)
+                .ellipsize(gtk::pango::EllipsizeMode::Middle)
+                .build();
+            address.add_css_class("dim-label");
+            content.append(&address);
+        }
+        row.set_child(Some(&content));
+        let accessible = if contact.name.is_empty() {
+            contact.address.clone()
+        } else {
+            format!("{}, {}", contact.name, contact.address)
+        };
+        mseries_pantheon_kit::set_accessible_label(&row, &accessible);
+        list.append(&row);
+    }
+}
+
+fn normalize_recipient(input: &str) -> Option<String> {
+    let candidate = input.trim();
+    let bytes = candidate.as_bytes();
+    let phone = !bytes.is_empty()
+        && (bytes[0] != b'+' || bytes.len() > 1)
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            byte.is_ascii_digit() || (index == 0 && *byte == b'+') || b" ()-.".contains(byte)
+        });
+    if phone {
+        let digits = candidate.bytes().filter(u8::is_ascii_digit).count();
+        let plus = candidate.starts_with('+');
+        let remainder = if plus { &bytes[1..] } else { bytes };
+        if (3..=20).contains(&digits)
+            && remainder.len() >= 3
+            && remainder.len() <= 30
+            && remainder[0].is_ascii_digit()
+        {
+            let digits = candidate
+                .chars()
+                .filter(char::is_ascii_digit)
+                .collect::<String>();
+            return Some(format!("{}{}", if plus { "+" } else { "" }, digits));
+        }
+    }
+
+    if candidate.len() > 254 || candidate.matches('@').count() != 1 || !candidate.is_ascii() {
+        return None;
+    }
+    let (local, domain) = candidate.split_once('@')?;
+    if local.is_empty()
+        || local.len() > 64
+        || domain.is_empty()
+        || domain.len() > 253
+        || local.starts_with('.')
+        || local.ends_with('.')
+        || local.contains("..")
+        || !local
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+/=?^_`{|}~.-".contains(&byte))
+    {
+        return None;
+    }
+    for label in domain.split('.') {
+        if label.is_empty()
+            || label.len() > 63
+            || !label.as_bytes()[0].is_ascii_alphanumeric()
+            || !label.as_bytes()[label.len() - 1].is_ascii_alphanumeric()
+            || !label
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        {
+            return None;
+        }
+    }
+    Some(format!("{local}@{}", domain.to_ascii_lowercase()))
 }

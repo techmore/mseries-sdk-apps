@@ -27,6 +27,15 @@ pub struct Thread {
     pub starred: bool,
     pub group_confirmed: bool,
     pub unread_count: usize,
+    #[serde(skip)]
+    pub local_only: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct ContactMatch {
+    pub name: String,
+    pub address: String,
 }
 
 impl Thread {

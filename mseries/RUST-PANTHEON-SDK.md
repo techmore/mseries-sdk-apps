@@ -53,18 +53,32 @@ back-navigable single-column view when the window becomes compact.
 
 ### OS-to-app API boundary
 
-The OS owns privileged policy and services; applications use stable, versioned
-contracts rather than linking to service internals. The Rust Pantheon SDK is
-the app-facing layer for common GTK/Granite presentation, accessibility,
-scaling, polling and typed client adapters for those OS contracts. An app owns
-its domain-specific user flow and asks for confirmation before consequential
-actions.
+The SDK is an app-level Rust library, shipped and versioned with the first-
+party app layer. It is not an OS daemon, kernel component, privileged service,
+or a shortcut for applications to link against OS implementation code. The OS
+owns privileged policy and services; applications use stable, versioned
+contracts rather than linking to service internals. The SDK provides common
+GTK/Granite presentation, accessibility, scaling, polling and typed client
+adapters for those OS contracts. An app owns its domain-specific user flow and
+asks for confirmation before consequential actions.
+
+For each integration, the OS side publishes the provider, permissions,
+compatibility/version range and lifecycle guarantees. The app SDK owns the
+typed client and maps that contract into stable Rust types. Apps call the SDK
+adapter; they do not call a private daemon implementation or parse its logs,
+database, filesystem state or command output. Both sides can evolve
+independently while CI and release metadata check that their API versions
+overlap. An app-level feature that needs no OS privilege can remain entirely in
+the app and SDK; a feature that needs OS state or authority gets an explicit
+OS contract first.
 
 Software Updates is the working example: the OS updater and root helper own
 transaction policy, package staging and rollback. The app reads status schema
 1 and can request only the closed set of typed operations in
 `mseries-update-core`; the app does not decide packages or execute privileged
-commands directly. Keep that contract versioned with the SDK integration; the
+commands directly. The typed contract and adapter are app-facing SDK APIs;
+their service provider and privileged helper stay OS-owned. Keep that contract
+versioned and publish its supported range with the SDK integration; the
 current CLI adapter remains in the app crate and should move behind the SDK
 boundary as the repositories split.
 Likewise, the compositor owns frame and client counters; its future read-only
