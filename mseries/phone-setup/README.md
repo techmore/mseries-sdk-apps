@@ -1,6 +1,6 @@
 # Connect iPhone (experimental)
 
-Native GTK 4 / Granite 7 Messages and onboarding windows over BlueFerry's existing backend.
+Current transition client: GTK 4 / Granite 7 Messages and onboarding windows over BlueFerry's existing backend. The target Messages app is a Rust GTK4/Granite app in `rust/`, using the T3 client as its Pantheon pattern; BlueFerry remains the transport and encrypted-history owner. See [`SIGNAL-PANTHEON-DESIGN.md`](../SIGNAL-PANTHEON-DESIGN.md) for the Signal and Messages Rust-port plan.
 Install with `bash mseries/install-phone-setup.sh` after installing BlueFerry's
 backend and GTK client. Launch `mseries-phone-setup`; optionally pass
 `--ios-version 27.0.1` for diagnostics. The opening page does not ask for an iOS version or require one to continue.
