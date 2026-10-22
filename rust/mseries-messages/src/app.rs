@@ -829,6 +829,22 @@ impl App {
                     );
                     bubble.append(&attachment);
                 }
+                let (reaction_symbols, reaction_description) = message.reaction_summary();
+                if !reaction_symbols.is_empty() {
+                    let reactions = gtk::Label::builder()
+                        .label(&reaction_symbols)
+                        .xalign(if message.outgoing { 1.0 } else { 0.0 })
+                        .build();
+                    reactions.add_css_class("caption");
+                    reactions.add_css_class("card");
+                    reactions.add_css_class("pantheon-surface");
+                    reactions.set_tooltip_text(Some(&reaction_description));
+                    mseries_pantheon_kit::set_accessible_label(
+                        &reactions,
+                        &format!("Reactions: {reaction_description}"),
+                    );
+                    bubble.append(&reactions);
+                }
                 if message.is_shortened() {
                     let shortened = gtk::Label::new(Some(
                         "Shortened by your iPhone · open it there for the rest",

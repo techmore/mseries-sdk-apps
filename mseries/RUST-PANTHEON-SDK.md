@@ -84,7 +84,8 @@ boundary as the repositories split.
 Messages follows the same boundary for BlueFerry's session D-Bus service: the
 SDK owns the API v2 client and typed status, thread and contact models, while
 BlueFerry remains the only owner of MAP access, message history, recipient
-validation and photo policy. The app does not open BlueFerry's database or
+validation and photo policy. The SDK folds quoted, text-form Tapbacks in the
+typed message model and leaves unmatched events visible. The app does not open BlueFerry's database or
 manage its Bluetooth session. Contact-photo decoding is also shared SDK code;
 it accepts bounded JPEG/PNG headers, scales in memory and leaves the user's
 existing opt-in unchanged. A Rust import of Apple pin snapshots also needs

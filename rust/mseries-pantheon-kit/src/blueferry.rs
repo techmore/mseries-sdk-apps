@@ -88,8 +88,12 @@ impl BlueFerryMessagesClient {
             .child_value(0)
             .get()
             .ok_or_else(|| "BlueFerry returned an invalid conversation list".to_string())?;
-        serde_json::from_str(&json)
-            .map_err(|error| format!("BlueFerry returned invalid conversation JSON: {error}"))
+        let mut threads: Vec<Thread> = serde_json::from_str(&json)
+            .map_err(|error| format!("BlueFerry returned invalid conversation JSON: {error}"))?;
+        for thread in &mut threads {
+            thread.fold_reactions();
+        }
+        Ok(threads)
     }
 
     pub async fn find_contacts(&self, query: &str) -> Result<Vec<ContactMatch>, String> {

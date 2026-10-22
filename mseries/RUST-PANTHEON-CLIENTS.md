@@ -41,6 +41,11 @@ Python GTK/Granite Messages app. The Python app remains the qualified client
 until the Rust app reaches feature and accessibility parity and passes the
 owner's live phone acceptance.
 
+The SDK also folds text-form iPhone Tapbacks onto the earlier message they
+quote, including reaction changes and removals. Unmatched Tapbacks stay visible
+as messages. Rust Messages presents reaction symbols with accessible names and
+hover descriptions; live phone coverage remains part of acceptance.
+
 Imported pin review remains open until BlueFerry exposes a stable opaque
 per-phone profile identifier through its supported status API. The Python
 client currently derives this from BlueFerry's private configuration; the Rust
@@ -48,8 +53,7 @@ app will not copy that access pattern. Once the API is available, the SDK can
 scope pin metadata in Secret Service without storing it in a plaintext file.
 
 Parity work still includes imported iPhone pins, bounded link/image previews,
-Tapback/reaction folding, detailed
-delivery and retry feedback, additional message actions, accessibility,
+detailed delivery and retry feedback, additional message actions, accessibility,
 keyboard and narrow-window behavior, localization, package/launcher handoff,
 and fixture plus private GUI and owner-phone qualification. Those are migration gates, not
 claims about the current prototype. The contact picker and Reply/Copy actions

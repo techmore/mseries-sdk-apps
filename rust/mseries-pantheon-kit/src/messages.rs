@@ -11,6 +11,14 @@ pub struct Message {
     pub sender: String,
     pub body_truncated: bool,
     pub phone_list: bool,
+    pub reactions: Vec<Reaction>,
+}
+
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct Reaction {
+    pub reaction: String,
+    pub by: String,
 }
 
 impl Message {
@@ -60,6 +68,42 @@ pub struct ContactMatch {
 }
 
 impl Thread {
+    /// Folds the plain-text Tapbacks exposed by BlueFerry onto the messages
+    /// they quote. Unknown or ambiguous targets remain visible as messages.
+    pub fn fold_reactions(&mut self) {
+        let mut folded: Vec<Message> = Vec::with_capacity(self.messages.len());
+        for message in std::mem::take(&mut self.messages) {
+            let Some(parsed) = parse_tapback(&message.body) else {
+                folded.push(message);
+                continue;
+            };
+            let Some(target) = folded
+                .iter_mut()
+                .rev()
+                .find(|earlier| names_message(&earlier.body, &parsed.quoted))
+            else {
+                folded.push(message);
+                continue;
+            };
+
+            let by = if message.outgoing {
+                "You".to_string()
+            } else if !parsed.who.is_empty() {
+                parsed.who
+            } else {
+                message.sender.clone()
+            };
+            target.reactions.retain(|reaction| reaction.by != by);
+            if !parsed.removed {
+                target.reactions.push(Reaction {
+                    reaction: parsed.reaction,
+                    by,
+                });
+            }
+        }
+        self.messages = folded;
+    }
+
     pub fn unread(&self) -> usize {
         self.messages
             .iter()
@@ -86,5 +130,151 @@ impl Thread {
         } else {
             text
         }
+    }
+}
+
+impl Message {
+    /// Returns unique reaction symbols and a readable description for assistive
+    /// technology and hover feedback.
+    pub fn reaction_summary(&self) -> (String, String) {
+        let mut symbols = Vec::new();
+        let mut descriptions = Vec::new();
+        for reaction in &self.reactions {
+            let symbol = reaction_symbol(&reaction.reaction);
+            if !symbols.contains(&symbol) {
+                symbols.push(symbol.clone());
+            }
+            let who = if reaction.by.is_empty() {
+                "Them"
+            } else {
+                &reaction.by
+            };
+            descriptions.push(format!("{symbol} {who}"));
+        }
+        (symbols.concat(), descriptions.join(" · "))
+    }
+}
+
+struct ParsedTapback {
+    reaction: String,
+    quoted: String,
+    removed: bool,
+    who: String,
+}
+
+fn parse_tapback(body: &str) -> Option<ParsedTapback> {
+    let text = body.trim();
+    let (prefix, quoted) = split_quoted_text(text)?;
+    let prefix = prefix.trim_end();
+    const REACTIONS: [&str; 6] = [
+        "Laughed at",
+        "Emphasized",
+        "Questioned",
+        "Disliked",
+        "Loved",
+        "Liked",
+    ];
+    for reaction in REACTIONS {
+        if let Some(who) = remove_prefix_suffix(prefix, reaction) {
+            return Some(ParsedTapback {
+                reaction: reaction.to_string(),
+                quoted,
+                removed: false,
+                who,
+            });
+        }
+    }
+
+    const REMOVED: [(&str, &str); 6] = [
+        ("exclamation mark", "Emphasized"),
+        ("question mark", "Questioned"),
+        ("heart", "Loved"),
+        ("dislike", "Disliked"),
+        ("laugh", "Laughed at"),
+        ("like", "Liked"),
+    ];
+    for (word, reaction) in REMOVED {
+        let suffix = format!("Removed a {word} from");
+        if let Some(who) = remove_prefix_suffix(prefix, &suffix) {
+            return Some(ParsedTapback {
+                reaction: reaction.to_string(),
+                quoted,
+                removed: true,
+                who,
+            });
+        }
+    }
+
+    let parts = prefix.split_whitespace().collect::<Vec<_>>();
+    if parts.len() >= 3
+        && parts[parts.len() - 3].eq_ignore_ascii_case("Reacted")
+        && parts[parts.len() - 1].eq_ignore_ascii_case("to")
+    {
+        return Some(ParsedTapback {
+            reaction: parts[parts.len() - 2].to_string(),
+            quoted,
+            removed: false,
+            who: parts[..parts.len() - 3].join(" "),
+        });
+    }
+    None
+}
+
+fn split_quoted_text(text: &str) -> Option<(&str, String)> {
+    let (start, opening) = text
+        .char_indices()
+        .find(|(_, ch)| *ch == '“' || *ch == '"')?;
+    let closing = if opening == '“' { '”' } else { '"' };
+    let close = text.rfind(closing)?;
+    if close <= start || !text[close + closing.len_utf8()..].trim().is_empty() {
+        return None;
+    }
+    let quoted = text[start + opening.len_utf8()..close].to_string();
+    if quoted.is_empty() {
+        return None;
+    }
+    Some((&text[..start], quoted))
+}
+
+fn remove_prefix_suffix(prefix: &str, suffix: &str) -> Option<String> {
+    if prefix.len() < suffix.len() {
+        return None;
+    }
+    let split = prefix.len() - suffix.len();
+    if !prefix.get(split..)?.eq_ignore_ascii_case(suffix) {
+        return None;
+    }
+    let before = &prefix[..split];
+    if !before.is_empty() && !before.chars().last()?.is_whitespace() {
+        return None;
+    }
+    Some(before.trim().to_string())
+}
+
+fn names_message(body: &str, quoted: &str) -> bool {
+    let body = squash_whitespace(body);
+    let quoted = squash_whitespace(quoted);
+    if quoted.is_empty() {
+        return false;
+    }
+    if quoted.ends_with('…') || quoted.ends_with("...") {
+        return body.starts_with(quoted.trim_end_matches(['…', '.']).trim_end());
+    }
+    body == quoted
+}
+
+fn squash_whitespace(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn reaction_symbol(reaction: &str) -> String {
+    match reaction {
+        "Loved" => "❤️".to_string(),
+        "Liked" => "👍".to_string(),
+        "Disliked" => "👎".to_string(),
+        "Laughed at" => "😂".to_string(),
+        "Emphasized" => "‼️".to_string(),
+        "Questioned" => "❓".to_string(),
+        other => other.to_string(),
     }
 }
