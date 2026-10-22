@@ -131,6 +131,7 @@ impl BlueFerryMessagesClient {
             .map_err(|error| format!("BlueFerry returned invalid conversation JSON: {error}"))?;
         for thread in &mut threads {
             thread.fold_reactions();
+            thread.refresh_search_index();
         }
         Ok(threads)
     }

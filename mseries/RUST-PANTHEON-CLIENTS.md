@@ -26,13 +26,12 @@ If BlueFerry's Messages API cannot be reached at startup, the error screen
 offers Retry and reactivates the app after closing the placeholder. The user
 does not have to close and relaunch Messages to try again.
 
-The preview currently supports Unicode case-insensitive search across
-conversation names, recipients, latest previews and loaded message bodies;
-message history; in-memory per-thread
-drafts that remain editable offline; favorites; read state; checked
-replies, history invalidation, a starred-conversation strip, and a
-participant-review dialog before a group send. Message bubbles offer Reply
-and Copy actions, render safe clickable web
+The preview searches conversation names, recipients, latest previews and loaded
+message bodies with Unicode case folding. It shows message history, keeps
+per-thread drafts editable offline, supports favorites and read state, and
+offers checked replies and a starred-conversation strip. Group sends show a
+participant-review dialog. Message bubbles offer Reply and Copy actions, render
+safe clickable web
 links, format message times in the local calendar, show Bluetooth attachment
 placeholders, and disclose text shortened by the phone. The Rust app also has
 a new-message picker that searches contacts through BlueFerry's supported

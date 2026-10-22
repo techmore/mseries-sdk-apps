@@ -1,5 +1,6 @@
-use gtk::glib::{DateTime, TimeZone};
+use gtk::glib::{self, DateTime, TimeZone};
 use serde::Deserialize;
+use std::sync::Arc;
 
 /// Format a BlueFerry ISO timestamp in local time using stable calendar labels.
 ///
@@ -142,6 +143,8 @@ pub struct Thread {
     pub unread_count: usize,
     #[serde(skip)]
     pub local_only: bool,
+    #[serde(skip)]
+    pub search_index: Arc<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
@@ -152,6 +155,27 @@ pub struct ContactMatch {
 }
 
 impl Thread {
+    /// Build a case-folded search index from this bounded conversation snapshot.
+    /// Reuse it while the user types instead of normalizing every message body
+    /// on each search change.
+    pub fn refresh_search_index(&mut self) {
+        let preview = self.preview();
+        let mut values = Vec::with_capacity(2 + self.recipients.len() + self.messages.len());
+        values.push(self.name.as_str());
+        values.push(preview.as_str());
+        values.extend(self.recipients.iter().map(String::as_str));
+        values.extend(self.messages.iter().map(|message| message.body.as_str()));
+
+        let mut search_index = String::new();
+        for value in values {
+            if !search_index.is_empty() {
+                search_index.push('\n');
+            }
+            search_index.push_str(glib::casefold(value).as_str());
+        }
+        self.search_index = Arc::new(search_index);
+    }
+
     /// Folds the plain-text Tapbacks exposed by BlueFerry onto the messages
     /// they quote. Unknown or ambiguous targets remain visible as messages.
     pub fn fold_reactions(&mut self) {

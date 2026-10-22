@@ -883,23 +883,12 @@ impl App {
         let filter = glib::casefold(self.search.text());
         let (threads, selected) = {
             let state = self.state.borrow();
-            let threads =
-                state
-                    .threads
-                    .iter()
-                    .filter(|thread| {
-                        filter.is_empty()
-                            || glib::casefold(&thread.name).contains(filter.as_str())
-                            || glib::casefold(thread.preview()).contains(filter.as_str())
-                            || thread.recipients.iter().any(|recipient| {
-                                glib::casefold(recipient).contains(filter.as_str())
-                            })
-                            || thread.messages.iter().any(|message| {
-                                glib::casefold(&message.body).contains(filter.as_str())
-                            })
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>();
+            let threads = state
+                .threads
+                .iter()
+                .filter(|thread| filter.is_empty() || thread.search_index.contains(filter.as_str()))
+                .cloned()
+                .collect::<Vec<_>>();
             (threads, state.selected.clone())
         };
         self.list.remove_all();
@@ -1841,6 +1830,7 @@ impl App {
                                 read: true,
                                 ..Message::default()
                             });
+                            thread.refresh_search_index();
                         }
                     }
                     Err(error) if error.outcome_unknown => app.feedback.set_text(
@@ -2151,7 +2141,7 @@ impl App {
             let mut state = self.state.borrow_mut();
             state.selected = Some(key.clone());
             if !state.threads.iter().any(|thread| thread.key == key) {
-                state.threads.push(Thread {
+                let mut thread = Thread {
                     key: key.clone(),
                     name: if name.trim().is_empty() {
                         address.clone()
@@ -2162,7 +2152,9 @@ impl App {
                     reply_ready: true,
                     local_only: true,
                     ..Thread::default()
-                });
+                };
+                thread.refresh_search_index();
+                state.threads.push(thread);
             }
         }
         self.search.set_text("");
