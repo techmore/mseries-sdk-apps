@@ -489,7 +489,8 @@ fn approval_card(item: &TurnItem, decide: Option<Decide>) -> gtk::Widget {
     let request_id = item.request_id.clone().unwrap_or_default();
     if pending && !request_id.is_empty() {
         // Deny with a reason: the entry is sent as the decline's note.
-        let reason_entry = gtk::Entry::builder().placeholder_text("Reason for denying (optional)").hexpand(true).build();
+        let reason_entry =
+            gtk::Entry::builder().placeholder_text("Reason for denying (optional)").hexpand(true).build();
         reason_entry.add_css_class("deny-reason");
         let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         buttons.set_halign(gtk::Align::End);

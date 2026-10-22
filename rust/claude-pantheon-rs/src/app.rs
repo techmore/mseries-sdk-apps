@@ -519,6 +519,22 @@ impl App {
             ("about", &[], Box::new(|a| a.about())),
             ("quit", &["<Control>q"], Box::new(|a| a.window.close())),
         ];
+        for (name, what) in [
+            ("thread-pin", "pin"),
+            ("thread-rename", "rename"),
+            ("thread-handoff", "handoff"),
+            ("thread-copy-link", "copy-link"),
+            ("thread-archive", "archive"),
+        ] {
+            let action = gio::SimpleAction::new(name, Some(glib::VariantTy::STRING));
+            let a = self.clone();
+            action.connect_activate(move |_, param| {
+                if let Some(id) = param.and_then(|p| p.get::<String>()) {
+                    a.thread_command(&id, what);
+                }
+            });
+            self.window.add_action(&action);
+        }
         // Y and N answer the oldest pending permission prompt when nothing is being typed.
         let keys = gtk::EventControllerKey::new();
         let a = self.clone();
@@ -526,8 +542,9 @@ impl App {
             if state.intersects(gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::ALT_MASK) {
                 return glib::Propagation::Proceed;
             }
-            let typing = GtkWindowExt::focus(&a.window)
-                .is_some_and(|w| w.is::<gtk::Text>() || w.is::<gtk::TextView>() || w.is::<gtk::Entry>() || w.is::<gtk::SearchEntry>());
+            let typing = GtkWindowExt::focus(&a.window).is_some_and(|w| {
+                w.is::<gtk::Text>() || w.is::<gtk::TextView>() || w.is::<gtk::Entry>() || w.is::<gtk::SearchEntry>()
+            });
             if typing {
                 return glib::Propagation::Proceed;
             }
@@ -1899,16 +1916,21 @@ impl App {
                 let _ = rpc.call("orchestration.dispatchCommand", message).await;
             }
             if let Some(application) = app.window.application() {
-                notify::withdraw(&application, &format!("ask:{}", app.live.borrow().as_ref().map(|l| l.thread_id.clone()).unwrap_or_default()));
+                notify::withdraw(
+                    &application,
+                    &format!("ask:{}", app.live.borrow().as_ref().map(|l| l.thread_id.clone()).unwrap_or_default()),
+                );
             }
         });
     }
 
     /// The oldest pending prompt of the open thread, for the Y/N keys.
     fn oldest_pending_request(&self) -> Option<String> {
-        self.live.borrow().as_ref().and_then(|l| l.view.items.iter().find(|i| i.is_pending_request()).and_then(|i| i.request_id.clone()))
+        self.live
+            .borrow()
+            .as_ref()
+            .and_then(|l| l.view.items.iter().find(|i| i.is_pending_request()).and_then(|i| i.request_id.clone()))
     }
-
 
     fn render_live(self: &Rc<Self>) {
         self.clear_chat();

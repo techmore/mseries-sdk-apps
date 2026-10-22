@@ -86,6 +86,7 @@ start-up probe; the table tracks drift per feature.
 | #470 | pulldown-cmark renderer, GtkSourceView 5 code blocks (highlighting, copy, wrap), tables, quotes, links, images | 61 | 0.0 | 205 – 228 |
 | #471 | notifications (turn finished, prompt waiting) and dock badge/progress via Unity LauncherEntry; keyring lookups get a 3 s deadline | 61 | 0.0 | 214 – 268 |
 | #472 | sidebar polish: accent dots, running spinner, unread/needs-you badges, collapsible sections, drag-ordered projects, context menu (pin, rename, hand off, copy link, archive) | 64 | 0.0 | 189 – 201 |
+| #473 | permission prompts as cards: Allow once / Allow for this thread / Deny with reason, Y/N keys, notification mirror | 65 | 0.0 | 193 – 212 |
 
 ## Reproduce
 

@@ -155,9 +155,13 @@ fn main() {
         })).unwrap();
         let answered = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
         let seen = answered.clone();
-        let widget = claude_pantheon_rs::chat::item_widget(&item, Some(std::rc::Rc::new(move |id: &str, decision: &str| {
-            seen.borrow_mut().push(format!("{id}:{decision}"));
-        }))).expect("a card");
+        let widget = claude_pantheon_rs::chat::item_widget(
+            &item,
+            Some(std::rc::Rc::new(move |id: &str, decision: &str| {
+                seen.borrow_mut().push(format!("{id}:{decision}"));
+            })),
+        )
+        .expect("a card");
         let mut t = Vec::new();
         texts(&widget, &mut t);
         for expect in ["Run a command?", "rm -rf build/", "Allow Once", "Allow for This Thread", "Deny"] {

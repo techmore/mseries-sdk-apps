@@ -43,6 +43,7 @@ Other entry points:
 | Ctrl+Shift+U | Usage |
 | Ctrl+, | Settings |
 | Ctrl+Q | Quit |
+| Y / N | Allow once / deny the oldest waiting permission prompt (when not typing) |
 
 The same actions sit in the app menu (header bar, right) with their accelerator labels, plus Repos
 and Issues, Changes, Diagnostics, Import Sessions, Hand Off to Repo, Open Offline Twin, Reconnect,
