@@ -73,6 +73,14 @@ app tells the user to check the iPhone before trying again; a completed MAP
 transfer is not represented as a recipient delivery receipt. Live phone
 coverage remains part of acceptance.
 
+Outgoing messages appear immediately with a Sending state. After a confirmed
+MAP transfer they remain in the timeline until BlueFerry history echoes them;
+matching uses the outgoing body count captured at send time to avoid duplicate
+bubbles. A known failure removes the optimistic bubble but keeps the draft. An
+unknown outcome keeps the bubble and draft, tells the user to check the iPhone,
+and does not claim delivery. The in-memory outbox is capped at 128 unresolved
+entries per app session.
+
 Imported pin review remains open until BlueFerry exposes a stable opaque
 per-phone profile identifier through its supported status API. The Python
 client currently derives this from BlueFerry's private configuration; the Rust

@@ -14,13 +14,34 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+const MAX_OUTBOX_MESSAGES: usize = 128;
+
 #[derive(Default)]
 struct State {
     threads: Vec<Thread>,
     selected: Option<String>,
     drafts: HashMap<String, String>,
     pending: Vec<String>,
+    outbox: Vec<OutboxMessage>,
+    next_outbox_id: u64,
     map_ready: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OutboxStatus {
+    Sending,
+    Transferred,
+    OutcomeUnknown,
+}
+
+#[derive(Clone, Debug)]
+struct OutboxMessage {
+    id: u64,
+    key: String,
+    body: String,
+    timestamp: String,
+    baseline: usize,
+    status: OutboxStatus,
 }
 
 struct RenderedFrame {
@@ -333,6 +354,7 @@ pub struct App {
     order: RefCell<Vec<String>>,
     conversation_title: gtk::Label,
     messages: gtk::Box,
+    message_scroll: gtk::ScrolledWindow,
     editor: gtk::TextView,
     send_button: gtk::Button,
     copy_addresses_button: gtk::Button,
@@ -562,6 +584,7 @@ impl App {
             order: RefCell::new(Vec::new()),
             conversation_title,
             messages,
+            message_scroll,
             editor,
             send_button,
             copy_addresses_button,
@@ -856,7 +879,12 @@ impl App {
                                     state.selected = Some(server_key.clone());
                                 }
                                 if let Some(draft) = state.drafts.remove(&local.key) {
-                                    state.drafts.entry(server_key).or_insert(draft);
+                                    state.drafts.entry(server_key.clone()).or_insert(draft);
+                                }
+                                for entry in &mut state.outbox {
+                                    if entry.key == local.key {
+                                        entry.key.clone_from(&server_key);
+                                    }
                                 }
                             } else {
                                 keep_local.push(local);
@@ -864,6 +892,7 @@ impl App {
                         }
                         server_threads.extend(keep_local);
                         state.threads = server_threads;
+                        reconcile_outbox(&mut state);
                         drop(state);
                         app.rebuild_sidebar();
                         app.load_contact_photos();
@@ -1313,13 +1342,39 @@ impl App {
             } else {
                 "Favorite conversation"
             }));
-            if thread.messages.is_empty() {
+            let pending_entries = self
+                .state
+                .borrow()
+                .outbox
+                .iter()
+                .filter(|entry| entry.key == thread.key)
+                .cloned()
+                .collect::<Vec<_>>();
+            if thread.messages.is_empty() && pending_entries.is_empty() {
                 let empty = gtk::Label::new(Some("No messages in this conversation yet."));
                 empty.add_css_class("dim-label");
                 self.messages.append(&empty);
             }
-            let message_layout = layout_messages(&thread.messages, thread.is_group);
-            for (message, layout) in thread.messages.iter().zip(message_layout) {
+            let outbox_messages = pending_entries
+                .iter()
+                .map(|entry| Message {
+                    body: entry.body.clone(),
+                    timestamp: entry.timestamp.clone(),
+                    outgoing: true,
+                    read: true,
+                    ..Message::default()
+                })
+                .collect::<Vec<_>>();
+            let mut visible_messages = thread.messages.iter().collect::<Vec<_>>();
+            visible_messages.extend(outbox_messages.iter());
+            let mut outbox_statuses = vec![None; thread.messages.len()];
+            outbox_statuses.extend(pending_entries.iter().map(|entry| Some(entry.status)));
+            let message_layout = layout_messages(visible_messages.iter().copied(), thread.is_group);
+            for ((message, layout), outbox_status) in visible_messages
+                .into_iter()
+                .zip(message_layout)
+                .zip(outbox_statuses)
+            {
                 if let Some(heading) = layout.date_heading.as_deref() {
                     let stamp = gtk::Label::builder()
                         .label(heading)
@@ -1433,7 +1488,30 @@ impl App {
                     timestamp.add_css_class("dim-label");
                     bubble.append(&timestamp);
                 }
-                self.attach_message_actions(&bubble, message, thread.is_group);
+                if let Some(outbox_status) = outbox_status {
+                    let text = match outbox_status {
+                        OutboxStatus::Sending => "Sending…",
+                        OutboxStatus::Transferred => "Transferred to your iPhone",
+                        OutboxStatus::OutcomeUnknown => {
+                            "Status unknown · Check your iPhone before trying again"
+                        }
+                    };
+                    let status = gtk::Label::builder()
+                        .label(text)
+                        .xalign(1.0)
+                        .wrap(true)
+                        .build();
+                    status.add_css_class("caption");
+                    status.add_css_class(if outbox_status == OutboxStatus::OutcomeUnknown {
+                        "warning"
+                    } else {
+                        "dim-label"
+                    });
+                    mseries_pantheon_kit::set_accessible_label(&status, text);
+                    bubble.append(&status);
+                } else {
+                    self.attach_message_actions(&bubble, message, thread.is_group);
+                }
                 self.messages.append(&bubble);
                 for (url, card) in media_cards {
                     self.messages.append(&card.root);
@@ -1802,16 +1880,56 @@ impl App {
         if self.state.borrow().pending.contains(&key) {
             return;
         }
-        {
+        if self.state.borrow().outbox.len() >= MAX_OUTBOX_MESSAGES {
+            self.feedback.set_text(
+                "Recent messages are still waiting for history. Refresh before sending more.",
+            );
+            return;
+        }
+        let (outbox_id, selected_thread) = {
             let mut state = self.state.borrow_mut();
+            let Some(thread) = state
+                .threads
+                .iter()
+                .find(|thread| thread.key == key)
+                .cloned()
+            else {
+                return;
+            };
+            let normalized = normalize_message_body(&body);
+            let baseline = outgoing_echo_count(&thread.messages, &body)
+                + state
+                    .outbox
+                    .iter()
+                    .filter(|entry| {
+                        entry.key == key && normalize_message_body(&entry.body) == normalized
+                    })
+                    .count();
+            let outbox_id = state.next_outbox_id;
+            state.next_outbox_id = state.next_outbox_id.wrapping_add(1);
+            state.outbox.push(OutboxMessage {
+                id: outbox_id,
+                key: key.clone(),
+                body: body.clone(),
+                timestamp: now_iso8601(),
+                baseline,
+                status: OutboxStatus::Sending,
+            });
             state.pending.push(key.clone());
             state
                 .drafts
                 .entry(key.clone())
                 .or_insert_with(|| body.clone());
-        }
+            let selected_thread =
+                (state.selected.as_deref() == Some(key.as_str())).then_some(thread);
+            (outbox_id, selected_thread)
+        };
         self.send_button.set_sensitive(false);
         self.feedback.set_text("Sending to your iPhone…");
+        if let Some(thread) = selected_thread {
+            self.render_conversation(Some(thread));
+            self.scroll_messages_to_bottom();
+        }
         let backend = self.backend.clone();
         let weak = Rc::downgrade(self);
         glib::MainContext::default().spawn_local(async move {
@@ -1829,6 +1947,27 @@ impl App {
                     if result.is_ok() && state.drafts.get(&key).is_some_and(|draft| draft == &body)
                     {
                         state.drafts.remove(&key);
+                    }
+                    match &result {
+                        Ok(()) => {
+                            if let Some(entry) = state
+                                .outbox
+                                .iter_mut()
+                                .find(|entry| entry.id == outbox_id)
+                            {
+                                entry.status = OutboxStatus::Transferred;
+                            }
+                        }
+                        Err(error) if error.outcome_unknown => {
+                            if let Some(entry) = state
+                                .outbox
+                                .iter_mut()
+                                .find(|entry| entry.id == outbox_id)
+                            {
+                                entry.status = OutboxStatus::OutcomeUnknown;
+                            }
+                        }
+                        Err(_) => state.outbox.retain(|entry| entry.id != outbox_id),
                     }
                 }
                 match result {
@@ -1869,7 +2008,34 @@ impl App {
                         error.message
                     )),
                 }
+                let selected_thread = {
+                    let state = app.state.borrow();
+                    if state.selected.as_deref() == Some(key.as_str()) {
+                        state
+                            .threads
+                            .iter()
+                            .find(|thread| thread.key == key)
+                            .cloned()
+                    } else {
+                        None
+                    }
+                };
+                if let Some(thread) = selected_thread {
+                    app.render_conversation(Some(thread));
+                    app.scroll_messages_to_bottom();
+                }
                 app.refresh();
+            }
+        });
+    }
+
+    fn scroll_messages_to_bottom(self: &Rc<Self>) {
+        let weak = Rc::downgrade(self);
+        glib::idle_add_local_once(move || {
+            if let Some(app) = weak.upgrade() {
+                let adjustment = app.message_scroll.vadjustment();
+                let bottom = (adjustment.upper() - adjustment.page_size()).max(adjustment.lower());
+                adjustment.set_value(bottom);
             }
         });
     }
@@ -2190,6 +2356,46 @@ impl App {
         self.select_thread(&key);
         self.editor.grab_focus();
     }
+}
+
+fn now_iso8601() -> String {
+    glib::DateTime::now_local()
+        .ok()
+        .and_then(|timestamp| timestamp.format_iso8601().ok())
+        .map(|timestamp| timestamp.to_string())
+        .unwrap_or_default()
+}
+
+fn normalize_message_body(body: &str) -> String {
+    body.replace("\r\n", "\n").trim().to_string()
+}
+
+fn outgoing_echo_count(messages: &[Message], body: &str) -> usize {
+    let wanted = normalize_message_body(body);
+    messages
+        .iter()
+        .filter(|message| {
+            message.outgoing && normalize_message_body(&message.body).as_str() == wanted
+        })
+        .count()
+}
+
+fn reconcile_outbox(state: &mut State) {
+    let echoed = state
+        .outbox
+        .iter()
+        .filter_map(|entry| {
+            state
+                .threads
+                .iter()
+                .find(|thread| thread.key == entry.key)
+                .filter(|thread| {
+                    outgoing_echo_count(&thread.messages, &entry.body) > entry.baseline
+                })
+                .map(|_| entry.id)
+        })
+        .collect::<HashSet<_>>();
+    state.outbox.retain(|entry| !echoed.contains(&entry.id));
 }
 
 fn append_contact_rows(list: &gtk::ListBox, contacts: &[ContactMatch]) {

@@ -100,12 +100,16 @@ struct PreviousMessage<'a> {
 /// Group nearby messages by direction and sender, matching the Messages client
 /// timeline behavior. Invalid timestamps remain independent and receive a safe
 /// one-line caption instead of affecting neighboring groups.
-pub fn layout_messages(messages: &[Message], is_group: bool) -> Vec<MessageLayout> {
+pub fn layout_messages<'a>(
+    messages: impl IntoIterator<Item = &'a Message>,
+    is_group: bool,
+) -> Vec<MessageLayout> {
+    let messages = messages.into_iter().collect::<Vec<_>>();
     let mut layout = vec![MessageLayout::default(); messages.len()];
     let mut run = Vec::new();
     let mut previous: Option<PreviousMessage<'_>> = None;
 
-    for (index, message) in messages.iter().enumerate() {
+    for (index, message) in messages.into_iter().enumerate() {
         let Some(moment) = local_message_moment(&message.timestamp) else {
             close_message_run(&mut layout, &mut run);
             layout[index].show_sender = is_group && !message.outgoing && !message.sender.is_empty();
