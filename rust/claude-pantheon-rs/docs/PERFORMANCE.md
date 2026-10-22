@@ -92,6 +92,7 @@ start-up probe; the table tracks drift per feature.
 | #481 | Window state, text zoom (gtk-xft-dpi), HiDPI check at GDK_SCALE=2, accessible names, focus outlines | 68 | 0.0 | 370 – 611 (machine at load 80 from other jobs) |
 | #482 | Webhook runner tasks (issues.labeled) and per-run provider rotation every 5 min (one list RPC) | 68 | 0.0 | 456 – 696 (machine at load 90 from other jobs) |
 | #485 | Shared GTK-PERFORMANCE-ASAHI.md, standalone checkouts retired (docs only) | 68 | 0.0 | 374 – 731 (machine at load 75 from other jobs) |
+| #486 | dev-clean script, timer and DEV-HYGIENE.md in-repo (no app change) | 65 | 0.0 | 481 – 782 (machine at load 65–80 from other jobs) |
 
 ## Reproduce
 
