@@ -11,7 +11,9 @@ locally. Expected missing-portal/software-display warnings do not affect this
 widget-state check. The same passing test now publishes a read-only synthetic
 Messages1 service on the private bus and verifies Retry transitions to connected,
 clears the warning, retains the draft and keeps Send disabled without a selection.
-The fixture exposes no send methods and uses empty synthetic history/inbox data. CI execution, visual/accessibility and connected-phone acceptance remain
+The fixture exposes no send methods and uses empty synthetic history/inbox data.
+The same passing GTK/private-D-Bus test now switches valid phone UUIDs A → B → A
+and verifies drafts with identical thread keys stay separate and restore correctly. CI execution, visual/accessibility and connected-phone acceptance remain
 unverified. The locally built Debian package remains uninstalled under build/.
 
 ## Messages isolated GTK recovery regression — 2026-10-22

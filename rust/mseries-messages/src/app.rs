@@ -3761,12 +3761,14 @@ mod tests {
           <method name="ListThreads"><arg type="u" direction="in"/><arg type="s" direction="out"/></method>
           <method name="ListRecent"><arg type="s" direction="in"/><arg type="u" direction="in"/><arg type="s" direction="out"/></method>
         </interface></node>"#).unwrap();
+        let fixture_profile = std::rc::Rc::new(std::cell::RefCell::new(None::<String>));
+        let reported_profile = fixture_profile.clone();
         let registration = bus
             .register_object("/io/weirdware/BlueFerry", &node.interfaces()[0])
-            .method_call(|_, _, _, _, method, _, invocation| {
+            .method_call(move |_, _, _, _, method, _, invocation| {
                 let json = match method {
-                    "GetStatus" => r#"{"api_version":2,"map":true}"#,
-                    "ListThreads" | "ListRecent" => "[]",
+                    "GetStatus" => serde_json::json!({"api_version":2,"map":true,"phone_profile_id":*reported_profile.borrow()}).to_string(),
+                    "ListThreads" | "ListRecent" => "[]".to_string(),
                     _ => panic!("unexpected fixture method: {method}"),
                 };
                 invocation.return_value(Some(&(json,).to_variant()));
@@ -3780,6 +3782,32 @@ mod tests {
         assert!(!app.status.has_css_class("warning"));
         assert!(!app.send_button.is_sensitive()); // no conversation selected
         assert_eq!(app.state.borrow().drafts["test-thread"], "unsent draft");
+        let phone_a = "12345678-1234-4234-8234-123456789abc";
+        let phone_b = "87654321-1234-4234-8234-123456789abc";
+        *fixture_profile.borrow_mut() = Some(phone_a.into());
+        app.refresh_recent();
+        wait_for_refresh();
+        app.state
+            .borrow_mut()
+            .drafts
+            .insert("shared-key".into(), "A draft".into());
+        *fixture_profile.borrow_mut() = Some(phone_b.into());
+        app.refresh_recent();
+        wait_for_refresh();
+        assert!(app.backend_available.get());
+        assert!(!app.state.borrow().drafts.contains_key("shared-key"));
+        app.state
+            .borrow_mut()
+            .drafts
+            .insert("shared-key".into(), "B draft".into());
+        *fixture_profile.borrow_mut() = Some(phone_a.into());
+        app.refresh_recent();
+        wait_for_refresh();
+        assert_eq!(app.state.borrow().drafts["shared-key"], "A draft");
+        assert_eq!(
+            app.parked_phone_states.borrow()[phone_b].drafts["shared-key"],
+            "B draft"
+        );
         bus.unregister_object(registration).unwrap();
         app.window.close();
     }
