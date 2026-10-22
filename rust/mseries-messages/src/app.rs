@@ -334,6 +334,7 @@ pub struct App {
     messages: gtk::Box,
     editor: gtk::TextView,
     send_button: gtk::Button,
+    copy_addresses_button: gtk::Button,
     star_button: gtk::ToggleButton,
     syncing_star: Cell<bool>,
     state: RefCell<State>,
@@ -441,6 +442,13 @@ impl App {
             .sensitive(false)
             .build();
         mseries_pantheon_kit::set_accessible_label(&star_button, "Favorite conversation");
+        let copy_addresses_button = gtk::Button::from_icon_name("edit-copy-symbolic");
+        copy_addresses_button.set_tooltip_text(Some("Copy recipient addresses"));
+        copy_addresses_button.set_sensitive(false);
+        mseries_pantheon_kit::set_accessible_label(
+            &copy_addresses_button,
+            "Copy recipient addresses",
+        );
         let conversation_header = gtk::Box::new(gtk::Orientation::Horizontal, 10);
         mseries_pantheon_kit::set_box_spacing_text_units(&conversation_header, 0.6);
         mseries_pantheon_kit::set_margins_text_units(&conversation_header, 0.65, 0.75, 0.65, 1.0);
@@ -449,6 +457,7 @@ impl App {
         mseries_pantheon_kit::set_accessible_label(&back_button, "Back to conversations");
         conversation_header.append(&back_button);
         conversation_header.append(&conversation_title);
+        conversation_header.append(&copy_addresses_button);
         conversation_header.append(&star_button);
 
         let messages = gtk::Box::new(gtk::Orientation::Vertical, 10);
@@ -539,12 +548,13 @@ impl App {
             messages,
             editor,
             send_button,
+            copy_addresses_button,
             star_button,
             syncing_star: Cell::new(false),
             state: RefCell::new(State::default()),
             media: RefCell::new(MediaState::new()),
         });
-        app.connect_signals(&refresh, &new_message);
+        app.connect_signals(&refresh, &new_message, &app.copy_addresses_button);
         app.connect_responsive_layout();
         app.watch_history();
         app.window.present();
@@ -552,7 +562,12 @@ impl App {
         Some(app)
     }
 
-    fn connect_signals(self: &Rc<Self>, refresh: &gtk::Button, new_message: &gtk::Button) {
+    fn connect_signals(
+        self: &Rc<Self>,
+        refresh: &gtk::Button,
+        new_message: &gtk::Button,
+        copy_addresses: &gtk::Button,
+    ) {
         let weak = Rc::downgrade(self);
         self.window.connect_close_request(move |_| {
             if let Some(app) = weak.upgrade() {
@@ -573,6 +588,31 @@ impl App {
             if let Some(app) = weak.upgrade() {
                 app.show_new_message_dialog();
             }
+        });
+
+        let weak = Rc::downgrade(self);
+        copy_addresses.connect_clicked(move |button| {
+            let Some(app) = weak.upgrade() else { return };
+            let recipients = {
+                let state = app.state.borrow();
+                state
+                    .selected
+                    .as_ref()
+                    .and_then(|selected| {
+                        state.threads.iter().find(|thread| &thread.key == selected)
+                    })
+                    .map(|thread| thread.recipients.clone())
+                    .unwrap_or_default()
+            };
+            if recipients.is_empty() {
+                return;
+            }
+            button.clipboard().set_text(&recipients.join(", "));
+            app.feedback.set_text(if recipients.len() == 1 {
+                "Recipient address copied."
+            } else {
+                "Recipient addresses copied."
+            });
         });
 
         let keys = gtk::EventControllerKey::new();
@@ -1105,6 +1145,11 @@ impl App {
         while let Some(child) = self.messages.first_child() {
             self.messages.remove(&child);
         }
+        self.copy_addresses_button.set_sensitive(
+            thread
+                .as_ref()
+                .is_some_and(|thread| !thread.recipients.is_empty()),
+        );
         if let Some(thread) = thread {
             self.conversation_title.set_text(&thread.name);
             self.star_button.set_sensitive(!thread.local_only);

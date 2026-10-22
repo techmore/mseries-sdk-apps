@@ -51,8 +51,9 @@ The main window now supports Ctrl+F to focus conversation search, Ctrl+R to
 refresh, Ctrl+N to start a message, and Escape to clear a focused search or
 return from a selected conversation to the compact conversation list. Search,
 conversation list, favorite control and composer expose accessible names
-through the SDK. Sending remains tied to the explicit Send button. Full
-keyboard and assistive-technology review is still required.
+through the SDK. The conversation header can explicitly copy its recipient
+addresses to the clipboard. Sending remains tied to the explicit Send button.
+Full keyboard and assistive-technology review is still required.
 
 The SDK also folds text-form iPhone Tapbacks onto the earlier message they
 quote, including reaction changes and removals. Unmatched Tapbacks stay visible
