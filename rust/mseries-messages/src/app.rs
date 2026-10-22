@@ -880,27 +880,26 @@ impl App {
     }
 
     fn rebuild_sidebar(self: &Rc<Self>) {
-        let filter = self.search.text().to_string().to_lowercase();
+        let filter = glib::casefold(self.search.text());
         let (threads, selected) = {
             let state = self.state.borrow();
-            let threads = state
-                .threads
-                .iter()
-                .filter(|thread| {
-                    filter.is_empty()
-                        || thread.name.to_lowercase().contains(&filter)
-                        || thread.preview().to_lowercase().contains(&filter)
-                        || thread
-                            .recipients
-                            .iter()
-                            .any(|recipient| recipient.to_lowercase().contains(&filter))
-                        || thread
-                            .messages
-                            .iter()
-                            .any(|message| message.body.to_lowercase().contains(&filter))
-                })
-                .cloned()
-                .collect::<Vec<_>>();
+            let threads =
+                state
+                    .threads
+                    .iter()
+                    .filter(|thread| {
+                        filter.is_empty()
+                            || glib::casefold(&thread.name).contains(filter.as_str())
+                            || glib::casefold(thread.preview()).contains(filter.as_str())
+                            || thread.recipients.iter().any(|recipient| {
+                                glib::casefold(recipient).contains(filter.as_str())
+                            })
+                            || thread.messages.iter().any(|message| {
+                                glib::casefold(&message.body).contains(filter.as_str())
+                            })
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
             (threads, state.selected.clone())
         };
         self.list.remove_all();
