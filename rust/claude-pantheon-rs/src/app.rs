@@ -185,30 +185,39 @@ impl App {
             }
             m
         };
-        menu_model.append_section(None, &section(&[
-            ("New Thread", "win.new-thread"),
-            ("Command Palette", "win.palette"),
-            ("Search Threads", "win.search"),
-        ]));
-        menu_model.append_section(None, &section(&[
-            ("Usage", "win.usage"),
-            ("Repos and Issues", "win.repos"),
-            ("Changes in This Thread", "win.changes"),
-            ("Diagnostics", "win.diagnostics"),
-        ]));
-        menu_model.append_section(None, &section(&[
-            ("Import Sessions from Claude Code and Codex", "win.import"),
-            ("Hand Off to Repo", "win.handoff"),
-            ("Open Offline Twin", "win.offline"),
-            ("Close Thread", "win.close-thread"),
-        ]));
-        menu_model.append_section(None, &section(&[
-            ("Settings", "win.settings"),
-            ("Reconnect", "win.reconnect"),
-            ("Forget Pairing", "win.forget"),
-        ]));
+        menu_model.append_section(
+            None,
+            &section(&[
+                ("New Thread", "win.new-thread"),
+                ("Command Palette", "win.palette"),
+                ("Search Threads", "win.search"),
+            ]),
+        );
+        menu_model.append_section(
+            None,
+            &section(&[
+                ("Usage", "win.usage"),
+                ("Repos and Issues", "win.repos"),
+                ("Changes in This Thread", "win.changes"),
+                ("Diagnostics", "win.diagnostics"),
+            ]),
+        );
+        menu_model.append_section(
+            None,
+            &section(&[
+                ("Import Sessions from Claude Code and Codex", "win.import"),
+                ("Hand Off to Repo", "win.handoff"),
+                ("Open Offline Twin", "win.offline"),
+                ("Close Thread", "win.close-thread"),
+            ]),
+        );
+        menu_model.append_section(
+            None,
+            &section(&[("Settings", "win.settings"), ("Reconnect", "win.reconnect"), ("Forget Pairing", "win.forget")]),
+        );
         menu_model.append_section(None, &section(&[("About Claude", "win.about"), ("Quit", "win.quit")]));
-        let menu = gtk::MenuButton::builder().icon_name("open-menu-symbolic").menu_model(&menu_model).primary(true).build();
+        let menu =
+            gtk::MenuButton::builder().icon_name("open-menu-symbolic").menu_model(&menu_model).primary(true).build();
         menu.set_tooltip_text(Some("Menu"));
         main_header.pack_end(&gtk::WindowControls::new(gtk::PackType::End));
         main_header.pack_end(&menu);
@@ -561,13 +570,17 @@ impl App {
             Some(c) => (
                 format!("{} ({})", c.cred.label, c.cred.server),
                 c.config.environment.get("serverVersion").and_then(Value::as_str).unwrap_or("?").to_string(),
-                c.config.environment.get("platform").map(|p| {
-                    format!(
-                        "{} {}",
-                        p.get("os").and_then(Value::as_str).unwrap_or(""),
-                        p.get("arch").and_then(Value::as_str).unwrap_or("")
-                    )
-                }).unwrap_or_default(),
+                c.config
+                    .environment
+                    .get("platform")
+                    .map(|p| {
+                        format!(
+                            "{} {}",
+                            p.get("os").and_then(Value::as_str).unwrap_or(""),
+                            p.get("arch").and_then(Value::as_str).unwrap_or("")
+                        )
+                    })
+                    .unwrap_or_default(),
             ),
             None => ("not connected".to_string(), "–".to_string(), String::new()),
         };

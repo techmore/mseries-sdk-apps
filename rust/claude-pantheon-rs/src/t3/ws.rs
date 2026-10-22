@@ -103,9 +103,11 @@ pub fn encode_frame(opcode: u8, payload: &[u8], mask: [u8; 4]) -> Vec<u8> {
     out
 }
 
-/// One server frame from the front of `buf`: (fin, opcode, payload, bytes consumed), or None if more
-/// bytes are needed.
-pub fn decode_frame(buf: &[u8]) -> Result<Option<(bool, u8, Vec<u8>, usize)>, WsError> {
+/// (fin, opcode, payload, bytes consumed).
+pub type DecodedFrame = (bool, u8, Vec<u8>, usize);
+
+/// One server frame from the front of `buf`, or None if more bytes are needed.
+pub fn decode_frame(buf: &[u8]) -> Result<Option<DecodedFrame>, WsError> {
     if buf.len() < 2 {
         return Ok(None);
     }
