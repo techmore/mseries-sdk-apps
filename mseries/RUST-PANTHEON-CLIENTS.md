@@ -1,3 +1,13 @@
+## Pantheon-R screenshot selection core — 2026-10-22
+
+Added the compositor screenshot selection model: normalized drag regions in
+logical desktop coordinates (including negative output positions), zero-area
+rejection, cancellation and hovered-window bounds. Three standalone Rust tests
+pass via `rustc --edition 2024 --test rust/pantheon-compositor/src/screenshot.rs`.
+The module is included in the compositor but input routing, crosshair/highlight
+rendering, framebuffer readback, sound and saved-image publication are not yet
+wired. Command+Shift+3/4 remain unfixed in the live session. No compositor restart.
+
 ## Live screenshot shelf repair — 2026-10-22
 
 Owner reports screenshot capture is not working. Read-only session inspection
