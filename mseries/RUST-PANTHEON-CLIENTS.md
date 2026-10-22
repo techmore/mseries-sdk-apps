@@ -1,3 +1,14 @@
+## Messages inbox cache on phone changes — 2026-10-22
+
+A reported phone-profile change now forces a recent-inbox fetch and discards
+the previous inbox snapshot, timestamp, warning and synthesized inbox-only
+rows before merging the new phone data. A failed new inbox read cannot reuse
+the old snapshot. Locked `cargo check -p mseries-messages`, formatting and
+diff checks pass. This is a partial phone-switch correction: draft/outbox,
+in-flight operations and backend identity changes during requests still need
+a dedicated review and synthetic-service regression coverage before live
+phone-switch acceptance. No owner conversations were accessed.
+
 ## Rust app package runtime requirements — 2026-10-22
 
 Messages, System Monitor and T3 Debian packages now require GTK 4.20 and

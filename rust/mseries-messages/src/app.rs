@@ -1361,6 +1361,7 @@ impl App {
         }
         let force_generation = self.recent_inbox_force_generation.get();
         let satisfied_generation = self.recent_inbox_satisfied_generation.get();
+        let previous_phone_profile = self.pin_profile_id.borrow().clone();
         let was_map_ready = self.state.borrow().map_ready;
         let has_recent_snapshot = self.recent_inbox_snapshot.borrow().is_some();
         let recent_last_success = self.recent_inbox_last_success.get();
@@ -1374,7 +1375,8 @@ impl App {
                     status.map,
                     was_map_ready,
                     has_recent_snapshot,
-                    force_generation > satisfied_generation,
+                    force_generation > satisfied_generation
+                        || status.phone_profile_id.as_ref() != previous_phone_profile.as_ref(),
                     recent_last_success,
                     SystemTime::now(),
                 );
@@ -1395,6 +1397,16 @@ impl App {
                 let refresh_again = app.refresh_gate.finish();
                 match outcome {
                     Ok((status, threads, recent)) => {
+                        let phone_changed = app.pin_profile_id.borrow().as_ref()
+                            != status.phone_profile_id.as_ref();
+                        if phone_changed {
+                            app.recent_inbox_snapshot.replace(None);
+                            app.recent_inbox_last_success.set(None);
+                            app.recent_inbox_warning.replace(None);
+                            // These rows were synthesized from the previous phone inbox.
+                            // Never carry them into another phone's server-thread merge.
+                            app.state.borrow_mut().threads.retain(|thread| !thread.inbox_only);
+                        }
                         app.backend_available.set(true);
                         app.update_contact_photo_revision(&status);
                         match recent {
