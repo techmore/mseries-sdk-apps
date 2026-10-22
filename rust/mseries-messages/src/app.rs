@@ -23,6 +23,9 @@ pub struct App {
     feedback: gtk::Label,
     search: gtk::SearchEntry,
     list: gtk::ListBox,
+    favorites_section: gtk::Box,
+    favorites_strip: gtk::Box,
+    favorite_buttons: RefCell<HashMap<String, gtk::ToggleButton>>,
     sidebar: gtk::Box,
     detail: gtk::Box,
     pane: gtk::Paned,
@@ -92,6 +95,22 @@ impl App {
             .margin_top(8)
             .margin_bottom(8)
             .build();
+        let favorites_title = gtk::Label::builder().label("Favorites").xalign(0.0).build();
+        favorites_title.add_css_class("heading");
+        let favorites_strip = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        mseries_pantheon_kit::set_box_spacing_text_units(&favorites_strip, 0.5);
+        let favorites_scroll = gtk::ScrolledWindow::builder()
+            .child(&favorites_strip)
+            .hscrollbar_policy(gtk::PolicyType::Automatic)
+            .vscrollbar_policy(gtk::PolicyType::Never)
+            .min_content_height(mseries_pantheon_kit::text_unit(&search, 5.6))
+            .build();
+        let favorites_section = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        mseries_pantheon_kit::set_box_spacing_text_units(&favorites_section, 0.25);
+        mseries_pantheon_kit::set_margins_text_units(&favorites_section, 0.45, 0.65, 0.45, 0.65);
+        favorites_section.append(&favorites_title);
+        favorites_section.append(&favorites_scroll);
+        favorites_section.set_visible(false);
         let list = gtk::ListBox::builder()
             .selection_mode(gtk::SelectionMode::Single)
             .css_classes(["navigation-sidebar"])
@@ -103,6 +122,7 @@ impl App {
             .build();
         let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 0);
         sidebar.append(&search);
+        sidebar.append(&favorites_section);
         sidebar.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         sidebar.append(&list_scroll);
 
@@ -199,6 +219,9 @@ impl App {
             feedback,
             search,
             list,
+            favorites_section,
+            favorites_strip,
+            favorite_buttons: RefCell::new(HashMap::new()),
             sidebar,
             detail,
             pane,
@@ -505,6 +528,71 @@ impl App {
             self.render_conversation(None);
             self.show_conversation_list();
         }
+        let selected = self.state.borrow().selected.clone();
+        self.rebuild_favorites(&threads, selected.as_deref());
+    }
+
+    fn rebuild_favorites(self: &Rc<Self>, threads: &[Thread], selected: Option<&str>) {
+        while let Some(child) = self.favorites_strip.first_child() {
+            self.favorites_strip.remove(&child);
+        }
+        self.favorite_buttons.borrow_mut().clear();
+
+        let mut favorites = threads
+            .iter()
+            .filter(|thread| thread.starred)
+            .cloned()
+            .collect::<Vec<_>>();
+        favorites.sort_by(|left, right| right.last_ts.cmp(&left.last_ts));
+        for thread in &favorites {
+            let button = gtk::ToggleButton::new();
+            button.add_css_class("flat");
+            button.set_tooltip_text(Some(&thread.name));
+            mseries_pantheon_kit::set_accessible_label(
+                &button,
+                &format!("Favorite conversation: {}", thread.name),
+            );
+            let tile = gtk::Box::new(gtk::Orientation::Vertical, 3);
+            mseries_pantheon_kit::set_box_spacing_text_units(&tile, 0.2);
+            mseries_pantheon_kit::set_margins_text_units(&tile, 0.25, 0.35, 0.25, 0.35);
+            let avatar = gtk::Image::from_icon_name("avatar-default-symbolic");
+            avatar.set_pixel_size(mseries_pantheon_kit::text_unit(&tile, 2.0));
+            tile.append(&avatar);
+            let name = gtk::Label::builder()
+                .label(&thread.name)
+                .ellipsize(gtk::pango::EllipsizeMode::End)
+                .max_width_chars(10)
+                .build();
+            name.add_css_class("caption");
+            tile.append(&name);
+            button.set_child(Some(&tile));
+            button.set_active(selected == Some(thread.key.as_str()));
+
+            let weak = Rc::downgrade(self);
+            let key = thread.key.clone();
+            button.connect_clicked(move |_| {
+                if let Some(app) = weak.upgrade() {
+                    if let Some(index) = app.order.borrow().iter().position(|entry| entry == &key)
+                        && let Some(row) = app.list.row_at_index(index as i32)
+                    {
+                        app.list.select_row(Some(&row));
+                    }
+                    app.sync_favorite_selection();
+                }
+            });
+            self.favorites_strip.append(&button);
+            self.favorite_buttons
+                .borrow_mut()
+                .insert(thread.key.clone(), button);
+        }
+        self.favorites_section.set_visible(!favorites.is_empty());
+    }
+
+    fn sync_favorite_selection(&self) {
+        let selected = self.state.borrow().selected.clone();
+        for (key, button) in self.favorite_buttons.borrow().iter() {
+            button.set_active(selected.as_deref() == Some(key.as_str()));
+        }
     }
 
     fn select_thread(self: &Rc<Self>, key: &str) {
@@ -519,6 +607,7 @@ impl App {
         };
         self.render_conversation(thread.clone());
         self.show_selected_conversation();
+        self.sync_favorite_selection();
         if let Some(thread) = thread.filter(|thread| !thread.local_only && thread.unread() > 0) {
             let backend = self.backend.clone();
             let weak = Rc::downgrade(self);

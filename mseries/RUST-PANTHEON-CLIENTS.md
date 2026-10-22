@@ -23,8 +23,9 @@ MAP connection.
 
 The preview currently supports conversation search, message history, in-memory
 per-thread drafts that remain editable offline, favorites, read state, checked
-replies, history invalidation, and a participant-review dialog before a group
-send. Message bubbles offer Reply and Copy actions, render safe clickable web
+replies, history invalidation, a starred-conversation strip, and a
+participant-review dialog before a group send. Message bubbles offer Reply
+and Copy actions, render safe clickable web
 links, show Bluetooth attachment placeholders, and disclose text shortened by
 the phone. The Rust app also has a new-message picker that searches contacts
 through BlueFerry's supported `FindContacts` API, validates direct phone/email
@@ -35,8 +36,8 @@ Python GTK/Granite Messages app. The Python app remains the qualified client
 until the Rust app reaches feature and accessibility parity and passes the
 owner's live phone acceptance.
 
-Parity work still includes favorite layout and imported iPhone pins, contact
-photos, bounded link/image previews, Tapback/reaction folding, detailed
+Parity work still includes imported iPhone pins, contact photos, bounded
+link/image previews, Tapback/reaction folding, detailed
 delivery and retry feedback, additional message actions, accessibility,
 keyboard and narrow-window behavior, localization, package/launcher handoff,
 and fixture plus private GUI and owner-phone qualification. Those are migration gates, not
