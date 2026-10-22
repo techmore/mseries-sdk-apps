@@ -25,6 +25,7 @@ Other entry points:
 | `claude-pantheon-rs --index` | list the offline sessions the sidebar shows, with timing |
 | `claude-pantheon-rs --quit-after-frame` | draw one frame, print the start-up time, exit (benchmarks) |
 | `claude-pantheon-rs --t3-dump DIR [TOKEN]` | record the server's answers as JSON (fixtures); pairs first when a token is given |
+| `scripts/refresh-contracts.sh [--check] [--record]` | refresh the sparse t3code clone, regenerate `contracts/` (protocol version + RPC tags compiled in by `build.rs`), `--record` re-records `tests/fixtures`; `--check` only reports drift |
 | `claude-pantheon-rs --t3-call TAG [JSON]` | one RPC call with the stored credential |
 | `CLAUDE_PANTHEON_OPEN=<id>` | open that thread or session at start |
 | `CLAUDE_PANTHEON_OFFLINE=1` | never connect; transcripts only |
