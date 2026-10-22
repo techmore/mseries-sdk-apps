@@ -1,4 +1,88 @@
+use gtk::glib::{DateTime, TimeZone};
 use serde::Deserialize;
+
+/// Format a BlueFerry ISO timestamp in local time using stable calendar labels.
+///
+/// Relative labels stop at the calendar day so they do not become stale while
+/// a conversation is open. Invalid values are reduced to a safe, short line.
+pub fn format_message_timestamp(value: &str) -> String {
+    let raw = value.trim();
+    if raw.is_empty() {
+        return String::new();
+    }
+
+    let Ok(parsed) = DateTime::from_iso8601(raw, None) else {
+        return safe_timestamp_fallback(raw);
+    };
+    let Ok(local) = parsed.to_timezone(&TimeZone::local()) else {
+        return safe_timestamp_fallback(raw);
+    };
+    let Ok(now) = DateTime::now_local() else {
+        return safe_timestamp_fallback(raw);
+    };
+
+    const WEEKDAYS: [&str; 7] = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ];
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+
+    let days_ago = civil_day_number(now.year(), now.month(), now.day_of_month())
+        - civil_day_number(local.year(), local.month(), local.day_of_month());
+    let day = match days_ago {
+        0 => "Today".to_string(),
+        1 => "Yesterday".to_string(),
+        2..=6 => WEEKDAYS[(local.day_of_week() - 1) as usize].to_string(),
+        _ if local.year() == now.year() => {
+            format!(
+                "{} {}",
+                MONTHS[(local.month() - 1) as usize],
+                local.day_of_month()
+            )
+        }
+        _ => format!(
+            "{} {}, {}",
+            MONTHS[(local.month() - 1) as usize],
+            local.day_of_month(),
+            local.year()
+        ),
+    };
+
+    let hour = match local.hour() % 12 {
+        0 => 12,
+        hour => hour,
+    };
+    let meridiem = if local.hour() < 12 { "AM" } else { "PM" };
+    format!("{day} at {hour}:{:02} {meridiem}", local.minute())
+}
+
+fn safe_timestamp_fallback(raw: &str) -> String {
+    raw.chars()
+        .map(|character| match character {
+            '\r' | '\n' => ' ',
+            other => other,
+        })
+        .filter(|character| !character.is_control())
+        .take(32)
+        .collect()
+}
+
+fn civil_day_number(year: i32, month: i32, day: i32) -> i64 {
+    let year = year - i32::from(month <= 2);
+    let era = year.div_euclid(400);
+    let year_of_era = (year - era * 400) as i64;
+    let month = i64::from(month) + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * month + 2) / 5 + i64::from(day) - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    i64::from(era) * 146_097 + day_of_era
+}
 
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(default)]

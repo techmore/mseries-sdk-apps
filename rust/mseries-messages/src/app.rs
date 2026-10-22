@@ -3,6 +3,7 @@ use granite::prelude::PlaceholderExt;
 use gtk::{gio, glib, prelude::*};
 use mseries_pantheon_kit::{
     BlueFerryMessagesClient as Backend, BlueFerryStatus, ContactMatch, Message, Thread,
+    format_message_timestamp,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -929,12 +930,13 @@ impl App {
                 .build();
             preview.add_css_class("dim-label");
             copy.append(&preview);
+            let timestamp = if thread.is_group {
+                "Group conversation".to_string()
+            } else {
+                format_message_timestamp(&thread.last_ts)
+            };
             let meta = gtk::Label::builder()
-                .label(if thread.is_group {
-                    "Group conversation"
-                } else {
-                    &thread.last_ts
-                })
+                .label(&timestamp)
                 .xalign(0.0)
                 .ellipsize(gtk::pango::EllipsizeMode::End)
                 .build();
@@ -1401,9 +1403,10 @@ impl App {
                     shortened.set_xalign(if message.outgoing { 1.0 } else { 0.0 });
                     bubble.append(&shortened);
                 }
-                if !message.timestamp.is_empty() {
+                let timestamp = format_message_timestamp(&message.timestamp);
+                if !timestamp.is_empty() {
                     let timestamp = gtk::Label::builder()
-                        .label(&message.timestamp)
+                        .label(&timestamp)
                         .xalign(if message.outgoing { 1.0 } else { 0.0 })
                         .build();
                     timestamp.add_css_class("caption");

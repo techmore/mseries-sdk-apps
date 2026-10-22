@@ -31,10 +31,11 @@ per-thread drafts that remain editable offline, favorites, read state, checked
 replies, history invalidation, a starred-conversation strip, and a
 participant-review dialog before a group send. Message bubbles offer Reply
 and Copy actions, render safe clickable web
-links, show Bluetooth attachment placeholders, and disclose text shortened by
-the phone. The Rust app also has a new-message picker that searches contacts
-through BlueFerry's supported `FindContacts` API, validates direct phone/email
-destinations, and sends through BlueFerry's supported `Send` method. New
+links, format message times in the local calendar, show Bluetooth attachment
+placeholders, and disclose text shortened by the phone. The Rust app also has
+a new-message picker that searches contacts through BlueFerry's supported
+`FindContacts` API, validates direct phone/email destinations, and sends
+through BlueFerry's supported `Send` method. New
 conversations stay local to the app until BlueFerry reports the resulting
 thread. When BlueFerry's existing contact-photo opt-in is enabled, it requests
 photos through the supported `GetContactPhoto` method, validates bounded JPEG/PNG
