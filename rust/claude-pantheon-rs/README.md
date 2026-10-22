@@ -83,7 +83,15 @@ also starts a real thread and waits for its answer.
 ## Install
 
 ```sh
-install -Dm755 ~/.cache/cargo-target/release/claude-pantheon-rs ~/.local/bin/claude-pantheon-rs
-install -Dm644 data/io.github.techmore.ClaudePantheonRs.desktop ~/.local/share/applications/
-install -Dm644 data/io.github.techmore.ClaudePantheonRs.svg ~/.local/share/icons/hicolor/scalable/apps/
+./install.sh                    # release build + install under ~/.local: binary, .desktop (New Thread and
+                                # Usage actions, D-Bus activation), metainfo, hicolor icons 16…128 + symbolic
+./install.sh --prefix /usr      # system-wide (sudo for the copy)
+./install.sh --uninstall
+bash mseries/install-claude-pantheon-rs.sh   # the same from the repo root, with the build requirements check
 ```
+
+The script restarts `pantheon-dock` at the end: the dock keeps showing a placeholder icon for a newly
+installed app until it is restarted. The D-Bus service file lets the desktop entry and
+`gapplication launch io.github.techmore.ClaudePantheonRs` start the app; a second launch, the desktop
+actions and `gapplication action io.github.techmore.ClaudePantheonRs new-thread` all reach the running
+window.

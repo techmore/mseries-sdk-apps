@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=io.github.techmore.ClaudePantheonRs
+Exec=@BINDIR@/claude-pantheon-rs --gapplication-service

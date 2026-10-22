@@ -68,6 +68,16 @@ Everything else: parsing off the main thread, widgets only for the visible tail,
 protocol on the GLib loop (no tokio, no worker threads: the WebSocket and HTTP clients sit on
 `gio::SocketClient`), and the sidebar rebuilt once per burst of shell events.
 
+## Per-PR idle numbers
+
+Every PR re-runs `bench.sh` with a Claude thread open (connected, 30 s settle, 20 s sample) and the
+start-up probe; the table tracks drift per feature.
+
+| PR | Change | RSS avg MB | CPU % | Start-up ms (first frame) |
+|---|---|---|---|---|
+| #462 | initial import | 60 | 0.0 | 184 – 213 |
+| #463 | install target, .desktop actions, D-Bus activation, metainfo, icons | 59 | 0.0 | 187 – 205 |
+
 ## Reproduce
 
 ```sh

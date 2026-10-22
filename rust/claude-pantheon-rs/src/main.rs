@@ -1,11 +1,15 @@
 //! `claude-pantheon-rs`: Claude for elementary OS.
 //!
 //!   claude-pantheon-rs                      open the window
+//!   claude-pantheon-rs --new-thread         open (or raise) the window on a new thread; also the .desktop action
+//!   claude-pantheon-rs --usage              open on the Usage page
 //!   claude-pantheon-rs --quit-after-frame   draw one frame, print the start-up time and exit (benchmarks)
 //!   claude-pantheon-rs --index              no window: list the sessions the sidebar would show
 
 use claude_pantheon_rs::{APP_ID, app, index};
 use gtk::prelude::*;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::time::Instant;
 
 fn main() -> gtk::glib::ExitCode {
@@ -26,6 +30,8 @@ fn main() -> gtk::glib::ExitCode {
         return claude_pantheon_rs::probe::call(args.get(1).cloned().unwrap_or_default(), args.get(2).cloned());
     }
     let quit_after_frame = args.iter().any(|a| a == "--quit-after-frame");
+    // Desktop actions and a second launch reach the running instance through GApplication's command line.
+    let forwarded: Vec<String> = args.iter().filter(|a| *a == "--new-thread" || *a == "--usage").cloned().collect();
 
     // Mesa on Asahi loads LLVM and ~180 MB of shader heap for the GL renderers; cairo draws this window in
     // a third of the memory (see docs/PERFORMANCE.md). CLAUDE_PANTHEON_RENDERER=gl|ngl|vulkan switches back.
@@ -34,7 +40,10 @@ fn main() -> gtk::glib::ExitCode {
         // SAFETY: single-threaded here; GTK has not been initialised and no other thread reads the environment.
         unsafe { std::env::set_var("GSK_RENDERER", renderer) };
     }
-    let application = gtk::Application::builder().application_id(APP_ID).build();
+    let application = gtk::Application::builder()
+        .application_id(APP_ID)
+        .flags(gtk::gio::ApplicationFlags::HANDLES_COMMAND_LINE)
+        .build();
     application.connect_startup(|_| {
         granite::init();
         // GTK fades the text cursor with a frame-clock tick for ten seconds after every keystroke; with the
@@ -43,12 +52,40 @@ fn main() -> gtk::glib::ExitCode {
             settings.set_gtk_cursor_blink(false);
         }
     });
+    let current: Rc<RefCell<Option<Rc<app::App>>>> = Rc::new(RefCell::new(None));
+    let slot = current.clone();
     application.connect_activate(move |application| {
         if let Some(existing) = application.active_window() {
             existing.present();
             return;
         }
-        app::App::build(application, started, quit_after_frame);
+        *slot.borrow_mut() = Some(app::App::build(application, started, quit_after_frame));
     });
-    application.run_with_args::<&str>(&[])
+    // app.new-thread and app.usage: the .desktop actions, also reachable with `gapplication action`.
+    for (name, run) in [
+        ("new-thread", Box::new(|a: &Rc<app::App>| a.new_chat()) as Box<dyn Fn(&Rc<app::App>)>),
+        ("usage", Box::new(|a: &Rc<app::App>| a.show_usage())),
+    ] {
+        let action = gtk::gio::SimpleAction::new(name, None);
+        let slot = current.clone();
+        action.connect_activate(move |_, _| {
+            if let Some(a) = slot.borrow().as_ref() {
+                run(a);
+            }
+        });
+        application.add_action(&action);
+    }
+    application.connect_command_line(move |application, cmdline| {
+        application.activate();
+        for arg in cmdline.arguments() {
+            match arg.to_str() {
+                Some("--new-thread") => application.activate_action("new-thread", None),
+                Some("--usage") => application.activate_action("usage", None),
+                _ => {}
+            }
+        }
+        gtk::glib::ExitCode::SUCCESS
+    });
+    let argv: Vec<String> = std::iter::once(std::env::args().next().unwrap_or_default()).chain(forwarded).collect();
+    application.run_with_args(&argv)
 }
