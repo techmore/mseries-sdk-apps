@@ -66,6 +66,11 @@ pub fn countdown(iso: &str, now: i64) -> String {
     }
 }
 
+/// "3.2 MB" with the same SI units Files shows.
+pub fn size_text(bytes: u64) -> String {
+    gtk::glib::format_size(bytes).to_string()
+}
+
 pub fn now_unix() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
