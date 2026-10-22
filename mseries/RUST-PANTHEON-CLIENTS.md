@@ -59,9 +59,9 @@ conversation list, favorite control and composer expose accessible names
 through the SDK. The conversation header can explicitly copy its recipient
 addresses to the clipboard. Conversation rows also provide right-click and
 long-press actions to mark an unread thread as read or copy its recipient
-address(es), matching the qualified client's quick actions. Sending remains
-tied to the explicit Send button. Full keyboard and assistive-technology review
-is still required.
+address(es), matching the qualified client's quick actions. The Send button
+remains available, and Ctrl+Enter is its keyboard equivalent when sending is
+enabled. Full keyboard and assistive-technology review is still required.
 
 The SDK also folds text-form iPhone Tapbacks onto the earlier message they
 quote, including reaction changes and removals. Unmatched Tapbacks stay visible
