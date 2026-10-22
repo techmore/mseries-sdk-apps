@@ -26,10 +26,13 @@ dialog, popover and external-monitor surfaces. Top-level clipping remains a
 system/compositor concern; an app class alone cannot guarantee that a window
 follows the built-in display outline.
 
-Apple's Human Interface Guidelines are the usability baseline for clear
-hierarchy, legible text, direct feedback, keyboard and assistive-technology
-access, and layouts that adapt to available space. Translate those principles
-through Pantheon's native GTK and Granite controls. Do not copy macOS controls
+Apple's [guidance for layout](https://developer.apple.com/design/human-interface-guidelines/layout)
+and [designing for macOS](https://developer.apple.com/design/human-interface-guidelines/designing-for-macos)
+are complementary usability references for clear hierarchy, legible text,
+direct feedback, keyboard and assistive-technology access, and layouts that
+adapt to available space. Translate those principles through Pantheon's native
+GTK and Granite controls, following the [elementary OS HIG](https://docs.elementary.io/hig)
+for native interaction and desktop integration. Do not copy macOS controls
 where they conflict with the host desktop's interaction patterns. Geometry and
 scale decisions must preserve user agency: resizable windows, larger text,
 system theme, and visible focus remain supported.
