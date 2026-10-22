@@ -3159,6 +3159,7 @@ impl App {
     }
 
     fn show_new_message_dialog(self: &Rc<Self>) {
+        let phone_generation = self.pin_load_generation.get();
         let dialog = gtk::Window::builder()
             .title("New Message")
             .transient_for(&self.window)
@@ -3261,6 +3262,11 @@ impl App {
             let matches = matches.clone();
             results.connect_row_activated(move |_, row| {
                 let Some(app) = app.upgrade() else { return };
+                if app.pin_load_generation.get() != phone_generation {
+                    app.feedback
+                        .set_text("The connected phone changed. Open a new message again.");
+                    return;
+                }
                 let Some(contact) = matches.borrow().get(row.index() as usize).cloned() else {
                     return;
                 };
@@ -3278,6 +3284,11 @@ impl App {
             let current = current.clone();
             start.connect_clicked(move |_| {
                 let Some(app) = app.upgrade() else { return };
+                if app.pin_load_generation.get() != phone_generation {
+                    app.feedback
+                        .set_text("The connected phone changed. Open a new message again.");
+                    return;
+                }
                 let contact = normalize_recipient(&query.text())
                     .map(|address| ContactMatch {
                         name: String::new(),
@@ -3300,6 +3311,11 @@ impl App {
             let current = current.clone();
             query.connect_activate(move |_| {
                 let Some(app) = app.upgrade() else { return };
+                if app.pin_load_generation.get() != phone_generation {
+                    app.feedback
+                        .set_text("The connected phone changed. Open a new message again.");
+                    return;
+                }
                 let contact = normalize_recipient(&query_for_activate.text())
                     .map(|address| ContactMatch {
                         name: String::new(),
@@ -3351,6 +3367,11 @@ impl App {
                 hint.set_text("Searching contacts…");
                 start.set_sensitive(valid);
                 let Some(app) = app.upgrade() else { return };
+                if app.pin_load_generation.get() != phone_generation {
+                    app.feedback
+                        .set_text("The connected phone changed. Open a new message again.");
+                    return;
+                }
                 let backend = app.backend.clone();
                 let results = results.clone();
                 let matches = matches.clone();
@@ -3360,7 +3381,10 @@ impl App {
                 let alive = alive.clone();
                 glib::MainContext::default().spawn_local(async move {
                     let result = backend.find_contacts(&text).await;
-                    if !alive.get() || generation.get() != next {
+                    if !alive.get()
+                        || generation.get() != next
+                        || app.pin_load_generation.get() != phone_generation
+                    {
                         return;
                     }
                     let (contacts, search_failed) = match result {

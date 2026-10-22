@@ -1,3 +1,11 @@
+## Messages contact-picker phone guard — 2026-10-22
+
+New-message dialogs capture the phone generation. Activating a contact, starting
+a direct conversation or searching after an observed switch is rejected with
+reopen guidance; in-flight contact search results from the previous generation
+are discarded. Strict locked Clippy across all Messages targets, formatting
+and diff checks pass. GTK interaction/delayed-service tests remain open.
+
 ## Messages refresh identity consistency — 2026-10-22
 
 Refresh now rereads public status after inbox/history calls and rejects results
