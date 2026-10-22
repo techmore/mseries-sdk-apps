@@ -1,4 +1,5 @@
 use crate::media::{self, LinkPreview, PreviewKind};
+use crate::preferences;
 use granite::prelude::PlaceholderExt;
 use gtk::{gio, glib, prelude::*};
 use mseries_pantheon_kit::{
@@ -368,6 +369,9 @@ pub struct App {
     pin_import_button: gtk::Button,
     pin_review_button: gtk::Button,
     auto_refresh_switch: gtk::Switch,
+    enter_sends: Cell<bool>,
+    enter_armed: Cell<bool>,
+    enter_generation: Cell<u64>,
     refresh_poller: RefCell<Option<Polling>>,
     resume_watcher: RefCell<Option<ResumeWatcher>>,
     pin_profile_id: RefCell<Option<String>>,
@@ -402,6 +406,7 @@ pub struct App {
 
 impl App {
     pub fn build(application: &gtk::Application) -> Option<Rc<Self>> {
+        let enter_sends = preferences::load_enter_sends();
         let dock_badge = DockBadge::new("io.elementary.mseries.MessagesRust");
         let backend = Backend::connect();
         let backend = match backend {
@@ -484,12 +489,41 @@ impl App {
         refresh_row.set_valign(gtk::Align::Center);
         refresh_row.append(&refresh_text);
         refresh_row.append(&auto_refresh_switch);
+        let enter_send_switch = gtk::Switch::builder()
+            .active(enter_sends)
+            .valign(gtk::Align::Center)
+            .build();
+        mseries_pantheon_kit::set_accessible_label(
+            &enter_send_switch,
+            "Send messages when Enter is pressed",
+        );
+        let enter_send_label = gtk::Label::builder()
+            .label("Send with Enter")
+            .xalign(0.0)
+            .build();
+        let enter_send_description = gtk::Label::builder()
+            .label("Turn off to use Ctrl+Enter and keep Enter for new lines")
+            .xalign(0.0)
+            .wrap(true)
+            .max_width_chars(34)
+            .build();
+        enter_send_label.add_css_class("heading");
+        enter_send_description.add_css_class("dim-label");
+        enter_send_description.add_css_class("caption");
+        let enter_send_text = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        enter_send_text.append(&enter_send_label);
+        enter_send_text.append(&enter_send_description);
+        let enter_send_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        enter_send_row.set_valign(gtk::Align::Center);
+        enter_send_row.append(&enter_send_text);
+        enter_send_row.append(&enter_send_switch);
         let menu_actions = gtk::Box::new(gtk::Orientation::Vertical, 2);
         mseries_pantheon_kit::set_margins_text_units(&menu_actions, 0.35, 0.35, 0.35, 0.35);
         menu_actions.append(&pin_import_button);
         menu_actions.append(&pin_review_button);
         menu_actions.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         menu_actions.append(&refresh_row);
+        menu_actions.append(&enter_send_row);
         menu_actions.append(&shortcuts_button);
         let menu = gtk::Popover::new();
         menu.set_child(Some(&menu_actions));
@@ -629,7 +663,11 @@ impl App {
         let send_button = gtk::Button::with_label("Send");
         send_button.add_css_class("suggested-action");
         send_button.set_sensitive(false);
-        send_button.set_tooltip_text(Some("Send message (Ctrl+Enter)"));
+        send_button.set_tooltip_text(Some(if enter_sends {
+            "Send message (Enter; Ctrl+Enter also works)"
+        } else {
+            "Send message (Ctrl+Enter)"
+        }));
         mseries_pantheon_kit::set_accessible_label(&send_button, "Send message");
         let compose = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         mseries_pantheon_kit::set_box_spacing_text_units(&compose, 0.5);
@@ -676,6 +714,9 @@ impl App {
             pin_import_button,
             pin_review_button,
             auto_refresh_switch,
+            enter_sends: Cell::new(enter_sends),
+            enter_armed: Cell::new(false),
+            enter_generation: Cell::new(0),
             refresh_poller: RefCell::new(None),
             resume_watcher: RefCell::new(None),
             pin_profile_id: RefCell::new(None),
@@ -707,7 +748,13 @@ impl App {
             refresh_gate: RefreshGate::default(),
             media: RefCell::new(MediaState::new()),
         });
-        app.connect_signals(&refresh, &new_message, &menu, &shortcuts_button);
+        app.connect_signals(
+            &refresh,
+            &new_message,
+            &menu,
+            &shortcuts_button,
+            &enter_send_switch,
+        );
         app.connect_responsive_layout();
         app.watch_history();
         app.install_refresh_controls();
@@ -722,6 +769,7 @@ impl App {
         new_message: &gtk::Button,
         menu: &gtk::Popover,
         shortcuts: &gtk::Button,
+        enter_send_switch: &gtk::Switch,
     ) {
         let weak = Rc::downgrade(self);
         self.window.connect_close_request(move |_| {
@@ -732,6 +780,9 @@ impl App {
                 app.resume_watcher.borrow_mut().take();
                 app.history_subscription.borrow_mut().take();
                 app.stop_media_workers();
+                app.enter_armed.set(false);
+                app.enter_generation
+                    .set(app.enter_generation.get().wrapping_add(1));
             }
             glib::Propagation::Proceed
         });
@@ -775,6 +826,30 @@ impl App {
             if let Some(app) = weak.upgrade() {
                 app.review_phone_pins();
             }
+        });
+
+        let weak = Rc::downgrade(self);
+        enter_send_switch.connect_state_set(move |_, active| {
+            if let Some(app) = weak.upgrade() {
+                app.enter_sends.set(active);
+                app.enter_armed.set(false);
+                app.enter_generation
+                    .set(app.enter_generation.get().wrapping_add(1));
+                app.update_send_shortcut();
+                if let Err(error) = preferences::save_enter_sends(active) {
+                    let message = format!(
+                        "Could not save the Enter-to-send preference. It applies for this session only. {error}"
+                    );
+                    app.feedback.set_text(&message);
+                    app.feedback.add_css_class("warning");
+                    app.feedback.set_tooltip_text(Some(&error.to_string()));
+                } else {
+                    app.feedback.remove_css_class("warning");
+                    app.feedback.set_text("");
+                    app.feedback.set_tooltip_text(None);
+                }
+            }
+            glib::Propagation::Proceed
         });
 
         let weak = Rc::downgrade(self);
@@ -863,6 +938,12 @@ impl App {
             let is_send_shortcut = state.contains(gtk::gdk::ModifierType::CONTROL_MASK)
                 && matches!(key, gtk::gdk::Key::Return | gtk::gdk::Key::KP_Enter);
             if !is_send_shortcut {
+                if is_plain_enter(key, state)
+                    && let Some(app) = weak.upgrade()
+                    && app.enter_sends.get()
+                {
+                    app.arm_enter();
+                }
                 return glib::Propagation::Proceed;
             }
             if let Some(app) = weak.upgrade()
@@ -873,6 +954,30 @@ impl App {
             glib::Propagation::Stop
         });
         self.editor.add_controller(composer_keys);
+
+        let buffer = self.editor.buffer();
+        let weak = Rc::downgrade(self);
+        buffer.connect_insert_text(move |buffer, _, text| {
+            let Some(app) = weak.upgrade() else { return };
+            let armed = app.enter_armed.replace(false);
+            if !armed {
+                return;
+            }
+            app.enter_generation
+                .set(app.enter_generation.get().wrapping_add(1));
+            if !should_send_after_enter_insert(armed, app.enter_sends.get(), text) {
+                return;
+            }
+            buffer.stop_signal_emission_by_name("insert-text");
+            let weak = Rc::downgrade(&app);
+            glib::idle_add_local_once(move || {
+                if let Some(app) = weak.upgrade()
+                    && app.send_button.is_sensitive()
+                {
+                    app.send_current();
+                }
+            });
+        });
 
         let weak = Rc::downgrade(self);
         self.search.connect_search_changed(move |_| {
@@ -1021,12 +1126,17 @@ impl App {
         header.set_title_widget(Some(&title));
         dialog.set_titlebar(Some(&header));
 
+        let send_shortcut = if self.enter_sends.get() {
+            "Enter (Ctrl+Enter also works)"
+        } else {
+            "Ctrl+Enter"
+        };
         let shortcuts = [
             ("New message", "Ctrl+N"),
             ("Search conversations", "Ctrl+F"),
             ("Refresh conversations", "Ctrl+R or F5"),
             ("Back to conversations", "Alt+Left"),
-            ("Send message", "Ctrl+Enter"),
+            ("Send message", send_shortcut),
             ("Clear search / back in compact view", "Escape"),
         ];
         let rows = gtk::Grid::builder()
@@ -1050,6 +1160,29 @@ impl App {
         }
         dialog.set_child(Some(&rows));
         dialog.present();
+    }
+
+    fn arm_enter(self: &Rc<Self>) {
+        let generation = self.enter_generation.get().wrapping_add(1);
+        self.enter_generation.set(generation);
+        self.enter_armed.set(true);
+        let weak = Rc::downgrade(self);
+        glib::timeout_add_local_once(Duration::from_millis(80), move || {
+            if let Some(app) = weak.upgrade()
+                && app.enter_generation.get() == generation
+            {
+                app.enter_armed.set(false);
+            }
+        });
+    }
+
+    fn update_send_shortcut(&self) {
+        self.send_button
+            .set_tooltip_text(Some(if self.enter_sends.get() {
+                "Send message (Enter; Ctrl+Enter also works)"
+            } else {
+                "Send message (Ctrl+Enter)"
+            }));
     }
 
     fn watch_history(self: &Rc<Self>) {
@@ -2979,6 +3112,22 @@ fn normalize_message_body(body: &str) -> String {
     body.replace("\r\n", "\n").trim().to_string()
 }
 
+fn should_send_after_enter_insert(armed: bool, enter_sends: bool, inserted_text: &str) -> bool {
+    armed && enter_sends && inserted_text == "\n"
+}
+
+fn is_plain_enter(key: gtk::gdk::Key, state: gtk::gdk::ModifierType) -> bool {
+    matches!(key, gtk::gdk::Key::Return | gtk::gdk::Key::KP_Enter)
+        && !state.intersects(
+            gtk::gdk::ModifierType::SHIFT_MASK
+                | gtk::gdk::ModifierType::CONTROL_MASK
+                | gtk::gdk::ModifierType::ALT_MASK
+                | gtk::gdk::ModifierType::SUPER_MASK
+                | gtk::gdk::ModifierType::HYPER_MASK
+                | gtk::gdk::ModifierType::META_MASK,
+        )
+}
+
 fn outgoing_echo_count(messages: &[Message], body: &str) -> usize {
     let wanted = normalize_message_body(body);
     messages
@@ -3144,6 +3293,24 @@ mod tests {
     fn other_backend_errors_remain_available_for_diagnosis() {
         let error = "The iPhone connection was lost";
         assert_eq!(backend_error_summary(error), error);
+    }
+
+    #[test]
+    fn enter_sends_only_after_a_literal_newline_insert() {
+        assert!(should_send_after_enter_insert(true, true, "\n"));
+        assert!(!should_send_after_enter_insert(true, true, "composed text"));
+        assert!(!should_send_after_enter_insert(true, false, "\n"));
+        assert!(!should_send_after_enter_insert(false, true, "\n"));
+    }
+
+    #[test]
+    fn enter_send_does_not_capture_modified_or_other_keys() {
+        use gtk::gdk::{Key, ModifierType};
+        assert!(is_plain_enter(Key::Return, ModifierType::empty()));
+        assert!(is_plain_enter(Key::KP_Enter, ModifierType::empty()));
+        assert!(!is_plain_enter(Key::Return, ModifierType::SHIFT_MASK));
+        assert!(!is_plain_enter(Key::Return, ModifierType::CONTROL_MASK));
+        assert!(!is_plain_enter(Key::a, ModifierType::empty()));
     }
 
     #[test]

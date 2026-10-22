@@ -54,9 +54,14 @@ public addresses, limit response bytes, dimensions, animation frames and
 in-memory cache, and never save previews to disk or retrieve MAP attachments.
 
 The main window now supports Ctrl+F to focus conversation search, Ctrl+R to
-refresh, Ctrl+N to start a message, and Ctrl+Enter in the composer to send while
-plain Enter inserts a newline. Escape clears a focused search or returns from a
-selected conversation to the compact conversation list. Search,
+refresh, Ctrl+N to start a message, and a Send with Enter preference matching
+the existing Python client. It reads and writes the shared
+`~/.config/mseries/messages.json` `enter_sends` setting. When enabled, Enter
+sends, Shift+Enter inserts a newline, and Ctrl+Enter remains an alternative;
+when disabled, Ctrl+Enter sends and Enter inserts a newline. The GTK text
+insertion hook distinguishes a literal newline from an input-method composition
+commit, so confirming composed text does not send it. Escape clears a focused
+search or returns from a selected conversation to the compact conversation list. Search,
 conversation list, favorite control and composer expose accessible names
 through the SDK. The conversation header can explicitly copy its recipient
 addresses to the clipboard. Conversation rows also provide right-click and
@@ -81,12 +86,13 @@ unknown outcome keeps the bubble and draft, tells the user to check the iPhone,
 and does not claim delivery. The in-memory outbox is capped at 128 unresolved
 entries per app session.
 
-The application menu exposes a keyboard-shortcuts sheet. Ctrl+N starts a
-message, Ctrl+F searches, Ctrl+R or F5 refreshes, Alt+Left returns to the
-conversation list, Ctrl+Enter sends, and Escape clears search or returns from a
-compact conversation. Returning to the list clears the selected conversation
-and retains its draft. The list starts without an automatic selection, so a
-refresh cannot open or mark the first conversation read without user action.
+The application menu exposes a keyboard-shortcuts sheet that reflects the
+selected send preference. Ctrl+N starts a message, Ctrl+F searches, Ctrl+R or
+F5 refreshes, Alt+Left returns to the conversation list, and Escape clears
+search or returns from a compact conversation. Returning to the list clears the
+selected conversation and retains its draft. The list starts without an
+automatic selection, so a refresh cannot open or mark the first conversation
+read without user action.
 The SDK also sends the aggregate unread-message count to the Pantheon dock badge
 through its shared nonblocking LauncherEntry client.
 
@@ -100,13 +106,16 @@ unavailable until the upstream change is released. A direct switch to Rust
 before running the updated Python client leaves the old private keyring item in
 place; the user can re-import the snapshot if needed.
 
-Remaining work includes detailed delivery and retry feedback, additional
-message actions, full accessibility and keyboard review, narrow-window
-qualification, localization, package/launcher handoff, and fixture, private
-GUI and owner-phone qualification. Imported pins still need the BlueFerry API
-change to ship and pass live acceptance; MAP does not expose recipient delivery
-receipts. The contact picker and Reply/Copy actions still need runtime and phone
-acceptance.
+The Rust client still lacks the Python app's phone-exposed recent-inbox catch-up,
+which currently uses `BackendClient.recent` outside the Rust adapter's versioned
+Messages1 D-Bus surface. Add it only through a documented, supported BlueFerry
+contract; do not read BlueFerry's private database or compete for MAP. Full
+accessibility and keyboard review, narrow-window qualification, localization,
+package/launcher handoff, private GUI review and owner-phone acceptance also
+remain. Imported pins need the open BlueFerry API change to ship and pass live
+acceptance; MAP does not expose recipient delivery receipts. The contact
+picker, Reply/Copy actions and shared Enter-to-send preference still need
+runtime interaction review.
 
 ## Signal
 
