@@ -10,3 +10,5 @@ dbus-run-session -- env -u WAYLAND_DISPLAY GDK_BACKEND=x11 GSETTINGS_BACKEND=mem
 ```
 
 See `../../mseries/RUST-UPSTREAM-MAINTENANCE.md` for the gtk4 feature workaround and update steps.
+
+Performance rules for GTK apps on this Mac: [`mseries/GTK-PERFORMANCE-ASAHI.md`](../../mseries/GTK-PERFORMANCE-ASAHI.md).

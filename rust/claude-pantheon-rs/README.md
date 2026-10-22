@@ -4,7 +4,9 @@ A native Pantheon client for AI coding agents: Claude Code, Codex, OpenCode and 
 [T3 Code](https://github.com/pingdotgg/t3code) server, with your local Claude Code transcripts
 (`~/.claude/projects/*/*.jsonl`) as the offline view. gtk4-rs 0.11 + granite-rs 3.3, one process,
 ~75 MB, no CPU at idle. Built to replace the Electron desktop app (19 processes, 2.4 GB) on an
-Apple Silicon Mac running elementary OS; numbers in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+Apple Silicon Mac running elementary OS; numbers in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md), the shared GTK-on-Asahi
+findings in [`mseries/GTK-PERFORMANCE-ASAHI.md`](../../mseries/GTK-PERFORMANCE-ASAHI.md). This directory is the source;
+the standalone checkout at `~/Projects/claude-pantheon-rs` is a retired pointer.
 
 ![Milestone 2: a live thread](docs/screenshot-m2.png)
 

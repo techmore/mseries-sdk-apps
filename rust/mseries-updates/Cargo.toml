@@ -1,3 +1,4 @@
+# GTK on this Mac: renderer, CSD shadow, cursor blink and animation rules in ../../mseries/GTK-PERFORMANCE-ASAHI.md
 [package]
 name = "mseries-updates"
 version = "0.1.0"

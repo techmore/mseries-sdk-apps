@@ -53,20 +53,14 @@ Tool-row details are built on first expand.
 
 ## What it took
 
-The three findings from the Vala twin (`claude-pantheon/docs/PERFORMANCE.md`) apply here too and are
-built in:
-
-1. **Renderer.** Mesa on Asahi loads LLVM and ~180 MB of shader heap for the GL renderers. `main()`
-   sets `GSK_RENDERER=cairo` unless the environment already names a renderer;
-   `CLAUDE_PANTHEON_RENDERER=gl|ngl|vulkan` switches back.
-2. **Window shadow.** The default client-side decoration is a blurred `box-shadow` that cairo
-   re-blurs over the whole window on every frame; `data/style.css` replaces it with a 1 px outline.
-3. **Cursor blink.** GTK fades the text cursor with a frame-clock tick for ten seconds after each
-   keystroke; `gtk-cursor-blink` is off, so a focused composer costs nothing.
-
-Everything else: parsing off the main thread, widgets only for the visible tail, the whole T3
-protocol on the GLib loop (no tokio, no worker threads: the WebSocket and HTTP clients sit on
-`gio::SocketClient`), and the sidebar rebuilt once per burst of shell events.
+The findings are shared with every GTK app in this repository:
+[`mseries/GTK-PERFORMANCE-ASAHI.md`](../../../mseries/GTK-PERFORMANCE-ASAHI.md) (cairo renderer by
+default with `CLAUDE_PANTHEON_RENDERER` to override, a 1 px CSD outline instead of the blurred
+shadow, cursor blink off, CSS animations gated on map, no synchronous D-Bus at start-up, heavy
+libraries linked but their widgets created lazily, the whole protocol on the GLib loop). What is
+specific here: the T3 WebSocket and HTTP clients sit on `gio::SocketClient` futures (no tokio),
+transcripts parse in `gio::spawn_blocking`, widgets exist only for the visible tail, and the
+sidebar is rebuilt once per burst of shell events.
 
 ## Per-PR idle numbers
 
@@ -97,6 +91,7 @@ start-up probe; the table tracks drift per feature.
 | #480 | Empty states, skeleton loading rows (pulse only while mapped), retry toasts | 68 | 0.0 | 510 – 982 (machine at load 90 from other jobs; an ungated CSS pulse had cost 2.6 % idle, hence the map/unmap gate) |
 | #481 | Window state, text zoom (gtk-xft-dpi), HiDPI check at GDK_SCALE=2, accessible names, focus outlines | 68 | 0.0 | 370 – 611 (machine at load 80 from other jobs) |
 | #482 | Webhook runner tasks (issues.labeled) and per-run provider rotation every 5 min (one list RPC) | 68 | 0.0 | 456 – 696 (machine at load 90 from other jobs) |
+| #485 | Shared GTK-PERFORMANCE-ASAHI.md, standalone checkouts retired (docs only) | 68 | 0.0 | 374 – 731 (machine at load 75 from other jobs) |
 
 ## Reproduce
 
