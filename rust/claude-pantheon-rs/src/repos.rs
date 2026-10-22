@@ -98,6 +98,15 @@ impl ReposPage {
         self.issues.borrow().len()
     }
 
+    /// The issues last loaded, with their repo (for the command palette).
+    pub fn cached_issues(&self) -> Vec<(String, Issue)> {
+        let repo = self.current_repo.borrow().as_ref().map(|r| r.repo.clone());
+        match repo {
+            Some(r) => self.issues.borrow().iter().map(|i| (r.clone(), i.clone())).collect(),
+            None => Vec::new(),
+        }
+    }
+
     fn save(&self, f: impl FnOnce(&mut Config)) {
         let mut c = self.config.borrow_mut();
         f(&mut c);
@@ -357,8 +366,7 @@ pub fn comments_row(key: &str, comments: &[(String, String, String)]) -> gtk::Wi
         .collect::<Vec<_>>()
         .join("\n\n");
     let shown = if comments.is_empty() { "No comments yet.".to_string() } else { text };
-    let row = crate::chat::tool_row("", &format!("Issue {key}: {} comments", comments.len()), shown, None);
-    row
+    crate::chat::tool_row("", &format!("Issue {key}: {} comments", comments.len()), shown, None)
 }
 
 /// The value the server stores for a started issue thread, kept on the thread as `goal` text.

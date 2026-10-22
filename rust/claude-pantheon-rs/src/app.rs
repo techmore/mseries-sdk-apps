@@ -10,7 +10,7 @@ use crate::t3::model::{Provider, ServerConfig, Shell, ThreadShell, ThreadView, T
 use crate::t3::{self, Rpc, auth, ws::WsError};
 use crate::transcript::{self, Transcript};
 use crate::workflow::{self, Issue, PinnedRepo};
-use crate::{diagnostics, handoff, repos, usage};
+use crate::{diagnostics, handoff, palette, repos, usage};
 use futures_util::StreamExt;
 use granite::prelude::{PlaceholderExt, ToastExt};
 use gtk::{gdk, gio, glib, pango, prelude::*};
@@ -114,6 +114,7 @@ pub struct App {
     list_dirty: Cell<bool>,
     reconnect_attempt: Cell<u32>,
     auto_opened: Cell<bool>,
+    palette: RefCell<Option<Rc<palette::Palette>>>,
     started: Instant,
 }
 
@@ -185,30 +186,39 @@ impl App {
             }
             m
         };
-        menu_model.append_section(None, &section(&[
-            ("New Thread", "win.new-thread"),
-            ("Command Palette", "win.palette"),
-            ("Search Threads", "win.search"),
-        ]));
-        menu_model.append_section(None, &section(&[
-            ("Usage", "win.usage"),
-            ("Repos and Issues", "win.repos"),
-            ("Changes in This Thread", "win.changes"),
-            ("Diagnostics", "win.diagnostics"),
-        ]));
-        menu_model.append_section(None, &section(&[
-            ("Import Sessions from Claude Code and Codex", "win.import"),
-            ("Hand Off to Repo", "win.handoff"),
-            ("Open Offline Twin", "win.offline"),
-            ("Close Thread", "win.close-thread"),
-        ]));
-        menu_model.append_section(None, &section(&[
-            ("Settings", "win.settings"),
-            ("Reconnect", "win.reconnect"),
-            ("Forget Pairing", "win.forget"),
-        ]));
+        menu_model.append_section(
+            None,
+            &section(&[
+                ("New Thread", "win.new-thread"),
+                ("Command Palette", "win.palette"),
+                ("Search Threads", "win.search"),
+            ]),
+        );
+        menu_model.append_section(
+            None,
+            &section(&[
+                ("Usage", "win.usage"),
+                ("Repos and Issues", "win.repos"),
+                ("Changes in This Thread", "win.changes"),
+                ("Diagnostics", "win.diagnostics"),
+            ]),
+        );
+        menu_model.append_section(
+            None,
+            &section(&[
+                ("Import Sessions from Claude Code and Codex", "win.import"),
+                ("Hand Off to Repo", "win.handoff"),
+                ("Open Offline Twin", "win.offline"),
+                ("Close Thread", "win.close-thread"),
+            ]),
+        );
+        menu_model.append_section(
+            None,
+            &section(&[("Settings", "win.settings"), ("Reconnect", "win.reconnect"), ("Forget Pairing", "win.forget")]),
+        );
         menu_model.append_section(None, &section(&[("About Claude", "win.about"), ("Quit", "win.quit")]));
-        let menu = gtk::MenuButton::builder().icon_name("open-menu-symbolic").menu_model(&menu_model).primary(true).build();
+        let menu =
+            gtk::MenuButton::builder().icon_name("open-menu-symbolic").menu_model(&menu_model).primary(true).build();
         menu.set_tooltip_text(Some("Menu"));
         main_header.pack_end(&gtk::WindowControls::new(gtk::PackType::End));
         main_header.pack_end(&menu);
@@ -425,6 +435,7 @@ impl App {
             list_dirty: Cell::new(false),
             reconnect_attempt: Cell::new(0),
             auto_opened: Cell::new(false),
+            palette: RefCell::new(None),
             started,
         });
 
@@ -497,7 +508,13 @@ impl App {
         type Action = Box<dyn Fn(&Rc<App>)>;
         let actions: Vec<(&str, &[&str], Action)> = vec![
             ("new-thread", &["<Control>n"], Box::new(|a| a.new_chat())),
-            ("palette", &["<Control>k"], Box::new(|a| a.palette())),
+            (
+                "palette",
+                &["<Control>k"],
+                Box::new(|a| {
+                    a.palette();
+                }),
+            ),
             ("search", &["<Control>f"], Box::new(|a| a.focus_search())),
             ("send", &["<Control>Return", "<Control>KP_Enter"], Box::new(|a| a.send())),
             ("usage", &["<Control><Shift>u"], Box::new(|a| a.show_usage())),
@@ -533,9 +550,151 @@ impl App {
         self.search.select_region(0, -1);
     }
 
-    /// Ctrl+K: the command palette lands with the palette issue; until then it opens the thread search.
-    fn palette(self: &Rc<Self>) {
-        self.focus_search();
+    /// Ctrl+K: the command palette over threads, transcripts, projects, repos, issues and actions.
+    pub fn palette(self: &Rc<Self>) -> Rc<palette::Palette> {
+        let catalog = self.palette_catalog();
+        let app = self.clone();
+        let p = palette::Palette::open(
+            self.window.upcast_ref(),
+            catalog,
+            Rc::new(move |action| app.run_palette_action(action)),
+        );
+        *self.palette.borrow_mut() = Some(p.clone());
+        p
+    }
+
+    fn palette_catalog(&self) -> Vec<palette::Entry> {
+        use palette::{Action, Entry};
+        let mut out = Vec::new();
+        let providers = self.providers.borrow();
+        for p in providers.iter().filter(|p| p.ready()) {
+            out.push(Entry {
+                title: format!("New thread on {}", p.name()),
+                kind: "Action".into(),
+                action: Action::NewThread { provider: Some(p.instance_id.clone()) },
+            });
+        }
+        for p in providers.iter().filter(|p| p.ready()) {
+            for m in &p.models {
+                out.push(Entry {
+                    title: format!("Switch model to {} ({})", m.display(), p.name()),
+                    kind: "Model".into(),
+                    action: Action::SetModel { provider: p.instance_id.clone(), model: m.key().to_string() },
+                });
+            }
+        }
+        for (title, page) in [
+            ("Open Usage", "usage"),
+            ("Open Repos and Issues", "repos"),
+            ("Open Diagnostics", "diagnostics"),
+            ("Changes in this thread", "changes"),
+        ] {
+            out.push(Entry { title: title.into(), kind: "Page".into(), action: Action::Page(page.into()) });
+        }
+        for (title, action) in [
+            ("Pair with a T3 environment", "pair"),
+            ("Import sessions from Claude Code and Codex", "import"),
+            ("Hand off to repo", "handoff"),
+            ("Open offline twin", "offline"),
+            ("Reconnect", "reconnect"),
+            ("Close thread", "close-thread"),
+            ("About Claude", "about"),
+        ] {
+            out.push(Entry { title: title.into(), kind: "Action".into(), action: Action::WindowAction(action.into()) });
+        }
+        if let Some(c) = self.conn.borrow().as_ref() {
+            for p in &c.shell.projects {
+                out.push(Entry {
+                    title: format!("New thread in {}", p.title),
+                    kind: "Project".into(),
+                    action: Action::NewThreadIn(p.id.clone()),
+                });
+            }
+            for t in c.shell.threads.iter().filter(|t| t.archived_at.is_none()) {
+                let provider = providers
+                    .iter()
+                    .find(|p| p.instance_id == t.provider_instance_id)
+                    .map(Provider::name)
+                    .unwrap_or_default();
+                let title = crate::transcript::title_from_prompt(&t.title).unwrap_or_else(|| "Untitled thread".into());
+                out.push(Entry { title, kind: format!("Thread · {provider}"), action: Action::OpenId(t.id.clone()) });
+            }
+        }
+        for s in self.sessions.borrow().iter() {
+            out.push(Entry {
+                title: s.title.clone(),
+                kind: format!("Transcript · {}", s.project()),
+                action: Action::OpenId(s.id.clone()),
+            });
+        }
+        let config = self.repos_page.config();
+        for r in &config.repos {
+            out.push(Entry {
+                title: format!("Issues in {}", r.repo),
+                kind: "Repo".into(),
+                action: Action::Repo(r.repo.clone()),
+            });
+        }
+        for (repo, issue) in self.repos_page.cached_issues() {
+            out.push(Entry {
+                title: format!("#{} {}", issue.number, issue.title),
+                kind: format!("Issue · {repo}"),
+                action: Action::StartIssue { repo, number: issue.number },
+            });
+        }
+        out
+    }
+
+    fn run_palette_action(self: &Rc<Self>, action: palette::Action) {
+        use palette::Action;
+        match action {
+            Action::OpenId(id) => self.open_by_id(&id),
+            Action::NewThread { provider } => {
+                if let Some(p) = provider {
+                    self.select_provider(&p, None);
+                }
+                self.new_chat();
+            }
+            Action::NewThreadIn(project_id) => self.new_chat_in(Some(project_id)),
+            Action::SetModel { provider, model } => {
+                self.select_provider(&provider, Some(&model));
+                self.toast(&format!("Next message goes to {model}"));
+            }
+            Action::Page(page) => match page.as_str() {
+                "usage" => self.show_usage(),
+                "repos" => self.show_repos(),
+                "diagnostics" => self.show_diagnostics(),
+                "changes" => self.show_changes(),
+                _ => {}
+            },
+            Action::Repo(repo) => {
+                self.show_repos();
+                let pinned = self.repos_page.config().repos.into_iter().find(|r| r.repo == repo);
+                if let Some(r) = pinned {
+                    self.repos_page.show_issues(self, r);
+                }
+            }
+            Action::StartIssue { repo, number } => {
+                let pinned = self.repos_page.config().repos.into_iter().find(|r| r.repo == repo);
+                let issue = self
+                    .repos_page
+                    .cached_issues()
+                    .into_iter()
+                    .find(|(r, i)| *r == repo && i.number == number)
+                    .map(|(_, i)| i);
+                match (pinned, issue) {
+                    (Some(r), Some(i)) => self.start_issue(r, i),
+                    _ => self.toast("Open the repo's issues first."),
+                }
+            }
+            Action::WindowAction(name) => {
+                if name == "pair" {
+                    self.show_page("pair");
+                } else {
+                    WidgetExt::activate_action(&self.window, &format!("win.{name}"), None).ok();
+                }
+            }
+        }
     }
 
     /// Ctrl+W: leaves the open thread or transcript and shows the empty page.
@@ -561,13 +720,17 @@ impl App {
             Some(c) => (
                 format!("{} ({})", c.cred.label, c.cred.server),
                 c.config.environment.get("serverVersion").and_then(Value::as_str).unwrap_or("?").to_string(),
-                c.config.environment.get("platform").map(|p| {
-                    format!(
-                        "{} {}",
-                        p.get("os").and_then(Value::as_str).unwrap_or(""),
-                        p.get("arch").and_then(Value::as_str).unwrap_or("")
-                    )
-                }).unwrap_or_default(),
+                c.config
+                    .environment
+                    .get("platform")
+                    .map(|p| {
+                        format!(
+                            "{} {}",
+                            p.get("os").and_then(Value::as_str).unwrap_or(""),
+                            p.get("arch").and_then(Value::as_str).unwrap_or("")
+                        )
+                    })
+                    .unwrap_or_default(),
             ),
             None => ("not connected".to_string(), "–".to_string(), String::new()),
         };
@@ -1634,6 +1797,11 @@ impl App {
     }
 
     pub fn new_chat(self: &Rc<Self>) {
+        self.new_chat_in(None);
+    }
+
+    /// A new thread in `project_id`, else in the project of what is open, else the first project.
+    pub fn new_chat_in(self: &Rc<Self>, project_id: Option<String>) {
         if self.conn.borrow().is_none() {
             self.toast("Connect to a T3 server to start a thread.");
             self.show_page("pair");
@@ -1643,6 +1811,7 @@ impl App {
         let project = {
             let conn = self.conn.borrow();
             let c = conn.as_ref().unwrap();
+            let by_arg = project_id.as_ref().and_then(|id| c.shell.projects.iter().find(|p| p.id == *id).cloned());
             let by_live = self
                 .live
                 .borrow()
@@ -1653,7 +1822,7 @@ impl App {
                 .borrow()
                 .as_ref()
                 .and_then(|s| c.shell.projects.iter().find(|p| s.cwd.starts_with(&p.workspace_root)).cloned());
-            by_live.or(by_session).or_else(|| c.shell.projects.first().cloned())
+            by_arg.or(by_live).or(by_session).or_else(|| c.shell.projects.first().cloned())
         };
         let Some(project) = project else {
             self.toast("No project on the server yet. Importing your sessions first.");

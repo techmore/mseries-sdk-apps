@@ -43,7 +43,7 @@ pub fn dump(dir: Option<String>, pairing: Option<String>) -> glib::ExitCode {
     let dir = PathBuf::from(dir.unwrap_or_else(|| "t3-dump".into()));
     std::fs::create_dir_all(&dir).expect("create dump dir");
     let ctx = glib::MainContext::default();
-    let code = ctx.block_on(async move {
+    ctx.block_on(async move {
         let cred = match pairing {
             Some(p) => {
                 let (server, token) = auth::parse_pairing(&p, DEFAULT_SERVER);
@@ -157,6 +157,5 @@ pub fn dump(dir: Option<String>, pairing: Option<String>) -> glib::ExitCode {
         }
         rpc.close().await;
         glib::ExitCode::SUCCESS
-    });
-    code
+    })
 }
