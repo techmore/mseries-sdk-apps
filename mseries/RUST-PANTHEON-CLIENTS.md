@@ -57,7 +57,10 @@ in-memory cache, and never save previews to disk or retrieve MAP attachments.
 
 The main window now supports Ctrl+F to focus conversation search, Ctrl+R to
 refresh, Ctrl+N to start a message, and a Send with Enter preference matching
-the existing Python client. It reads and writes the shared
+the existing Python client. Its automatic-refresh switch also survives app
+restarts in a separate owner-only `~/.config/mseries/messages-rust.json` file;
+it does not change the qualified Python client's settings schema. It reads and
+writes the shared
 `~/.config/mseries/messages.json` `enter_sends` setting. When enabled, Enter
 sends, Shift+Enter inserts a newline, and Ctrl+Enter remains an alternative;
 when disabled, Ctrl+Enter sends and Enter inserts a newline. The GTK text

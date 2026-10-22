@@ -471,6 +471,7 @@ pub struct App {
 impl App {
     pub fn build(application: &gtk::Application) -> Option<Rc<Self>> {
         let enter_sends = preferences::load_enter_sends();
+        let auto_refresh = preferences::load_auto_refresh();
         let dock_badge = DockBadge::new("io.elementary.mseries.MessagesRust");
         let backend = Backend::connect();
         let backend = match backend {
@@ -549,7 +550,7 @@ impl App {
         advanced_button.add_css_class("flat");
         mseries_pantheon_kit::set_accessible_label(&advanced_button, "Open Advanced BlueFerry");
         let auto_refresh_switch = gtk::Switch::builder()
-            .active(true)
+            .active(auto_refresh)
             .valign(gtk::Align::Center)
             .build();
         mseries_pantheon_kit::set_accessible_label(
@@ -1171,9 +1172,25 @@ impl App {
         });
         poller.bind_to_widget_mapped(&self.window);
         let poller_for_switch = poller.clone();
+        let weak = Rc::downgrade(self);
         self.auto_refresh_switch
             .connect_state_set(move |_, active| {
                 poller_for_switch.set_enabled(active);
+                if let Some(app) = weak.upgrade() {
+                    if let Err(error) = preferences::save_auto_refresh(active) {
+                        app.feedback.set_text(&format!(
+                            "Could not save automatic refresh preference: {error}"
+                        ));
+                        app.feedback.add_css_class("warning");
+                    } else {
+                        app.feedback.remove_css_class("warning");
+                        app.feedback.set_text(if active {
+                            "Automatic refresh enabled."
+                        } else {
+                            "Automatic refresh paused."
+                        });
+                    }
+                }
                 glib::Propagation::Proceed
             });
         poller.set_enabled(self.auto_refresh_switch.is_active());

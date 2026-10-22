@@ -65,7 +65,9 @@ apps that need to refresh after sleep without a permanent wake-up timer. Rust
 Messages now combines it with a user-controlled 30-second `Polling` fallback;
 the poller is disabled while the window is unmapped, and duplicate refresh
 requests coalesce into one follow-up so delayed D-Bus replies cannot pile up or
-replace newer history with an older snapshot.
+replace newer history with an older snapshot. Its refresh switch is restored
+from an owner-only `messages-rust.json` preference, separate from the shared
+send-key preference, so opting out of background refresh survives restarts.
 
 Disk Space now uses the SDK's text-relative spacing and margin helpers for
 persistent layout groups, GTK font-relative CSS padding for repeated rows, and
