@@ -1,6 +1,13 @@
 use gtk::prelude::*;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+
+thread_local! {
+    /// One GTK settings subscription fans font changes out to currently-live
+    /// widgets. Weak registrations are pruned as new widgets opt in.
+    static FONT_WATCHERS: RefCell<Vec<std::rc::Weak<dyn Fn()>>> = RefCell::new(Vec::new());
+    static FONT_SETTINGS_CONNECTED: Cell<bool> = const { Cell::new(false) };
+}
 
 /// A logical window size class. GTK handles conversion to physical pixels.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -31,7 +38,7 @@ pub fn set_box_spacing_text_units(container: &gtk::Box, multiplier: f64) {
         }
     });
     update();
-    watch_font_changes(update);
+    watch_font_changes(container, update);
 }
 
 /// Set per-edge margins in multiples of the current text line height and track live
@@ -56,7 +63,7 @@ pub fn set_margins_text_units<W: IsA<gtk::Widget> + Clone + 'static>(
         }
     });
     update();
-    watch_font_changes(update);
+    watch_font_changes(&widget, update);
 }
 
 /// Reclassify a widget as its allocated width or desktop text scale changes.
@@ -110,7 +117,7 @@ where
             gtk::glib::idle_add_local_once(move || update());
         });
     });
-    watch_font_changes(update);
+    watch_font_changes(&widget, update);
 }
 
 /// Set the accessible name of a control whose icon or visual treatment has no
@@ -131,11 +138,41 @@ pub fn install_css(display: &gtk::gdk::Display) {
     );
 }
 
-fn watch_font_changes(update: Rc<dyn Fn()>) {
-    if let Some(settings) = gtk::Settings::default() {
+fn watch_font_changes<W: IsA<gtk::Widget>>(widget: &W, update: Rc<dyn Fn()>) {
+    // Keep the callback alive with its widget. The callback itself holds only a
+    // weak widget reference, so this signal handler cannot create a cycle.
+    let widget: gtk::Widget = widget.clone().upcast();
+    let update_for_scale = update.clone();
+    widget.connect_notify_local(Some("scale-factor"), move |_, _| update_for_scale());
+
+    FONT_WATCHERS.with(|watchers| {
+        let mut watchers = watchers.borrow_mut();
+        watchers.retain(|watcher| watcher.strong_count() > 0);
+        watchers.push(Rc::downgrade(&update));
+    });
+
+    if let Some(settings) = gtk::Settings::default()
+        && !FONT_SETTINGS_CONNECTED.with(|connected| connected.replace(true))
+    {
         for property in ["gtk-font-name", "gtk-xft-dpi"] {
-            let update = update.clone();
-            settings.connect_notify_local(Some(property), move |_, _| update());
+            settings.connect_notify_local(Some(property), |_, _| refresh_font_watchers());
         }
+    }
+}
+
+fn refresh_font_watchers() {
+    let updates = FONT_WATCHERS.with(|watchers| {
+        let mut watchers = watchers.borrow_mut();
+        watchers.retain(|watcher| watcher.strong_count() > 0);
+        watchers
+            .iter()
+            .filter_map(std::rc::Weak::upgrade)
+            .collect::<Vec<_>>()
+    });
+
+    // Invoke after releasing the registry borrow. A layout callback may create
+    // another watched widget while it is refreshing.
+    for update in updates {
+        update();
     }
 }
