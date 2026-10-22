@@ -79,6 +79,7 @@ start-up probe; the table tracks drift per feature.
 | #463 | install target, .desktop actions, D-Bus activation, metainfo, icons | 59 | 0.0 | 187 – 205 |
 | #464 | Wingpanel indicator (separate process in the panel; app unchanged apart from the open-thread action) | 59 | 0.0 | 190 – 205 |
 | #467 | HIG shortcuts, app menu with accelerator labels, Close Thread, About | 59 | 0.0 | 211 – 215 |
+| #468 | command palette (Ctrl+K) over threads, transcripts, projects, repos, issues and actions | 59 | 0.0 | 212 – 228 |
 
 ## Reproduce
 
