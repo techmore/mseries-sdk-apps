@@ -23,8 +23,9 @@ The Rust client never opens BlueFerry's private database or starts a competing
 MAP connection.
 
 If BlueFerry's Messages API cannot be reached at startup, the error screen
-offers Retry and reactivates the app after closing the placeholder. The user
-does not have to close and relaunch Messages to try again.
+offers Connect iPhone, Advanced BlueFerry and Retry. Retry reactivates the app
+after closing the placeholder. The running app menu also exposes both setup
+tools, preserving the existing client's recovery and group-participant flows.
 
 The preview searches conversation names, recipients, latest previews and loaded
 message bodies with Unicode case folding. It shows message history, keeps
@@ -132,7 +133,8 @@ The selected path is the official signed Signal client with Pantheon
 integration. Ready PR [#525](https://github.com/techmore/ElementaryOS_MSeries/pull/525)
 keeps Signal's official Electron client and adds system-accent refresh for the
 mutable install, desktop launcher identity, and a Wingpanel tray host. Atomic
-releases retain upstream colors. Its checks pass; the PR does not replace
+releases retain upstream colors. The current GitHub run has passing and pending
+checks, with no failures in the latest snapshot. The PR does not replace
 Signal's UI with Rust or GTK.
 
 The screenshot shelf's actual compose preview, multiple images, paste fallback,

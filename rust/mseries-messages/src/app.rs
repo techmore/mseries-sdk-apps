@@ -10,6 +10,9 @@ use mseries_pantheon_kit::{
 };
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::ffi::OsStr;
+use std::path::PathBuf;
+use std::process::Command;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -41,6 +44,36 @@ fn recent_inbox_due(
             .unwrap_or_default()
             .ge(&RECENT_INBOX_MAX_AGE)
     })
+}
+
+fn launch_phone_setup(feedback: &gtk::Label) {
+    let Some(home) = std::env::var_os("HOME") else {
+        feedback.set_text("Could not open Connect iPhone: HOME is not set.");
+        feedback.add_css_class("warning");
+        return;
+    };
+    let program = PathBuf::from(home).join(".local/bin/mseries-phone-setup");
+    launch_helper(program.as_os_str(), "Connect iPhone", feedback);
+}
+
+fn launch_advanced_blueferry(feedback: &gtk::Label) {
+    launch_helper(OsStr::new("blueferry-gtk"), "Advanced BlueFerry", feedback);
+}
+
+fn launch_helper(program: &OsStr, name: &str, feedback: &gtk::Label) {
+    match Command::new(program).spawn() {
+        Ok(mut child) => {
+            thread::spawn(move || {
+                let _ = child.wait();
+            });
+            feedback.remove_css_class("warning");
+            feedback.set_text(&format!("Opened {name}."));
+        }
+        Err(error) => {
+            feedback.add_css_class("warning");
+            feedback.set_text(&format!("Could not open {name}: {error}"));
+        }
+    }
 }
 
 #[derive(Default)]
@@ -453,10 +486,26 @@ impl App {
                 let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
                 mseries_pantheon_kit::set_box_spacing_text_units(&content, 0.5);
                 content.append(&placeholder);
+                let helper_feedback = gtk::Label::builder().xalign(0.0).wrap(true).build();
+                helper_feedback.add_css_class("dim-label");
+                let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                mseries_pantheon_kit::set_box_spacing_text_units(&actions, 0.5);
+                let setup = gtk::Button::with_label("Connect iPhone…");
+                mseries_pantheon_kit::set_accessible_label(&setup, "Connect iPhone");
+                let setup_feedback = helper_feedback.clone();
+                setup.connect_clicked(move |_| launch_phone_setup(&setup_feedback));
+                let advanced = gtk::Button::with_label("Advanced BlueFerry…");
+                mseries_pantheon_kit::set_accessible_label(&advanced, "Open Advanced BlueFerry");
+                let advanced_feedback = helper_feedback.clone();
+                advanced.connect_clicked(move |_| launch_advanced_blueferry(&advanced_feedback));
                 let retry = gtk::Button::with_label("Retry");
                 retry.add_css_class("suggested-action");
-                retry.set_halign(gtk::Align::Center);
-                content.append(&retry);
+                mseries_pantheon_kit::set_accessible_label(&retry, "Retry BlueFerry connection");
+                actions.append(&setup);
+                actions.append(&advanced);
+                actions.append(&retry);
+                content.append(&actions);
+                content.append(&helper_feedback);
                 window.set_child(Some(&content));
                 let retry_window = window.clone();
                 let retry_application = application.clone();
@@ -492,6 +541,12 @@ impl App {
         pin_review_button.add_css_class("flat");
         mseries_pantheon_kit::set_accessible_label(&pin_review_button, "Review imported pins");
         pin_review_button.set_sensitive(false);
+        let setup_button = gtk::Button::with_label("Connect iPhone…");
+        setup_button.add_css_class("flat");
+        mseries_pantheon_kit::set_accessible_label(&setup_button, "Connect iPhone");
+        let advanced_button = gtk::Button::with_label("Advanced BlueFerry…");
+        advanced_button.add_css_class("flat");
+        mseries_pantheon_kit::set_accessible_label(&advanced_button, "Open Advanced BlueFerry");
         let auto_refresh_switch = gtk::Switch::builder()
             .active(true)
             .valign(gtk::Align::Center)
@@ -551,6 +606,9 @@ impl App {
         mseries_pantheon_kit::set_margins_text_units(&menu_actions, 0.35, 0.35, 0.35, 0.35);
         menu_actions.append(&pin_import_button);
         menu_actions.append(&pin_review_button);
+        menu_actions.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+        menu_actions.append(&setup_button);
+        menu_actions.append(&advanced_button);
         menu_actions.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         menu_actions.append(&refresh_row);
         menu_actions.append(&enter_send_row);
@@ -790,6 +848,7 @@ impl App {
             &shortcuts_button,
             &enter_send_switch,
         );
+        app.connect_helper_buttons(&menu, &setup_button, &advanced_button);
         app.connect_responsive_layout();
         app.watch_history();
         app.install_refresh_controls();
@@ -1072,6 +1131,31 @@ impl App {
                 && !app.syncing_star.get()
             {
                 app.toggle_star(button.is_active());
+            }
+        });
+    }
+
+    fn connect_helper_buttons(
+        self: &Rc<Self>,
+        menu: &gtk::Popover,
+        setup: &gtk::Button,
+        advanced: &gtk::Button,
+    ) {
+        let weak = Rc::downgrade(self);
+        let setup_menu = menu.clone();
+        setup.connect_clicked(move |_| {
+            setup_menu.popdown();
+            if let Some(app) = weak.upgrade() {
+                launch_phone_setup(&app.feedback);
+            }
+        });
+
+        let weak = Rc::downgrade(self);
+        let advanced_menu = menu.clone();
+        advanced.connect_clicked(move |_| {
+            advanced_menu.popdown();
+            if let Some(app) = weak.upgrade() {
+                launch_advanced_blueferry(&app.feedback);
             }
         });
     }
