@@ -9,6 +9,27 @@ pub struct Message {
     pub outgoing: bool,
     pub read: bool,
     pub sender: String,
+    pub body_truncated: bool,
+    pub phone_list: bool,
+}
+
+impl Message {
+    pub fn visible_body(&self) -> String {
+        if self.has_attachment() {
+            self.body.replace('\u{fffc}', "").trim().to_string()
+        } else {
+            self.body.clone()
+        }
+    }
+
+    pub fn has_attachment(&self) -> bool {
+        self.body.contains('\u{fffc}') || self.body.trim().is_empty()
+    }
+
+    pub fn is_shortened(&self) -> bool {
+        let visible = self.visible_body();
+        self.body_truncated || (self.phone_list && visible.chars().count() >= 120)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
@@ -47,9 +68,23 @@ impl Thread {
             .max(self.unread_count)
     }
 
-    pub fn preview(&self) -> &str {
-        self.messages
-            .last()
-            .map_or("", |message| message.body.as_str())
+    pub fn preview(&self) -> String {
+        let Some(message) = self.messages.last() else {
+            return String::new();
+        };
+        let text = message
+            .visible_body()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        if message.has_attachment() {
+            if text.is_empty() {
+                "Attachment".to_string()
+            } else {
+                format!("{text} · Attachment")
+            }
+        } else {
+            text
+        }
     }
 }

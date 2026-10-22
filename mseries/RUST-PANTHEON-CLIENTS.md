@@ -22,9 +22,11 @@ The Rust client never opens BlueFerry's private database or starts a competing
 MAP connection.
 
 The preview currently supports conversation search, message history, in-memory
-per-thread drafts, favorites, read state, checked replies, history invalidation,
-and a participant-review dialog before a group send. The Rust app now also has
-a new-message picker that searches contacts through BlueFerry's supported
+per-thread drafts that remain editable offline, favorites, read state, checked
+replies, history invalidation, and a participant-review dialog before a group
+send. Message bubbles offer Reply and Copy actions, show Bluetooth attachment
+placeholders, and disclose text shortened by the phone. The Rust app also has a
+new-message picker that searches contacts through BlueFerry's supported
 `FindContacts` API, validates direct phone/email destinations, and sends via
 BlueFerry's supported `Send` method. New conversations stay local to the app
 until BlueFerry reports the resulting thread. It installs beside the existing
@@ -33,11 +35,12 @@ until the Rust app reaches feature and accessibility parity and passes the
 owner's live phone acceptance.
 
 Parity work still includes favorite layout and imported iPhone pins, contact
-photos, safe link previews, detailed delivery and retry feedback, message
-actions, accessibility/keyboard and narrow-window behavior, localization,
-package/launcher handoff, and fixture plus private GUI and owner-phone
-qualification. Those are migration gates, not claims about the current
-prototype. The contact picker itself still needs runtime and phone acceptance.
+photos, safe link previews, Tapback/reaction folding, detailed delivery and
+retry feedback, additional message actions, accessibility/keyboard and
+narrow-window behavior, localization, package/launcher handoff, and fixture
+plus private GUI and owner-phone qualification. Those are migration gates, not
+claims about the current prototype. The contact picker and Reply/Copy actions
+still need runtime and phone acceptance.
 
 ## Signal
 

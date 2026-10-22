@@ -12,6 +12,7 @@ struct State {
     selected: Option<String>,
     drafts: HashMap<String, String>,
     pending: Vec<String>,
+    map_ready: bool,
 }
 
 pub struct App {
@@ -373,6 +374,7 @@ impl App {
                             detail
                         });
                         let mut state = app.state.borrow_mut();
+                        state.map_ready = ready;
                         let mut server_threads: Vec<Thread> = threads
                             .into_iter()
                             .filter(|thread| !thread.key.is_empty())
@@ -413,7 +415,11 @@ impl App {
                         drop(state);
                         app.rebuild_sidebar();
                     }
-                    Err(error) => app.status.set_text(&error),
+                    Err(error) => {
+                        app.state.borrow_mut().map_ready = false;
+                        app.send_button.set_sensitive(false);
+                        app.status.set_text(&error);
+                    }
                 }
             }
         });
@@ -528,7 +534,7 @@ impl App {
         }
     }
 
-    fn render_conversation(&self, thread: Option<Thread>) {
+    fn render_conversation(self: &Rc<Self>, thread: Option<Thread>) {
         while let Some(child) = self.messages.first_child() {
             self.messages.remove(&child);
         }
@@ -573,16 +579,43 @@ impl App {
                 } else {
                     gtk::Align::Start
                 });
-                let text = gtk::Label::builder()
-                    .label(&message.body)
-                    .xalign(0.0)
-                    .wrap(true)
-                    .selectable(true)
-                    .max_width_chars(72)
-                    .build();
-                text.add_css_class("card");
-                text.add_css_class("pantheon-surface");
-                bubble.append(&text);
+                let visible_body = message.visible_body();
+                if !visible_body.is_empty() {
+                    let text = gtk::Label::builder()
+                        .label(&visible_body)
+                        .xalign(0.0)
+                        .wrap(true)
+                        .selectable(true)
+                        .max_width_chars(72)
+                        .build();
+                    text.add_css_class("card");
+                    text.add_css_class("pantheon-surface");
+                    bubble.append(&text);
+                }
+                if message.has_attachment() {
+                    let attachment = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                    attachment.add_css_class("card");
+                    attachment.add_css_class("pantheon-surface");
+                    attachment.append(&gtk::Image::from_icon_name("mail-attachment-symbolic"));
+                    attachment.append(&gtk::Label::new(Some("Attachment")));
+                    attachment.set_tooltip_text(Some(
+                        "Your iPhone shares only message text over Bluetooth. Open Messages on the iPhone to view this attachment.",
+                    ));
+                    mseries_pantheon_kit::set_accessible_label(
+                        &attachment,
+                        "Attachment. Open Messages on your iPhone to view it.",
+                    );
+                    bubble.append(&attachment);
+                }
+                if message.is_shortened() {
+                    let shortened = gtk::Label::new(Some(
+                        "Shortened by your iPhone · open it there for the rest",
+                    ));
+                    shortened.add_css_class("caption");
+                    shortened.add_css_class("dim-label");
+                    shortened.set_xalign(if message.outgoing { 1.0 } else { 0.0 });
+                    bubble.append(&shortened);
+                }
                 if !message.timestamp.is_empty() {
                     let timestamp = gtk::Label::builder()
                         .label(&message.timestamp)
@@ -592,13 +625,17 @@ impl App {
                     timestamp.add_css_class("dim-label");
                     bubble.append(&timestamp);
                 }
+                self.attach_message_actions(&bubble, message, thread.is_group);
                 self.messages.append(&bubble);
             }
             let permitted = thread.local_only
                 || (thread.reply_ready && !thread.participants_required && !thread.roster_changed);
-            self.editor.set_sensitive(permitted);
-            self.send_button
-                .set_sensitive(permitted && !self.state.borrow().pending.contains(&thread.key));
+            self.editor.set_sensitive(true);
+            let state = self.state.borrow();
+            self.send_button.set_sensitive(
+                permitted && state.map_ready && !state.pending.contains(&thread.key),
+            );
+            drop(state);
             let draft = self
                 .state
                 .borrow()
@@ -623,6 +660,97 @@ impl App {
             empty.set_icon(&gio::ThemedIcon::new("mail-message-new"));
             self.messages.append(&empty);
         }
+    }
+
+    fn attach_message_actions(
+        self: &Rc<Self>,
+        bubble: &gtk::Box,
+        message: &Message,
+        is_group: bool,
+    ) {
+        let popover = gtk::Popover::new();
+        popover.set_has_arrow(false);
+        let actions = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        mseries_pantheon_kit::set_margins_text_units(&actions, 0.45, 0.45, 0.45, 0.45);
+
+        let reply = gtk::Button::with_label("Reply");
+        reply.add_css_class("flat");
+        mseries_pantheon_kit::set_accessible_label(&reply, "Reply to message");
+        let weak_app = Rc::downgrade(self);
+        let reply_message = message.clone();
+        let reply_popover = popover.downgrade();
+        reply.connect_clicked(move |_| {
+            if let Some(popover) = reply_popover.upgrade() {
+                popover.popdown();
+            }
+            if let Some(app) = weak_app.upgrade() {
+                app.reply_to_message(&reply_message, is_group);
+            }
+        });
+        actions.append(&reply);
+
+        let copy = gtk::Button::with_label("Copy Text");
+        copy.add_css_class("flat");
+        mseries_pantheon_kit::set_accessible_label(&copy, "Copy message text");
+        let weak_app = Rc::downgrade(self);
+        let copy_body = message.visible_body();
+        let copy_popover = popover.downgrade();
+        copy.connect_clicked(move |_| {
+            if let Some(popover) = copy_popover.upgrade() {
+                popover.popdown();
+            }
+            if let Some(app) = weak_app.upgrade() {
+                gtk::prelude::WidgetExt::display(&app.window)
+                    .clipboard()
+                    .set_text(&copy_body);
+                app.feedback.set_text("Message text copied.");
+            }
+        });
+        actions.append(&copy);
+
+        popover.set_child(Some(&actions));
+        popover.set_parent(bubble);
+        let right_click = gtk::GestureClick::builder().button(3).build();
+        right_click.set_propagation_phase(gtk::PropagationPhase::Capture);
+        let right_popover = popover.clone();
+        right_click.connect_pressed(move |gesture, _, x, y| {
+            right_popover
+                .set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+            right_popover.popup();
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+        });
+        bubble.add_controller(right_click);
+
+        let long_press = gtk::GestureLongPress::new();
+        long_press.set_propagation_phase(gtk::PropagationPhase::Capture);
+        let long_popover = popover.clone();
+        long_press.connect_pressed(move |gesture, x, y| {
+            long_popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+            long_popover.popup();
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+        });
+        bubble.add_controller(long_press);
+        bubble.connect_destroy(move |_| popover.unparent());
+    }
+
+    fn reply_to_message(&self, message: &Message, is_group: bool) {
+        if self.state.borrow().selected.is_none() {
+            return;
+        }
+        let quote = message_quote(message, is_group);
+        let buffer = self.editor.buffer();
+        let current = buffer
+            .text(&buffer.start_iter(), &buffer.end_iter(), false)
+            .to_string();
+        let prefix = format!("↪ {quote}\n");
+        let draft = if current.trim().is_empty() {
+            prefix
+        } else {
+            format!("{prefix}{current}")
+        };
+        buffer.set_text(&draft);
+        buffer.place_cursor(&buffer.end_iter());
+        self.editor.grab_focus();
     }
 
     fn toggle_star(self: &Rc<Self>, starred: bool) {
@@ -665,6 +793,11 @@ impl App {
             .find(|thread| thread.key == key)
             .cloned();
         let Some(thread) = thread else { return };
+        if !self.state.borrow().map_ready {
+            self.status
+                .set_text("Your iPhone is offline. Your draft is kept while this window is open.");
+            return;
+        }
         if thread.local_only {
             let Some(recipient) = thread.recipients.first() else {
                 self.status
@@ -769,9 +902,15 @@ impl App {
                     Ok(()) => {
                         app.feedback.set_text("Message sent through your iPhone.");
                         if app.state.borrow().selected.as_deref() == Some(key.as_str()) {
-                            app.editor.buffer().set_text("");
+                            let buffer = app.editor.buffer();
+                            let current = buffer
+                                .text(&buffer.start_iter(), &buffer.end_iter(), false)
+                                .to_string();
+                            if current == body {
+                                buffer.set_text("");
+                                app.state.borrow_mut().drafts.remove(&key);
+                            }
                         }
-                        app.state.borrow_mut().drafts.remove(&key);
                         if let Some(thread) = app
                             .state
                             .borrow_mut()
@@ -1146,6 +1285,32 @@ fn append_contact_rows(list: &gtk::ListBox, contacts: &[ContactMatch]) {
         };
         mseries_pantheon_kit::set_accessible_label(&row, &accessible);
         list.append(&row);
+    }
+}
+
+fn message_quote(message: &Message, is_group: bool) -> String {
+    let mut text = message
+        .visible_body()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if text.is_empty() {
+        text = "Attachment".to_string();
+    }
+    if text.chars().count() > 80 {
+        text = text
+            .chars()
+            .take(79)
+            .collect::<String>()
+            .trim_end()
+            .to_string();
+        text.push('…');
+    }
+    let quote = format!("“{text}”");
+    if is_group && !message.outgoing && !message.sender.is_empty() {
+        format!("{}: {quote}", message.sender)
+    } else {
+        quote
     }
 }
 
