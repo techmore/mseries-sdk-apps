@@ -11,7 +11,7 @@ const MAX_JPEG_FILL_BYTES: usize = 64;
 /// validates them too, but clients repeat the cheap size and header checks before
 /// passing bytes to a toolkit decoder. The decoded cache stays in process memory.
 pub fn decode_contact_avatar(data: &[u8], max_size: i32) -> Option<Pixbuf> {
-    if max_size <= 0 || !valid_contact_photo(data) {
+    if max_size <= 0 || !is_valid_contact_photo(data) {
         return None;
     }
 
@@ -29,7 +29,7 @@ pub fn decode_contact_avatar(data: &[u8], max_size: i32) -> Option<Pixbuf> {
     Some(scaled.new_subpixbuf(x, y, side, side))
 }
 
-fn valid_contact_photo(data: &[u8]) -> bool {
+pub(crate) fn is_valid_contact_photo(data: &[u8]) -> bool {
     if data.is_empty() || data.len() > MAX_PHOTO_BYTES {
         return false;
     }

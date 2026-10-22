@@ -87,7 +87,10 @@ BlueFerry remains the only owner of MAP access, message history, recipient
 validation and photo policy. The app does not open BlueFerry's database or
 manage its Bluetooth session. Contact-photo decoding is also shared SDK code;
 it accepts bounded JPEG/PNG headers, scales in memory and leaves the user's
-existing opt-in unchanged.
+existing opt-in unchanged. A Rust import of Apple pin snapshots also needs
+BlueFerry to publish a stable, opaque per-phone profile identifier through its
+supported status contract so the SDK can scope the Secret Service item. The
+Rust app must not read BlueFerry's private configuration to derive that key.
 Likewise, the compositor owns frame and client counters; its future read-only
 metrics protocol belongs to the OS, with a typed SDK adapter for System
 Monitor. This keeps CPU/memory polling and compositor telemetry on one

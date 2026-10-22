@@ -110,10 +110,14 @@ impl BlueFerryMessagesClient {
         let result = self
             .call("GetContactPhoto", Some(&args), CONTACT_TIMEOUT_MS)
             .await?;
-        result
+        let photo = result
             .child_value(0)
             .get::<Vec<u8>>()
-            .ok_or_else(|| "BlueFerry returned an invalid contact photo response".to_string())
+            .ok_or_else(|| "BlueFerry returned an invalid contact photo response".to_string())?;
+        if !photo.is_empty() && !crate::images::is_valid_contact_photo(&photo) {
+            return Err("BlueFerry returned an unsupported or oversized contact photo".into());
+        }
+        Ok(photo)
     }
 
     pub async fn mark_read(&self, key: &str) -> Result<(), String> {

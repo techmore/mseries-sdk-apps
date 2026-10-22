@@ -41,6 +41,12 @@ Python GTK/Granite Messages app. The Python app remains the qualified client
 until the Rust app reaches feature and accessibility parity and passes the
 owner's live phone acceptance.
 
+Imported pin review remains open until BlueFerry exposes a stable opaque
+per-phone profile identifier through its supported status API. The Python
+client currently derives this from BlueFerry's private configuration; the Rust
+app will not copy that access pattern. Once the API is available, the SDK can
+scope pin metadata in Secret Service without storing it in a plaintext file.
+
 Parity work still includes imported iPhone pins, bounded link/image previews,
 Tapback/reaction folding, detailed
 delivery and retry feedback, additional message actions, accessibility,
