@@ -11,7 +11,7 @@ use crate::t3::model::{Provider, ServerConfig, Shell, ThreadShell, ThreadView, T
 use crate::t3::{self, Rpc, auth, ws::WsError};
 use crate::transcript::{self, Transcript};
 use crate::workflow::{self, Issue, PinnedRepo};
-use crate::{composer, diagnostics, handoff, notify, palette, repos, sidebar, usage};
+use crate::{changes, composer, diagnostics, handoff, notify, palette, repos, sidebar, terminal, usage};
 use futures_util::StreamExt;
 use granite::prelude::{PlaceholderExt, ToastExt};
 use gtk::{gdk, gio, glib, pango, prelude::*};
@@ -97,7 +97,9 @@ pub struct App {
     usage_page: usage::UsagePage,
     repos_page: Rc<repos::ReposPage>,
     diagnostics_page: Rc<diagnostics::DiagnosticsPage>,
-    changes: gtk::Box,
+    changes_page: Rc<changes::ChangesPage>,
+    terminal_pane: Rc<terminal::TerminalPane>,
+    terminal_revealer: gtk::Revealer,
     // state
     conn: RefCell<Option<Conn>>,
     sessions: RefCell<Vec<Session>>,
@@ -212,6 +214,7 @@ impl App {
                 ("Hand Off to Repo", "win.handoff"),
                 ("Open Offline Twin", "win.offline"),
                 ("Close Thread", "win.close-thread"),
+                ("Terminal", "win.terminal"),
             ]),
         );
         menu_model.append_section(
@@ -275,8 +278,15 @@ impl App {
         composer.append(&pickers);
         composer.append(&entry_row);
 
+        let terminal_pane = terminal::TerminalPane::new();
+        let terminal_revealer = gtk::Revealer::builder()
+            .child(&terminal_pane.root)
+            .transition_type(gtk::RevealerTransitionType::SlideUp)
+            .reveal_child(false)
+            .build();
         let chat_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
         chat_page.append(&chat_scroll);
+        chat_page.append(&terminal_revealer);
         chat_page.append(&composer);
 
         // ---- other pages ---------------------------------------------------------------------
@@ -323,16 +333,7 @@ impl App {
         let usage_page = usage::UsagePage::new();
         let repos_page = Rc::new(repos::ReposPage::new());
         let diagnostics_page = Rc::new(diagnostics::DiagnosticsPage::new());
-        let changes = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        changes.set_margin_top(18);
-        changes.set_margin_bottom(18);
-        changes.set_margin_start(24);
-        changes.set_margin_end(24);
-        let changes_scroll = gtk::ScrolledWindow::builder()
-            .child(&changes)
-            .hscrollbar_policy(gtk::PolicyType::Never)
-            .vexpand(true)
-            .build();
+        let changes_page = changes::ChangesPage::new();
 
         let stack = gtk::Stack::new();
         stack.set_transition_type(gtk::StackTransitionType::Crossfade);
@@ -343,7 +344,7 @@ impl App {
         stack.add_named(usage_page.widget(), Some("usage"));
         stack.add_named(repos_page.widget(), Some("repos"));
         stack.add_named(diagnostics_page.widget(), Some("diagnostics"));
-        stack.add_named(&changes_scroll, Some("changes"));
+        stack.add_named(&changes_page.root, Some("changes"));
         stack.set_vexpand(true);
 
         let toast = granite::Toast::new("");
@@ -404,7 +405,9 @@ impl App {
             usage_page,
             repos_page,
             diagnostics_page,
-            changes,
+            changes_page,
+            terminal_pane,
+            terminal_revealer,
             conn: RefCell::new(None),
             sessions: RefCell::new(Vec::new()),
             current_session: RefCell::new(None),
@@ -513,6 +516,7 @@ impl App {
             ("handoff", &[], Box::new(|a| a.handoff_to_repo())),
             ("offline", &[], Box::new(|a| a.open_offline_twin())),
             ("close-thread", &["<Control>w"], Box::new(|a| a.close_thread())),
+            ("terminal", &["<Control><Shift>t"], Box::new(|a| a.toggle_terminal())),
             ("settings", &["<Control>comma"], Box::new(|a| a.settings())),
             ("reconnect", &[], Box::new(|a| a.connect_stored())),
             ("forget", &[], Box::new(|a| a.forget())),
@@ -535,6 +539,33 @@ impl App {
             });
             self.window.add_action(&action);
         }
+        // Y and N answer the oldest pending permission prompt when nothing is being typed.
+        let keys = gtk::EventControllerKey::new();
+        let a = self.clone();
+        keys.connect_key_pressed(move |_, key, _, state| {
+            if state.intersects(gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::ALT_MASK) {
+                return glib::Propagation::Proceed;
+            }
+            let typing = GtkWindowExt::focus(&a.window).is_some_and(|w| {
+                w.is::<gtk::Text>() || w.is::<gtk::TextView>() || w.is::<gtk::Entry>() || w.is::<gtk::SearchEntry>()
+            });
+            if typing {
+                return glib::Propagation::Proceed;
+            }
+            let decision = match key {
+                gdk::Key::y | gdk::Key::Y => "accept",
+                gdk::Key::n | gdk::Key::N => "decline",
+                _ => return glib::Propagation::Proceed,
+            };
+            match a.oldest_pending_request() {
+                Some(id) => {
+                    a.answer_request(&id, decision);
+                    glib::Propagation::Stop
+                }
+                None => glib::Propagation::Proceed,
+            }
+        });
+        self.window.add_controller(keys);
         let application = self.window.application();
         for (name, accels, f) in actions {
             let action = gio::SimpleAction::new(name, None);
@@ -1578,7 +1609,47 @@ impl App {
 
     // ---- offline transcript ------------------------------------------------------------------
 
+    /// Ctrl+Shift+T: the thread's terminal on the server, in a pane under the chat.
+    pub fn toggle_terminal(self: &Rc<Self>) {
+        let showing = self.terminal_revealer.reveals_child();
+        if showing {
+            self.terminal_revealer.set_reveal_child(false);
+            self.terminal_pane.detach();
+            self.entry.view.grab_focus();
+            return;
+        }
+        let (rpc, thread_id, cwd) = {
+            let conn = self.conn.borrow();
+            let live = self.live.borrow();
+            match (conn.as_ref(), live.as_ref()) {
+                (Some(c), Some(l)) => {
+                    let cwd = c.shell.projects.iter().find(|p| p.id == l.project_id).map(|p| p.workspace_root.clone());
+                    (c.rpc.clone(), l.thread_id.clone(), cwd)
+                }
+                _ => {
+                    self.toast("Open a live thread first; the terminal runs in its project on the server.");
+                    return;
+                }
+            }
+        };
+        let Some(cwd) = cwd else {
+            self.toast("This thread's project has no folder.");
+            return;
+        };
+        self.terminal_revealer.set_reveal_child(true);
+        self.terminal_pane.attach(rpc, thread_id, cwd);
+        self.terminal_pane.grab_focus();
+    }
+
+    pub fn terminal_pane(&self) -> &Rc<terminal::TerminalPane> {
+        &self.terminal_pane
+    }
+
     fn leave_live(&self) {
+        if self.terminal_revealer.reveals_child() {
+            self.terminal_revealer.set_reveal_child(false);
+            self.terminal_pane.detach();
+        }
         let taken = self.live.borrow_mut().take();
         if let Some(live) = taken
             && let Some(c) = self.conn.borrow().as_ref()
@@ -1834,6 +1905,11 @@ impl App {
                             self.run_finished();
                         }
                     }
+                    "checkpoint.captured" => {
+                        if let Some(live) = self.live.borrow_mut().as_mut() {
+                            live.view.checkpoints.push(payload.clone());
+                        }
+                    }
                     "thread.updated" | "thread.created" => {
                         if let Some(t) = payload.get("title").and_then(Value::as_str) {
                             self.title.set_text(t);
@@ -1848,26 +1924,61 @@ impl App {
 
     fn decide_callback(self: &Rc<Self>) -> chat::Decide {
         let app = self.clone();
-        Rc::new(move |request_id: &str, decision: &str| {
-            let (rpc, thread_id) = {
-                let conn = app.conn.borrow();
-                let live = app.live.borrow();
-                match (conn.as_ref(), live.as_ref()) {
-                    (Some(c), Some(l)) => (c.rpc.clone(), l.thread_id.clone()),
-                    _ => return,
-                }
-            };
-            let payload = json!({
-                "type": "runtime-request.respond", "commandId": new_id(), "threadId": thread_id,
-                "requestId": request_id, "decision": decision,
-            });
-            let app2 = app.clone();
-            glib::spawn_future_local(async move {
-                if let Err(e) = rpc.call("orchestration.dispatchCommand", payload).await {
-                    app2.toast(&format!("Could not answer: {}", e.message()));
-                }
-            });
-        })
+        Rc::new(move |request_id: &str, decision: &str| app.answer_request(request_id, decision))
+    }
+
+    /// Answers a permission prompt; a `decline` may carry a reason after a newline, which is sent to
+    /// the thread as a steering message so the agent knows why.
+    pub fn answer_request(self: &Rc<Self>, request_id: &str, decision: &str) {
+        let (rpc, thread_id, run_id) = {
+            let conn = self.conn.borrow();
+            let live = self.live.borrow();
+            match (conn.as_ref(), live.as_ref()) {
+                (Some(c), Some(l)) => (c.rpc.clone(), l.thread_id.clone(), l.view.active_run_id.clone()),
+                _ => return,
+            }
+        };
+        let (decision, note) = match decision.split_once('\n') {
+            Some((d, n)) => (d.to_string(), n.trim().to_string()),
+            None => (decision.to_string(), String::new()),
+        };
+        let payload = json!({
+            "type": "runtime-request.respond", "commandId": new_id(), "threadId": thread_id,
+            "requestId": request_id, "decision": decision,
+        });
+        let app = self.clone();
+        glib::spawn_future_local(async move {
+            if let Err(e) = rpc.call("orchestration.dispatchCommand", payload).await {
+                app.toast(&format!("Could not answer: {}", e.message()));
+                return;
+            }
+            if !note.is_empty() {
+                let dispatch_mode = match run_id {
+                    Some(run) => json!({"type": "steer_active", "targetRunId": run}),
+                    None => json!({"type": "start_immediately"}),
+                };
+                let message = json!({
+                    "type": "message.dispatch", "commandId": new_id(), "threadId": thread_id, "messageId": new_id(),
+                    "text": format!("Denied: {note}"), "attachments": [], "createdBy": "user", "creationSource": "web",
+                    "dispatchMode": dispatch_mode,
+                });
+                let _ = rpc.call("orchestration.dispatchCommand", message).await;
+            }
+            if let Some(application) = app.window.application() {
+                notify::withdraw(
+                    &application,
+                    &format!("ask:{}", app.live.borrow().as_ref().map(|l| l.thread_id.clone()).unwrap_or_default()),
+                );
+            }
+        });
+    }
+
+    /// The oldest pending prompt of the open thread, for the Y/N keys.
+    fn oldest_pending_request(&self) -> Option<String> {
+        self.live
+            .borrow()
+            .as_ref()
+            .and_then(|l| l.view.items.iter().find(|i| i.is_pending_request()).and_then(|i| i.request_id.clone()))
     }
 
     fn render_live(self: &Rc<Self>) {
@@ -2456,52 +2567,47 @@ impl App {
     // ---- changes and diagnostics ------------------------------------------------------------------
 
     /// The full diff of the open thread's checkpoints, one collapsed row per file.
+    /// The Changes page: file tree, inline or side-by-side diff, per-hunk copy, restore to checkpoint.
     pub fn show_changes(self: &Rc<Self>) {
-        let (rpc, thread_id, turns) = {
+        let (rpc, thread_id, turns, checkpoints) = {
             let conn = self.conn.borrow();
             let live = self.live.borrow();
             match (conn.as_ref(), live.as_ref()) {
-                (Some(c), Some(l)) => (c.rpc.clone(), l.thread_id.clone(), l.view.runs.len()),
+                (Some(c), Some(l)) => {
+                    (c.rpc.clone(), l.thread_id.clone(), l.view.runs.len(), l.view.checkpoints.clone())
+                }
                 _ => {
                     self.toast("Open a live thread first.");
                     return;
                 }
             }
         };
-        while let Some(c) = self.changes.first_child() {
-            self.changes.remove(&c);
-        }
-        self.changes.append(&label("Reading the thread's diff…", &["dim-label"]));
-        self.show_page("changes");
         let app = self.clone();
-        glib::spawn_future_local(async move {
-            let payload = json!({"threadId": thread_id, "toTurnCount": turns.max(1)});
-            let result = rpc.call("orchestration.getFullThreadDiff", payload).await;
-            while let Some(c) = app.changes.first_child() {
-                app.changes.remove(&c);
-            }
-            match result {
-                Ok(v) => {
-                    let diff = v.get("diff").and_then(Value::as_str).unwrap_or("");
-                    if diff.trim().is_empty() {
-                        app.changes.append(&label("No file changes recorded for this thread.", &["dim-label"]));
+        let tid = thread_id.clone();
+        let rpc2 = rpc.clone();
+        self.changes_page.on_restore(Rc::new(move |scope, checkpoint| {
+            let app = app.clone();
+            let rpc = rpc2.clone();
+            let payload = json!({
+                "type": "checkpoint.rollback", "restoreFiles": true, "commandId": new_id(), "threadId": tid,
+                "scopeId": scope, "checkpointId": checkpoint,
+            });
+            glib::spawn_future_local(async move {
+                match rpc.call("orchestration.dispatchCommand", payload).await {
+                    Ok(_) => {
+                        app.toast("Restoring files to the checkpoint…");
+                        app.show_changes();
                     }
-                    for (file, body) in split_diff(diff) {
-                        let (adds, dels) = body.lines().fold((0, 0), |(a, d), l| {
-                            if l.starts_with('+') && !l.starts_with("+++") {
-                                (a + 1, d)
-                            } else if l.starts_with('-') && !l.starts_with("---") {
-                                (a, d + 1)
-                            } else {
-                                (a, d)
-                            }
-                        });
-                        app.changes.append(&chat::diff_row(&format!("{file}  +{adds} −{dels}"), body));
-                    }
+                    Err(e) => app.toast(&format!("Restore failed: {}", e.message())),
                 }
-                Err(e) => app.changes.append(&label(&format!("Diff failed: {}", e.message()), &["dim-label"])),
-            }
-        });
+            });
+        }));
+        self.show_page("changes");
+        self.changes_page.load(rpc, thread_id, turns, checkpoints);
+    }
+
+    pub fn changes_page(&self) -> &Rc<changes::ChangesPage> {
+        &self.changes_page
     }
 
     pub fn show_diagnostics(self: &Rc<Self>) {
@@ -2562,24 +2668,4 @@ fn load_css() {
     if let Some(display) = gdk::Display::default() {
         gtk::style_context_add_provider_for_display(&display, &provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
     }
-}
-
-/// Splits a unified diff into (file, hunk text) pairs on `diff --git` headers.
-pub fn split_diff(diff: &str) -> Vec<(String, String)> {
-    let mut out: Vec<(String, String)> = Vec::new();
-    for line in diff.lines() {
-        if let Some(rest) = line.strip_prefix("diff --git ") {
-            let file = rest.split_whitespace().nth(1).map(|b| b.trim_start_matches("b/")).unwrap_or(rest).to_string();
-            out.push((file, String::new()));
-            continue;
-        }
-        match out.last_mut() {
-            Some((_, body)) => {
-                body.push_str(line);
-                body.push('\n');
-            }
-            None => out.push(("changes".into(), format!("{line}\n"))),
-        }
-    }
-    out
 }

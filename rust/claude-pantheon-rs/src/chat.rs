@@ -449,20 +449,49 @@ pub fn diff_row(summary: &str, diff: String) -> gtk::Widget {
 
 fn approval_card(item: &TurnItem, decide: Option<Decide>) -> gtk::Widget {
     let kind = item.request_kind.clone().unwrap_or_else(|| "permission".into());
-    let title = match kind.as_str() {
-        "command" => "Permission to run a command",
-        "file-change" => "Permission to change a file",
-        "file-read" => "Permission to read a file",
-        _ => "Permission requested",
+    let (title, icon) = match kind.as_str() {
+        "command" => ("Run a command?", "utilities-terminal-symbolic"),
+        "file-change" => ("Change a file?", "document-edit-symbolic"),
+        "file-read" => ("Read a file?", "document-open-symbolic"),
+        "mcp-elicitation" => ("A tool asks for input", "application-x-addon-symbolic"),
+        _ => ("Permission requested", "dialog-question-symbolic"),
     };
-    let card = card(title);
-    let prompt = item.prompt.clone().or(item.reason.clone()).unwrap_or_default();
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    card.add_css_class("card");
+    card.add_css_class("prompt-card");
+    card.set_margin_end(48);
+    let head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    head.append(&gtk::Image::from_icon_name(icon));
+    let t = label(title, &["title-4"]);
+    t.set_hexpand(true);
+    head.append(&t);
+    if let Some(app_name) = item.rest.get("appName").and_then(Value::as_str) {
+        head.append(&label(app_name, &["caption", "dim-label"]));
+    }
+    card.append(&head);
+    // The tool input, summarised: first line prominent, the rest folded.
+    let prompt = item.prompt.clone().unwrap_or_default();
+    let reason = item.reason.clone().unwrap_or_default();
     if !prompt.trim().is_empty() {
-        card.append(&mono(&transcript::clip(&prompt, 4000), &["tool-input"]));
+        let first = transcript::first_line(&prompt, 160);
+        card.append(&mono(&first, &["tool-input", "prompt-summary"]));
+        if prompt.trim().lines().count() > 1 || prompt.len() > 160 {
+            card.append(&tool_row("", "Full request", prompt.clone(), None));
+        }
+    }
+    if !reason.trim().is_empty() {
+        let r = label(&reason, &["caption", "dim-label"]);
+        r.set_wrap(true);
+        r.set_ellipsize(pango::EllipsizeMode::None);
+        card.append(&r);
     }
     let pending = item.is_pending_request();
     let request_id = item.request_id.clone().unwrap_or_default();
     if pending && !request_id.is_empty() {
+        // Deny with a reason: the entry is sent as the decline's note.
+        let reason_entry =
+            gtk::Entry::builder().placeholder_text("Reason for denying (optional)").hexpand(true).build();
+        reason_entry.add_css_class("deny-reason");
         let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         buttons.set_halign(gtk::Align::End);
         let options: Vec<(String, String)> = match &item.options {
@@ -475,28 +504,54 @@ fn approval_card(item: &TurnItem, decide: Option<Decide>) -> gtk::Widget {
                     ))
                 })
                 .collect(),
-            _ => vec![("decline".into(), "Deny".into()), ("accept".into(), "Allow".into())],
+            _ => vec![
+                ("decline".into(), "Deny".into()),
+                ("acceptForSession".into(), "Allow for This Thread".into()),
+                ("accept".into(), "Allow Once".into()),
+            ],
         };
         for (decision, text) in options {
             let b = gtk::Button::with_label(&text);
-            if decision.starts_with("accept") {
+            let hint = match decision.as_str() {
+                "accept" => Some("Y"),
+                "decline" => Some("N"),
+                _ => None,
+            };
+            if let Some(h) = hint {
+                b.set_tooltip_text(Some(&format!("Press {h}")));
+            }
+            if decision == "accept" {
                 b.add_css_class("suggested-action");
             } else if decision == "decline" || decision == "cancel" {
                 b.add_css_class("destructive-action");
             }
             let decide = decide.clone();
             let rid = request_id.clone();
+            let entry = reason_entry.clone();
             b.connect_clicked(move |_| {
                 if let Some(d) = &decide {
-                    d(&rid, &decision);
+                    let note = if decision == "decline" { entry.text().trim().to_string() } else { String::new() };
+                    d(&rid, &format!("{decision}{}{note}", if note.is_empty() { "" } else { "\n" }));
                 }
             });
             buttons.append(&b);
         }
-        card.append(&buttons);
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        row.append(&reason_entry);
+        row.append(&buttons);
+        card.append(&row);
+        card.add_css_class("prompt-pending");
     } else {
         let decision = item.rest.get("decision").and_then(Value::as_str).unwrap_or(&item.status);
-        card.append(&label(&format!("Answered: {decision}"), &["caption", "dim-label"]));
+        let text = match decision {
+            "accept" => "Allowed once",
+            "acceptForSession" => "Allowed for this thread",
+            "acceptAlways" => "Always allowed",
+            "decline" => "Denied",
+            "cancel" => "Cancelled",
+            other => other,
+        };
+        card.append(&label(text, &["caption", "dim-label"]));
     }
     card.upcast()
 }

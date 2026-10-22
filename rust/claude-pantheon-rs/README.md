@@ -42,7 +42,9 @@ Other entry points:
 | Ctrl+W | Close the thread |
 | Ctrl+Shift+U | Usage |
 | Ctrl+, | Settings |
+| Ctrl+Shift+T | Terminal pane for the open thread (the server's PTY, no local shell) |
 | Ctrl+Q | Quit |
+| Y / N | Allow once / deny the oldest waiting permission prompt (when not typing) |
 
 The same actions sit in the app menu (header bar, right) with their accelerator labels, plus Repos
 and Issues, Changes, Diagnostics, Import Sessions, Hand Off to Repo, Open Offline Twin, Reconnect,
@@ -93,6 +95,7 @@ the desktop app (`~/.config/Claude/claude-code/<version>/<hash>/claude`) when th
 | `src/usage.rs` | Usage page (CodexBar style) and plan-window gauges |
 | `src/workflow.rs`, `repos.rs` | pinned repos, issue backlog via `gh api`, "Start on this", the runner as T3 scheduled tasks |
 | `src/handoff.rs` | "Hand Off to Repo": structured summary appended to the project's handoff doc, optional commit |
+| `src/changes.rs` | Changes page: file tree, inline/side-by-side diff in GtkSourceView, per-hunk copy, restore to checkpoint |
 | `src/diagnostics.rs` | the server's resource telemetry as sparklines |
 | `tests/render.rs` | drives the real window under Xvfb and writes the screenshots in `docs/` |
 | `bench.sh` | RSS and CPU of a process tree over 20 s, as a Markdown row |

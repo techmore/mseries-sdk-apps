@@ -357,6 +357,8 @@ pub struct ThreadView {
     pub items: Vec<TurnItem>,
     pub active_run_id: Option<String>,
     pub runs: Vec<Value>,
+    /// The thread's checkpoints (restore points), as the projection carries them.
+    pub checkpoints: Vec<Value>,
 }
 
 impl ThreadView {
@@ -371,6 +373,9 @@ impl ThreadView {
             if let Ok(item) = serde_json::from_value::<TurnItem>(r.clone()) {
                 view.items.push(item);
             }
+        }
+        if let Some(c) = p.get("checkpoints").and_then(Value::as_array) {
+            view.checkpoints = c.clone();
         }
         if let Some(runs) = p.get("runs").and_then(Value::as_array) {
             view.runs = runs.clone();
