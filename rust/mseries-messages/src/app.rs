@@ -1018,6 +1018,7 @@ impl App {
         });
 
         let keys = gtk::EventControllerKey::new();
+        keys.set_propagation_phase(gtk::PropagationPhase::Capture);
         let weak = Rc::downgrade(self);
         keys.connect_key_pressed(move |_, key, _, state| {
             let Some(app) = weak.upgrade() else {
@@ -1054,7 +1055,10 @@ impl App {
                     glib::Propagation::Stop
                 }
                 (false, gtk::gdk::Key::Escape)
-                    if app.search.has_focus() && !app.search.text().is_empty() =>
+                    if gtk::prelude::RootExt::focus(&app.window).is_some_and(|focus| {
+                        focus == app.search.clone().upcast::<gtk::Widget>()
+                            || focus.is_ancestor(&app.search)
+                    }) && !app.search.text().is_empty() =>
                 {
                     app.search.set_text("");
                     glib::Propagation::Stop
@@ -3885,6 +3889,39 @@ mod tests {
             .next()
             .unwrap()
             .to_string();
+        let press_key = |key: &str| {
+            assert!(
+                std::process::Command::new("xdotool")
+                    .args(["windowfocus", "--sync", &window_id])
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            assert!(
+                std::process::Command::new("xdotool")
+                    .args(["key", "--clearmodifiers", key])
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            let until = std::time::Instant::now() + std::time::Duration::from_millis(100);
+            while std::time::Instant::now() < until {
+                gtk::glib::MainContext::default().iteration(false);
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        };
+        press_key("ctrl+f");
+        assert!(
+            gtk::prelude::RootExt::focus(&app.window)
+                .is_some_and(|focus| focus == app.search.clone().upcast::<gtk::Widget>()
+                    || focus.is_ancestor(&app.search))
+        );
+        app.search.set_text("Synthetic");
+        press_key("Escape");
+        assert!(
+            app.search.text().is_empty(),
+            "Escape must clear focused conversation search"
+        );
         let resize = |width: &str| {
             assert!(
                 std::process::Command::new("xdotool")

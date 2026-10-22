@@ -1,3 +1,15 @@
+## Messages keyboard acceptance — 2026-10-22
+
+Actual X11 Ctrl+F/Escape input exposed GTK SearchEntry child-focus handling.
+The window shortcut controller now handles capture phase and recognizes focus
+inside the search widget; Ctrl+F focuses search and Escape clears its text.
+The full isolated GTK regression passes, as do 30 SDK/Messages library tests
+and strict all-target Clippy. The latest ARM64 Debian package rebuilt successfully
+at build/mseries-messages-rs-deb/mseries-messages-rs_0.1.0-1~mseries1_arm64.deb.
+This does not prove screen-reader or live-phone
+acceptance. Keep SDK expansion and other app ports outside the current client
+release gates. Preserve unrelated updater changes.
+
 ## Messages long-content layout correction — 2026-10-22
 
 Long/unbroken message text initially expanded the compact fixture to 2308 pixels
