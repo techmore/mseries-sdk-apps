@@ -1,7 +1,7 @@
 //! `mseries-updates`: the Software Updates window. Run it normally from the launcher.
 
 use gtk::prelude::*;
-use mseries_updates::backend::CliBackend;
+use mseries_pantheon_kit::updates::CliBackend;
 use mseries_updates::ui::UpdatesWindow;
 use std::sync::Arc;
 

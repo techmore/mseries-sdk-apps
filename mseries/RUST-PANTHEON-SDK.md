@@ -47,7 +47,8 @@ Current Rust GTK consumers are T3, Messages, Disk Space, and Software Updates;
 Torrential consumes the SDK from its private fork. The System Monitor preview
 uses the SDK's sampler and polling control. Software Updates is part of this
 SDK rollout too: its native Rust window uses shared spacing and adaptive
-layout helpers while retaining the updater's existing typed contract. Messages
+layout helpers, while the SDK owns the unprivileged CLI adapter for the typed
+`mseries-update-core` contract. Messages
 is the first responsive-layout adopter: its list and conversation switch to a
 back-navigable single-column view when the window becomes compact.
 
@@ -76,11 +77,10 @@ Software Updates is the working example: the OS updater and root helper own
 transaction policy, package staging and rollback. The app reads status schema
 1 and can request only the closed set of typed operations in
 `mseries-update-core`; the app does not decide packages or execute privileged
-commands directly. The typed contract and adapter are app-facing SDK APIs;
-their service provider and privileged helper stay OS-owned. Keep that contract
-versioned and publish its supported range with the SDK integration; the
-current CLI adapter remains in the app crate and should move behind the SDK
-boundary as the repositories split.
+commands directly. The SDK owns the typed adapter and its supported
+`mseries-update-core` contract; the service provider and privileged helper stay
+OS-owned. Keep that contract versioned and publish its supported range with the
+SDK integration.
 Messages follows the same boundary for BlueFerry's session D-Bus service: the
 SDK owns the API v2 client and typed status, thread and contact models, while
 BlueFerry remains the only owner of MAP access, message history, recipient

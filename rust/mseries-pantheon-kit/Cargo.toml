@@ -11,5 +11,6 @@ gdk-pixbuf = "0.22"
 gio = "0.22"
 gtk = { package = "gtk4", version = "0.11", features = ["v4_20"] }
 granite = { package = "granite-rs", version = "3.3", features = ["v7_8", "gtk_v4_20"] }
+mseries-update-core = { path = "../mseries-update-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

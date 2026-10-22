@@ -1624,6 +1624,7 @@ dependencies = [
  "gio",
  "granite-rs",
  "gtk4",
+ "mseries-update-core",
  "serde",
  "serde_json",
 ]

@@ -13,6 +13,7 @@ mod layout;
 mod messages;
 mod polling;
 mod system;
+pub mod updates;
 
 pub use blueferry::{
     BLUEFERRY_MESSAGES_API_VERSION, BlueFerryMessagesClient, BlueFerrySendError, BlueFerryStatus,
