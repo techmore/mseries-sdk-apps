@@ -1,3 +1,15 @@
+## Nested full-screen screenshot acceptance — 2026-10-22
+
+`SCREENSHOT_TEST_BIN=/path/to/pantheon-compositor bash
+mseries/pantheon-rust-compositor/screenshot-tests/run.sh` now runs a private
+Xvfb/D-Bus compositor with temporary HOME/XDG directories. It sends the actual
+Super+Shift+3 key chord and verifies one complete 1280x800 PNG with 0600 permissions
+and a shutter-sound request (sound player stubbed). This passes on the newly built
+binary; receipt: /tmp/pantheon-capture-probe.X7Zvgz. The first probe exited before
+the nested X11 window was visible; explicit window readiness fixed that harness
+race. No live desktop screenshot was taken. Pixel/transform review, native DRM
+capture, shelf observation and +4 selection remain open; nothing installed.
+
 ## Command+Shift+3 source wiring — 2026-10-22
 
 The full-screen shortcut now queues a compositor-owned capture request. Native
