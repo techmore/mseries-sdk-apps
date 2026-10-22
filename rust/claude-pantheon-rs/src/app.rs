@@ -4,14 +4,14 @@
 
 use crate::chat::{self, label};
 use crate::index::{self, Session};
-use crate::look::{iso_to_unix, now_unix, relative_time, tilde};
+use crate::look::{now_unix, tilde};
 use crate::t3::attach;
 use crate::t3::model::Project;
 use crate::t3::model::{Provider, ServerConfig, Shell, ThreadShell, ThreadView, TurnItem};
 use crate::t3::{self, Rpc, auth, ws::WsError};
 use crate::transcript::{self, Transcript};
 use crate::workflow::{self, Issue, PinnedRepo};
-use crate::{composer, diagnostics, handoff, notify, palette, repos, usage};
+use crate::{composer, diagnostics, handoff, notify, palette, repos, sidebar, usage};
 use futures_util::StreamExt;
 use granite::prelude::{PlaceholderExt, ToastExt};
 use gtk::{gdk, gio, glib, pango, prelude::*};
@@ -116,6 +116,7 @@ pub struct App {
     reconnect_attempt: Cell<u32>,
     auto_opened: Cell<bool>,
     palette: RefCell<Option<Rc<palette::Palette>>>,
+    sidebar_cfg: RefCell<sidebar::SidebarConfig>,
     started: Instant,
 }
 
@@ -421,6 +422,7 @@ impl App {
             reconnect_attempt: Cell::new(0),
             auto_opened: Cell::new(false),
             palette: RefCell::new(None),
+            sidebar_cfg: RefCell::new(sidebar::SidebarConfig::load()),
             started,
         });
 
@@ -1280,7 +1282,7 @@ impl App {
         out
     }
 
-    pub fn rebuild_list(&self) {
+    pub fn rebuild_list(self: &Rc<Self>) {
         self.syncing.set(true);
         while let Some(row) = self.list.row_at_index(0) {
             self.list.remove(&row);
@@ -1294,40 +1296,18 @@ impl App {
         let matches = |title: &str, group: &str| {
             needle.is_empty() || title.to_lowercase().contains(&needle) || group.to_lowercase().contains(&needle)
         };
-        let add_header = |rows: &mut Vec<Option<Row>>, text: &str, tooltip: Option<&str>| {
-            let header = gtk::ListBoxRow::builder().selectable(false).activatable(false).build();
-            let header_label = granite::HeaderLabel::new(text);
-            header_label.set_tooltip_text(tooltip);
-            header.set_child(Some(&header_label));
-            header.add_css_class("sb-header");
-            self.list.append(&header);
-            rows.push(None);
-        };
-        let add_row = |title: &str, when: i64, badge: Option<&str>, tooltip: &str| {
-            let row_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
-            row_box.add_css_class("sb-row");
-            let head = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-            let t = label(title, &["sb-title"]);
-            t.set_hexpand(true);
-            head.append(&t);
-            if let Some(b) = badge {
-                let badge_label = label(b, &["caption", "sb-badge"]);
-                badge_label.set_halign(gtk::Align::End);
-                head.append(&badge_label);
-            }
-            row_box.append(&head);
-            row_box.append(&label(&relative_time(when, now), &["caption", "dim-label"]));
-            let row = gtk::ListBoxRow::new();
-            row.set_child(Some(&row_box));
-            row.set_tooltip_text(Some(tooltip));
-            self.list.append(&row);
-        };
+        let cfg = self.sidebar_cfg.borrow().clone();
+        let searching = !needle.is_empty();
 
-        // Server threads grouped by project, newest project first.
+        // Server threads grouped by project: the owner's order first, then newest project first;
+        // pinned threads lead each section.
         if let Some(c) = self.conn.borrow().as_ref() {
             let mut groups: Vec<(String, String, Vec<usize>)> = Vec::new();
             let mut order: Vec<usize> = (0..c.shell.threads.len()).collect();
-            order.sort_by(|&a, &b| c.shell.threads[b].updated_at.cmp(&c.shell.threads[a].updated_at));
+            order.sort_by(|&a, &b| {
+                let (ta, tb) = (&c.shell.threads[a], &c.shell.threads[b]);
+                sidebar::is_pinned(tb).cmp(&sidebar::is_pinned(ta)).then_with(|| tb.updated_at.cmp(&ta.updated_at))
+            });
             for i in order {
                 let t = &c.shell.threads[i];
                 if t.archived_at.is_some() {
@@ -1348,27 +1328,34 @@ impl App {
                     None => groups.push((t.project_id.clone(), name, vec![i])),
                 }
             }
+            let ordered = cfg.order_projects(groups.iter().map(|(id, _, _)| id.clone()).collect());
+            groups.sort_by_key(|(id, _, _)| ordered.iter().position(|o| o == id).unwrap_or(usize::MAX));
             let providers = self.providers.borrow();
             for (pid, name, members) in &groups {
                 let root = c.shell.projects.iter().find(|p| p.id == *pid).map(|p| tilde(&p.workspace_root));
-                add_header(&mut rows, name, root.as_deref());
+                let collapsed = cfg.collapsed.contains(pid) && !searching;
+                let app = self.clone();
+                let toggle_id = pid.clone();
+                let header = sidebar::project_header(name, root.as_deref(), collapsed, members.len(), move || {
+                    app.toggle_section(&toggle_id);
+                });
+                let app = self.clone();
+                sidebar::make_header_draggable(&header, pid, move |moved, before| app.reorder_project(&moved, &before));
+                self.list.append(&header);
+                rows.push(None);
+                if collapsed {
+                    continue;
+                }
                 for &i in members {
                     let t = &c.shell.threads[i];
-                    let provider = providers
-                        .iter()
-                        .find(|p| p.instance_id == t.provider_instance_id)
-                        .map(Provider::name)
-                        .unwrap_or_else(|| t.provider_instance_id.clone());
-                    let badge = if t.is_running() {
-                        "running".to_string()
-                    } else if t.pending_requests() > 0 {
-                        "needs you".to_string()
-                    } else {
-                        provider
-                    };
+                    let provider = providers.iter().find(|p| p.instance_id == t.provider_instance_id);
+                    let driver = provider.map(|p| p.driver.clone()).unwrap_or_else(|| t.provider_instance_id.clone());
+                    let accent = sidebar::accent_for(provider, &driver);
                     let clean = crate::transcript::title_from_prompt(&t.title);
                     let title = clean.as_deref().unwrap_or("Untitled thread");
-                    add_row(title, iso_to_unix(&t.updated_at), Some(&badge), &format!("{title}\n{}", t.id));
+                    let row = sidebar::thread_row(t, title, &accent, now);
+                    sidebar::attach_menu(&row, sidebar::thread_menu(&t.id, sidebar::is_pinned(t)));
+                    self.list.append(&row);
                     if selected_thread.as_deref() == Some(t.id.as_str()) {
                         select_at = Some(rows.len());
                     }
@@ -1393,15 +1380,45 @@ impl App {
                 }
             }
             if !groups.is_empty() {
-                add_header(&mut rows, "Offline transcripts", Some(&tilde(&index::projects_dir().to_string_lossy())));
+                let collapsed = cfg.collapsed.contains("offline") && !searching;
+                let app = self.clone();
+                let header = sidebar::project_header(
+                    "Offline transcripts",
+                    Some(&tilde(&index::projects_dir().to_string_lossy())),
+                    collapsed,
+                    groups.iter().map(|(_, m)| m.len()).sum(),
+                    move || app.toggle_section("offline"),
+                );
+                self.list.append(&header);
+                rows.push(None);
+                if collapsed {
+                    groups.clear();
+                }
             }
             for (project, members) in &groups {
+                let key = format!("offline:{project}");
                 let root = sessions.get(members[0]).map(|s| tilde(&s.cwd));
-                add_header(&mut rows, &format!("  {project}"), root.as_deref());
+                let collapsed = cfg.collapsed.contains(&key) && !searching;
+                let app = self.clone();
+                let toggle_key = key.clone();
+                let header = sidebar::project_header(
+                    &format!("  {project}"),
+                    root.as_deref(),
+                    collapsed,
+                    members.len(),
+                    move || {
+                        app.toggle_section(&toggle_key);
+                    },
+                );
+                self.list.append(&header);
+                rows.push(None);
+                if collapsed {
+                    continue;
+                }
                 for &i in members {
                     let s = &sessions[i];
-                    let badge = imported.contains_key(&s.id).then_some("imported");
-                    add_row(&s.title, s.mtime, badge, &format!("{}\n{}", s.title, s.id));
+                    let row = sidebar::session_row(&s.title, s.mtime, imported.contains_key(&s.id), &s.id, now);
+                    self.list.append(&row);
                     if selected_session.as_deref() == Some(s.id.as_str()) && selected_thread.is_none() {
                         select_at = Some(rows.len());
                     }
@@ -1424,6 +1441,91 @@ impl App {
         }
     }
 
+    fn toggle_section(self: &Rc<Self>, key: &str) {
+        {
+            let mut cfg = self.sidebar_cfg.borrow_mut();
+            if !cfg.collapsed.remove(key) {
+                cfg.collapsed.insert(key.to_string());
+            }
+            cfg.save();
+        }
+        self.rebuild_list();
+    }
+
+    fn reorder_project(self: &Rc<Self>, moved: &str, before: &str) {
+        {
+            let current: Vec<String> = self
+                .conn
+                .borrow()
+                .as_ref()
+                .map(|c| c.shell.projects.iter().map(|p| p.id.clone()).collect())
+                .unwrap_or_default();
+            let mut cfg = self.sidebar_cfg.borrow_mut();
+            let ordered = cfg.order_projects(current);
+            cfg.move_project(ordered, moved, Some(before));
+            cfg.save();
+        }
+        self.rebuild_list();
+    }
+
+    /// The context-menu commands on a thread row.
+    fn thread_command(self: &Rc<Self>, thread_id: &str, what: &str) {
+        let (rpc, thread) = {
+            let conn = self.conn.borrow();
+            match conn.as_ref() {
+                Some(c) => (c.rpc.clone(), c.shell.threads.iter().find(|t| t.id == thread_id).cloned()),
+                None => return,
+            }
+        };
+        let Some(thread) = thread else { return };
+        let app = self.clone();
+        let id = thread_id.to_string();
+        match what {
+            "pin" => {
+                let kind = if sidebar::is_pinned(&thread) { "thread.unpin" } else { "thread.pin" };
+                glib::spawn_future_local(async move {
+                    let payload = json!({"type": kind, "commandId": new_id(), "threadId": id});
+                    if let Err(e) = rpc.call("orchestration.dispatchCommand", payload).await {
+                        app.toast(&format!("Could not pin: {}", e.message()));
+                    }
+                });
+            }
+            "archive" => {
+                glib::spawn_future_local(async move {
+                    let payload = json!({"type": "thread.archive", "commandId": new_id(), "threadId": id});
+                    match rpc.call("orchestration.dispatchCommand", payload).await {
+                        Ok(_) => app.toast("Archived."),
+                        Err(e) => app.toast(&format!("Could not archive: {}", e.message())),
+                    }
+                });
+            }
+            "rename" => {
+                let current = crate::transcript::title_from_prompt(&thread.title).unwrap_or_default();
+                sidebar::rename_dialog(&self.window, &current, move |title| {
+                    let app = app.clone();
+                    let rpc = rpc.clone();
+                    let id = id.clone();
+                    glib::spawn_future_local(async move {
+                        let payload = json!({"type": "thread.metadata.update", "commandId": new_id(), "threadId": id, "title": title});
+                        if let Err(e) = rpc.call("orchestration.dispatchCommand", payload).await {
+                            app.toast(&format!("Could not rename: {}", e.message()));
+                        }
+                    });
+                });
+            }
+            "handoff" => {
+                self.open_thread(thread);
+                let app = self.clone();
+                glib::timeout_add_local_once(std::time::Duration::from_millis(800), move || app.handoff_to_repo());
+            }
+            "copy-link" => {
+                self.window.clipboard().set_text(&format!("claude-pantheon-rs --thread '{id}'"));
+                self.toast("Copied a command that opens this thread.");
+            }
+            _ => {}
+        }
+    }
+
     /// Opens a thread or session by id from outside (the Wingpanel indicator's `open-thread` action);
     /// a thread that is not in the list yet is retried once the shell arrives.
     pub fn open_by_id(self: &Rc<Self>, id: &str) {
@@ -1442,6 +1544,25 @@ impl App {
                 app.toast("That thread is not in the list.");
             }
         });
+    }
+
+    /// Collapses or expands a sidebar section (tests).
+    pub fn set_section_collapsed(self: &Rc<Self>, key: &str, collapsed: bool) {
+        {
+            let mut cfg = self.sidebar_cfg.borrow_mut();
+            if collapsed {
+                cfg.collapsed.insert(key.to_string());
+            } else {
+                cfg.collapsed.remove(key);
+            }
+        }
+        self.rebuild_list();
+    }
+
+    /// Visible sidebar rows (tests): true for thread or session rows, false for headers.
+    pub fn row_count(&self) -> (usize, usize) {
+        let rows = self.rows.borrow();
+        (rows.iter().filter(|r| r.is_some()).count(), rows.iter().filter(|r| r.is_none()).count())
     }
 
     /// Selects a thread or session row by id (tests, and the offline/online twins).
@@ -1611,6 +1732,14 @@ impl App {
         self.select_provider(&thread.provider_instance_id, thread.model_selection.get("model").and_then(Value::as_str));
         self.select_mode(&thread.runtime_mode);
         self.entry.set_draft_key(Some(thread.id.clone()));
+        {
+            let rpc = rpc.clone();
+            let id = thread.id.clone();
+            glib::spawn_future_local(async move {
+                let payload = json!({"type": "thread.visit", "commandId": new_id(), "threadId": id, "visitedAt": workflow::now_iso()});
+                let _ = rpc.call("orchestration.dispatchCommand", payload).await;
+            });
+        }
         let (sub_id, mut stream) = rpc.subscribe(
             "orchestration.subscribeThread",
             json!({"threadId": thread.id, "requestCompletionMarker": true, "acceptBoundedSnapshot": true, "acceptCompactTurnItems": true}),

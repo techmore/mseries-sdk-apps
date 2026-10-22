@@ -84,6 +84,8 @@ start-up probe; the table tracks drift per feature.
 | #468 | command palette (Ctrl+K) over threads, transcripts, projects, repos, issues and actions | 59 | 0.0 | 212 – 228 |
 | #469 | composer: 8-line growth, Enter sends, attachment chips (paste/drop, uploaded), @ file picker, drafts per thread | 59 | 0.0 | 213 – 230 |
 | #470 | pulldown-cmark renderer, GtkSourceView 5 code blocks (highlighting, copy, wrap), tables, quotes, links, images | 61 | 0.0 | 205 – 228 |
+| #471 | notifications (turn finished, prompt waiting) and dock badge/progress via Unity LauncherEntry; keyring lookups get a 3 s deadline | 61 | 0.0 | 214 – 268 |
+| #472 | sidebar polish: accent dots, running spinner, unread/needs-you badges, collapsible sections, drag-ordered projects, context menu (pin, rename, hand off, copy link, archive) | 64 | 0.0 | 189 – 201 |
 
 ## Reproduce
 
