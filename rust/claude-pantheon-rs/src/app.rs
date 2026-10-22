@@ -11,7 +11,7 @@ use crate::t3::model::{Provider, ServerConfig, Shell, ThreadShell, ThreadView, T
 use crate::t3::{self, Rpc, auth, ws::WsError};
 use crate::transcript::{self, Transcript};
 use crate::workflow::{self, Issue, PinnedRepo};
-use crate::{composer, diagnostics, handoff, palette, repos, usage};
+use crate::{composer, diagnostics, handoff, notify, palette, repos, usage};
 use futures_util::StreamExt;
 use granite::prelude::{PlaceholderExt, ToastExt};
 use gtk::{gdk, gio, glib, pango, prelude::*};
@@ -1180,6 +1180,24 @@ impl App {
         }
         self.schedule_rebuild();
         self.write_status_feed();
+        self.refresh_launcher();
+    }
+
+    /// The dock badge counts running threads; the bar shows while any turn runs (the server reports
+    /// no fraction, so it sits at the half mark as a "working" indicator).
+    fn refresh_launcher(&self) {
+        let running =
+            self.conn.borrow().as_ref().map(|c| c.shell.threads.iter().filter(|t| t.is_running()).count()).unwrap_or(0);
+        notify::launcher_entry(running as i64, (running > 0).then_some(0.5));
+    }
+
+    /// Notifies about a thread only while the window is not the active one.
+    fn notify_background(&self, kind: &str, thread_id: &str, title: &str, body: &str, answer: bool) {
+        if self.window.is_active() {
+            return;
+        }
+        let Some(application) = self.window.application() else { return };
+        notify::notify(&application, &format!("{kind}:{thread_id}"), title, body, thread_id, answer);
     }
 
     /// Coalesces bursts of shell events into one list rebuild.
@@ -1543,6 +1561,10 @@ impl App {
     // ---- live thread -------------------------------------------------------------------------
 
     pub fn open_thread(self: &Rc<Self>, thread: ThreadShell) {
+        if let Some(application) = self.window.application() {
+            notify::withdraw(&application, &format!("turn:{}", thread.id));
+            notify::withdraw(&application, &format!("ask:{}", thread.id));
+        }
         self.leave_live();
         *self.current_session.borrow_mut() = None;
         *self.transcript.borrow_mut() = None;
@@ -1735,6 +1757,22 @@ impl App {
             let mut live = self.live.borrow_mut();
             let Some(live) = live.as_mut() else { return };
             live.view.upsert(item.clone());
+            if item.is_pending_request() {
+                let body = item
+                    .prompt
+                    .clone()
+                    .or(item.reason.clone())
+                    .unwrap_or_else(|| "A permission prompt is waiting".into());
+                let thread_id = live.thread_id.clone();
+                let title = self.title.text().to_string();
+                self.notify_background(
+                    "ask",
+                    &thread_id,
+                    &format!("{title} needs your answer"),
+                    &transcript::first_line(&body, 120),
+                    true,
+                );
+            }
             let new_widget = chat::item_widget(&item, Some(decide));
             match live.widgets.remove(&item.id) {
                 Some(old) => {
@@ -1758,6 +1796,25 @@ impl App {
     }
 
     fn run_finished(self: &Rc<Self>) {
+        if let Some(thread_id) = self.live.borrow().as_ref().map(|l| l.thread_id.clone()) {
+            let last = self.live.borrow().as_ref().and_then(|l| {
+                l.view
+                    .items
+                    .iter()
+                    .rev()
+                    .find(|i| i.kind == "assistant_message")
+                    .map(|i| transcript::first_line(&i.text, 120))
+            });
+            let title = self.title.text().to_string();
+            self.notify_background(
+                "turn",
+                &thread_id,
+                &format!("{title}: turn finished"),
+                &last.unwrap_or_default(),
+                false,
+            );
+        }
+        self.refresh_launcher();
         let pending = self.handoff.borrow_mut().take();
         if let Some(p) = pending {
             let text = self.live.borrow().as_ref().and_then(|l| {

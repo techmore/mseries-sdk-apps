@@ -144,7 +144,11 @@ async fn run(argv: &[&str], stdin: Option<&str>) -> Option<(i32, String)> {
         | gio::SubprocessFlags::STDERR_SILENCE
         | if stdin.is_some() { gio::SubprocessFlags::STDIN_PIPE } else { gio::SubprocessFlags::NONE };
     let launcher = gio::SubprocessLauncher::new(flags);
-    let argv: Vec<&std::ffi::OsStr> = argv.iter().map(std::ffi::OsStr::new).collect();
+    // A short deadline: on a bus without a secret service (the render test's private session, a bare
+    // Xvfb session) `secret-tool` otherwise waits 25 s for the activation to time out.
+    let mut with_timeout: Vec<&str> = vec!["timeout", "3"];
+    with_timeout.extend_from_slice(argv);
+    let argv: Vec<&std::ffi::OsStr> = with_timeout.iter().map(std::ffi::OsStr::new).collect();
     let proc = launcher.spawn(&argv).ok()?;
     let (out, _) = proc.communicate_utf8_future(stdin.map(|s| s.to_string())).await.ok()?;
     let status = proc.exit_status();
