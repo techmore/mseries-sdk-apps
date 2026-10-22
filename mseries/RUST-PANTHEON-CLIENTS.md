@@ -1,3 +1,13 @@
+## Screenshot offscreen output composition — 2026-10-22
+
+Added a generic renderer path that composes desktop elements into an owned
+ABGR8888 texture, waits for rendering completion and reads it through the bounded
+pixel adapter. It rejects locked sessions and invalid/oversized output modes.
+The native-drm build check passes. No caller is wired yet, so this does not prove
+actual GPU capture, transform/color correctness or direct-scanout coverage.
+Next: save publication, capture requests and nested-renderer acceptance, followed
+by native renderer/selection integration. No live compositor changes.
+
 ## Native screenshot framebuffer readback core — 2026-10-22
 
 Added bounded renderer-owned framebuffer readback in ABGR8888/RGBA byte layout,
