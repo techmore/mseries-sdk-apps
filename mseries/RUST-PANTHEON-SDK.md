@@ -36,10 +36,51 @@ system theme, and visible focus remain supported.
 
 The first shared API covers text-line-relative spacing and margins,
 compact/regular width observation, accessible names, and shared geometry
-classes. Current Rust GTK consumers are T3, Messages, Disk Space, and Software
-Updates. Messages is the first responsive-layout adopter:
-its list and conversation switch to a back-navigable single-column view when
-the window becomes compact.
+classes. `Polling` adds an explicit enable/disable control, interval changes,
+manual refresh, and a binding to GTK mapped state; pollers start disabled so
+apps do not acquire background timers by accident. `SystemSampler` provides
+on-demand Linux CPU and memory snapshots, and `poll_system_metrics` combines
+it with that controllable timer. These are small host metrics, not a process
+manager or a replacement for the compositor's own counters.
+
+Current Rust GTK consumers are T3, Messages, Disk Space, and Software Updates;
+Torrential consumes the SDK from its private fork. The System Monitor preview
+uses the SDK's sampler and polling control. Software Updates is part of this
+SDK rollout too: its native Rust window uses shared spacing and adaptive
+layout helpers while retaining the updater's existing typed contract. Messages
+is the first responsive-layout adopter: its list and conversation switch to a
+back-navigable single-column view when the window becomes compact.
+
+### OS-to-app API boundary
+
+The OS owns privileged policy and services; applications use stable, versioned
+contracts rather than linking to service internals. The Rust Pantheon SDK is
+the app-facing layer for common GTK/Granite presentation, accessibility,
+scaling, polling and typed client adapters for those OS contracts. An app owns
+its domain-specific user flow and asks for confirmation before consequential
+actions.
+
+Software Updates is the working example: the OS updater and root helper own
+transaction policy, package staging and rollback. The app reads status schema
+1 and can request only the closed set of typed operations in
+`mseries-update-core`; the app does not decide packages or execute privileged
+commands directly. Keep that contract versioned with the SDK integration; the
+current CLI adapter remains in the app crate and should move behind the SDK
+boundary as the repositories split.
+Likewise, the compositor owns frame and client counters; its future read-only
+metrics protocol belongs to the OS, with a typed SDK adapter for System
+Monitor. This keeps CPU/memory polling and compositor telemetry on one
+consistent app-facing interface without making apps parse logs or compositor
+internals.
+
+The custom Rust Pantheon compositor already exports shell and display
+integration over its own Wayland and D-Bus interfaces. Its frame timing and
+client counters currently go to structured journal events (`pantheon_metrics`),
+not to an app-facing metrics API. The SDK must not scrape the journal. A
+versioned, read-only compositor metrics interface is a separate OS-side task;
+the System Monitor should consume it through a typed SDK adapter once that
+contract exists. The existing host CPU/memory sampler remains useful on hosts
+that do not run the custom compositor.
 
 Usability and performance are SDK acceptance requirements. Shared patterns
 must support keyboard navigation, accessible names, long text, increased text
@@ -51,34 +92,64 @@ animation, timer, renderer, or font-scale override.
 
 ## Migration inventory
 
+### Rust Pantheon applications and first-party GTK app candidates
+
 | Surface | Current implementation | SDK path |
 | --- | --- | --- |
 | T3 Code client | Rust, GTK 4, Granite | Reference app and first SDK consumer; retain its T3 server boundary. |
 | Disk Space | Rust, GTK 4, Granite | Existing Rust app; adopt common layout, accessibility, and responsive behavior. |
-| Software Updates | Rust, GTK 4, Granite | Existing Rust app; adopt common layout and accessible controls. |
+| Software Updates | Rust, GTK 4, Granite; `mseries-update-core` contract and OS helper | Included in the SDK rollout: shared responsive/scaling/accessibility helpers and a typed OS update contract; keep privileged transaction logic in the OS. |
 | Messages | Python GTK/Granite is qualified; Rust preview is in `rust/mseries-messages` | Continue the Rust app to feature parity through BlueFerry's supported D-Bus API; do not create a second MAP or history owner. |
 | Torrential | Private Rust/Relm4 fork using Transmission | Initial integration on private `mseries-native`: pinned git dependency, shared stylesheet and responsive row spacing. Continue the layout/accessibility pass; keep source and packages private until upstream licensing is resolved. |
-| Orchard / Machine Lab | Unified Vala/GTK 4/Granite app | Port in stages, preserving Incus, Podman, VM and action boundaries. Reuse the existing Rust/GTK apps as toolkit examples; do not rewrite the service clients without parity evidence. |
+| System Monitor | Rust GTK 4/Granite preview at `rust/mseries-system-monitor`; btop is installed as a TUI command | Embed btop through VTE inside the shared app shell; use SDK host CPU/memory snapshots and controllable polling. Add a typed adapter to the custom compositor metrics API after that API is defined. |
+| Battery | Python GTK 4/Granite read-only history and health dashboard | Port the presentation to Rust; keep its logger/history format and read-only contract. |
+| Display Settings | Python GTK 3 display arranger and diagnosis UI | Port to GTK 4/Rust; preserve the Mutter/Gala display-configuration contract and rollback behavior. The profile watcher stays a service/CLI. |
+| AirPlay Outputs | Python GTK 3 selector backed by PipeWire commands | Port the selector UI; retain the PipeWire group service and selection format. |
+| Phone Setup | Python GTK 4/Granite onboarding over BlueFerry and BlueZ | Port the user flow; BlueFerry/BlueZ remain the pairing and message-access owners. |
+| Performance Troubleshooter | Python GTK 4/Granite UI over the local diagnostic command | Port the UI and preserve the bounded diagnostic protocol and privacy rules. |
+| Apple Passwords (experimental) | Python GTK 4/Granite sign-in and vault UI | Candidate after the security boundary is re-reviewed; preserve private-pipe credential handling, Secret Service storage, explicit recovery consent, and opt-in installation. |
+| PolyBagger Print Manager | Python GTK 4/Granite operator app plus CLI | Port the window while preserving CLI/printer checks and operator confirmation; physical printer acceptance remains required. |
+| Screenshot Shelf and Markup | GTK 4 screenshot helper; external Swappy/Papers editors | Port the shelf UI only with its XWayland placement, document-portal drag, and screenshot-retention contracts intact. Keep existing editor engines. |
+| Screen Share | Vala GTK 4/Granite standalone window plus a Wingpanel plugin | Port the standalone app after documenting the screen-capture portal contract; the panel plugin remains a separate extension target. |
+| Orchard | Unified Vala GTK 4/Granite app for machines, Incus and Podman | Large staged Rust port; preserve VM, Incus, Podman, storage and privilege boundaries. Keep current source until each replacement surface qualifies. |
+| Orchard for Incus (older client) | Python GTK 4/Granite app, with a separate Vala implementation | Inventory as predecessor/alternate; port only if it still owns a unique shipped workflow after unified Orchard parity review. |
+| Drawer Shortcuts | Python GTK 4 settings window over Gala shortcut integration | Port the settings UI; Gala shortcut registration remains an OS/shell contract. |
+| M-series Launcher | Python GTK 4 XWayland-centered launcher | Port only after the custom compositor provides a supported placement/activation path; do not reproduce global scale overrides in the SDK. |
+| Horizon RDP | Upstream Rust/FreeRDP client behind a zenity launcher | Keep the upstream transport; replace the small connection prompt with a shared native app if packaging and license review permit. |
 | Native Claude Pantheon | Vala/GTK 4/Granite predecessor | T3 is its Rust successor. Keep the Vala app until T3 workflow parity and migration are accepted, then retire the duplicate. |
-| Touch ID Settings | Vala/Granite Switchboard plug and helper | Port the UI after the blocked fingerprint matching/backend work has a supported boundary. A Rust UI alone cannot clear the authentication blocker. |
-| Phone setup and verification-code helpers | Python services and GTK UI around BlueFerry and browser integration | Port only user-facing app flows and stable contracts; retain platform/service helpers where they remain the supported bridge. |
-| Signal | Official signed Signal Desktop plus downstream launcher/theme/tray integration | Keep the official client. The Rust SDK can standardize our launcher and tray integration, but no Rust replacement may handle messages until Signal offers a supported client API and security boundary. |
-| Quick Settings and Wingpanel extensions | Vala plugins/widgets and shell-specific integrations | Separate extension ABI workstream. GTK app helpers do not replace Wingpanel's GObject plugin contract; prototype a Rust/GObject bridge before migrating individual extensions. |
-| Display, power, and desktop utilities | Mix of Python, Vala, shell tools, and GTK settings surfaces | Inventory each surface's owner, backend and install path before porting. Command-line tools, policies, services and upstream launchers are not GUI ports. |
+| Signal | Official signed Signal Desktop plus downstream launcher/theme/tray integration | Keep the official client. The Rust SDK can standardize launcher/tray integration, but no Rust replacement may handle messages until Signal offers a supported client API and security boundary. |
+
+### Platform surfaces and code that should not be treated as ordinary app ports
+
+| Surface | Current implementation | Migration boundary |
+| --- | --- | --- |
+| Touch ID Settings | Vala/libadwaita Switchboard plug and helpers | Separate Switchboard/GObject ABI workstream; port the settings UI after the fingerprint matching backend has a supported boundary. A Rust UI alone cannot clear the authentication blocker. |
+| Work Mode Settings | Vala/libadwaita Switchboard plug | Separate Switchboard plug ABI; share interaction/accessibility rules, then evaluate a Rust GObject bridge. |
+| CodexBar, RepoBar, Share Eyes and desktop notification indicators | Wingpanel Vala plugins with some standalone settings or companion apps | Separate Wingpanel/GObject extension ABI. The GTK app SDK does not replace shell plugin contracts; prototype and qualify a Rust/GObject bridge before migrating plugin code. |
+| Quick Settings | Vala GTK shell modules | Separate shell extension ABI and lifecycle workstream. |
+| Custom Pantheon compositor | Rust Wayland compositor, custom shell protocol, and D-Bus compatibility services | OS component. Expose app-facing capabilities through versioned protocols/D-Bus contracts; do not link compositor internals into app crates. |
+| Display profiles, battery logger, power tools, BlueFerry and service helpers | CLI programs, user services and backend modules | Preserve stable service/CLI contracts. Porting a frontend does not imply rewriting these owners. |
+| Teams, Outlook, YouTube and other web wrappers | Browser/PWA clients or launcher scripts | Keep browser engines and web service boundaries; only port a custom native wrapper when it adds a real native workflow. |
+| Rust compositor session, kernel tools and system policies | OS/session and kernel integration | Belong to the OS or Kernel workstream, not the first-party app SDK. |
 
 ## Migration order
 
-1. Stabilize SDK APIs and migrate the already-Rust app set plus private
-   Torrential. Fix layout, scaling, keyboard access, text wrapping, and
-   idle-work behavior in those consumers.
-2. Finish the Messages Rust client and retain the Python launcher until the
-   Rust client reaches feature, phone, accessibility, and owner acceptance.
-3. Port the large native app surfaces (Orchard and Touch ID) in bounded slices
-   with each existing backend contract and qualification gate preserved.
-4. Migrate standalone settings/tools and evaluate a Rust/GObject extension
-   surface for Quick Settings and Wingpanel.
+1. Stabilize the SDK with the existing Rust app set, private Torrential, the
+   explicit polling/system metrics API, and a btop-backed System Monitor.
+   Measure idle work in consumers; keep pollers off while pages are hidden.
+2. Finish the Messages Rust client and retain the Python client until feature,
+   phone, accessibility, and owner acceptance.
+3. Port the smaller standalone GTK apps in contract-sized slices, then port
+   Orchard's large surfaces while preserving every existing service boundary.
+4. Move settings and shell integrations only after their Switchboard,
+   Wingpanel, Quick Settings, and compositor-facing Rust/GObject APIs are
+   versioned and qualified.
 5. Keep Signal's signed upstream client until its supported integration and
    security requirements change.
+6. Stage source-repository separation only after each satellite repository
+   builds, packages and passes the hub's pinned integration checks. Keep this
+   repository complete during that transition; see
+   [`REPOSITORY-TOPOLOGY.md`](REPOSITORY-TOPOLOGY.md).
 
 Each app gets a source/license review, a package and launcher migration plan,
 and its own usability/performance receipt. GTK build success alone does not

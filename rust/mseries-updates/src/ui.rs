@@ -147,6 +147,7 @@ impl UpdatesWindow {
         titles.append(&subtitle);
         titles.append(&meta);
         let status_row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+        mseries_pantheon_kit::set_box_spacing_text_units(&status_row, 0.75);
         status_row.append(&icon);
         status_row.append(&spinner);
         status_row.append(&titles);
@@ -161,6 +162,7 @@ impl UpdatesWindow {
             .build();
         banner_icon.set_accessible_role(gtk::AccessibleRole::Presentation);
         let banner_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        mseries_pantheon_kit::set_box_spacing_text_units(&banner_row, 0.5);
         banner_row.append(&banner_icon);
         banner_row.append(&banner);
         banner_row.set_visible(false);
@@ -171,21 +173,24 @@ impl UpdatesWindow {
             .build();
         changes_list.add_css_class("boxed-list");
         mseries_pantheon_kit::set_accessible_label(&changes_list, &tr("Packages in this update"));
-        let changes = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        let changes = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        mseries_pantheon_kit::set_box_spacing_text_units(&changes, 0.4);
         changes.append(&changes_title);
         changes.append(&changes_list);
 
         let install = gtk::Button::with_label(&tr("Install at Next Restart"));
         install.add_css_class("suggested-action");
         let check = gtk::Button::with_label(&tr("Check for Updates"));
-        let actions = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        let actions = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        mseries_pantheon_kit::set_box_spacing_text_units(&actions, 0.6);
         actions.set_halign(gtk::Align::End);
         actions.append(&check);
         actions.append(&install);
 
         let rollback = gtk::Button::with_label(&tr("Roll Back…"));
         rollback.set_valign(gtk::Align::Center);
-        let rollback_text = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        let rollback_text = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        mseries_pantheon_kit::set_box_spacing_text_units(&rollback_text, 0.2);
         rollback_text.set_hexpand(true);
         rollback_text.append(&label(
             &tr("Go back to the previous versions"),
@@ -195,10 +200,12 @@ impl UpdatesWindow {
             &tr("Restores the software from before the last update. It takes effect the next time you log in."),
             &["dim-label"],
         ));
-        let rollback_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        let rollback_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        mseries_pantheon_kit::set_box_spacing_text_units(&rollback_row, 0.75);
         rollback_row.append(&rollback_text);
         rollback_row.append(&rollback);
-        let rollback_section = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        let rollback_section = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        mseries_pantheon_kit::set_box_spacing_text_units(&rollback_section, 0.4);
         rollback_section.append(&granite::HeaderLabel::new(&tr("Previous Version")));
         rollback_section.append(&rollback_row);
 
@@ -207,7 +214,8 @@ impl UpdatesWindow {
         channel.set_valign(gtk::Align::Center);
         mseries_pantheon_kit::set_accessible_label(&channel, &tr("Update channel"));
         let channel_note = label("", &["dim-label"]);
-        let channel_text = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        let channel_text = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        mseries_pantheon_kit::set_box_spacing_text_units(&channel_text, 0.2);
         channel_text.set_hexpand(true);
         channel_text.append(&label(&tr("Update channel"), &["heading"]));
         channel_text.append(&label(
@@ -215,7 +223,8 @@ impl UpdatesWindow {
             &["dim-label"],
         ));
         channel_text.append(&channel_note);
-        let channel_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        let channel_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        mseries_pantheon_kit::set_box_spacing_text_units(&channel_row, 0.75);
         channel_row.append(&channel_text);
         channel_row.append(&channel);
         let advanced = gtk::Expander::builder()
@@ -223,7 +232,8 @@ impl UpdatesWindow {
             .child(&channel_row)
             .build();
 
-        let content = gtk::Box::new(gtk::Orientation::Vertical, 18);
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        mseries_pantheon_kit::set_box_spacing_text_units(&content, 1.0);
         mseries_pantheon_kit::set_margins_text_units(&content, 1.2, 1.2, 1.2, 1.2);
         content.append(&status_row);
         content.append(&banner_row);
@@ -257,6 +267,33 @@ impl UpdatesWindow {
         overlay.set_child(Some(&stack));
         overlay.add_overlay(&toast);
         window.set_child(Some(&overlay));
+
+        // Keep paired actions readable when the window or desktop text scale grows.
+        let status_for_width = status_row.clone();
+        let actions_for_width = actions.clone();
+        let rollback_for_width = rollback_row.clone();
+        let channel_for_width = channel_row.clone();
+        let check_for_width = check.clone();
+        let install_for_width = install.clone();
+        mseries_pantheon_kit::watch_responsive_width(&window, 32.0, move |class| {
+            let compact = class == mseries_pantheon_kit::LayoutClass::Compact;
+            let orientation = if compact {
+                gtk::Orientation::Vertical
+            } else {
+                gtk::Orientation::Horizontal
+            };
+            status_for_width.set_orientation(orientation);
+            actions_for_width.set_orientation(orientation);
+            rollback_for_width.set_orientation(orientation);
+            channel_for_width.set_orientation(orientation);
+            actions_for_width.set_halign(if compact {
+                gtk::Align::Fill
+            } else {
+                gtk::Align::End
+            });
+            check_for_width.set_hexpand(compact);
+            install_for_width.set_hexpand(compact);
+        });
 
         let inner = Rc::new(Inner {
             backend,

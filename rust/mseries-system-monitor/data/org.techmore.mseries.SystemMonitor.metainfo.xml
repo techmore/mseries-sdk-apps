@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.techmore.mseries.SystemMonitor</id>
+  <name>System Monitor</name>
+  <summary>Inspect CPU and memory use with btop</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <description>
+    <p>A native Pantheon window for live CPU and memory use, with btop available for process-level detail.</p>
+  </description>
+  <launchable type="desktop-id">org.techmore.mseries.SystemMonitor.desktop</launchable>
+  <provides>
+    <binary>mseries-system-monitor</binary>
+  </provides>
+  <releases>
+    <release version="0.1.0" date="2026-10-22">
+      <description><p>Initial native preview.</p></description>
+    </release>
+  </releases>
+</component>
