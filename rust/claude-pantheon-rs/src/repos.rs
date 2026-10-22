@@ -366,8 +366,7 @@ pub fn comments_row(key: &str, comments: &[(String, String, String)]) -> gtk::Wi
         .collect::<Vec<_>>()
         .join("\n\n");
     let shown = if comments.is_empty() { "No comments yet.".to_string() } else { text };
-    let row = crate::chat::tool_row("", &format!("Issue {key}: {} comments", comments.len()), shown, None);
-    row
+    crate::chat::tool_row("", &format!("Issue {key}: {} comments", comments.len()), shown, None)
 }
 
 /// The value the server stores for a started issue thread, kept on the thread as `goal` text.

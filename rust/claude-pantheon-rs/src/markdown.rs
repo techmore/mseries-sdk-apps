@@ -39,15 +39,15 @@ fn emphasis(escaped: &str) -> String {
     let mut out = String::with_capacity(escaped.len());
     let mut rest = escaped;
     while let Some(start) = rest.find("**") {
-        if let Some(len) = rest[start + 2..].find("**") {
-            if len > 0 {
-                out.push_str(&rest[..start]);
-                out.push_str("<b>");
-                out.push_str(&rest[start + 2..start + 2 + len]);
-                out.push_str("</b>");
-                rest = &rest[start + 4 + len..];
-                continue;
-            }
+        if let Some(len) = rest[start + 2..].find("**")
+            && len > 0
+        {
+            out.push_str(&rest[..start]);
+            out.push_str("<b>");
+            out.push_str(&rest[start + 2..start + 2 + len]);
+            out.push_str("</b>");
+            rest = &rest[start + 4 + len..];
+            continue;
         }
         out.push_str(&rest[..start + 2]);
         rest = &rest[start + 2..];

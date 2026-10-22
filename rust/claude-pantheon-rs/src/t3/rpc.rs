@@ -108,8 +108,10 @@ struct Inner {
     pending: RefCell<HashMap<String, Pending>>,
     outgoing: mpsc::UnboundedSender<String>,
     closed: Cell<bool>,
-    on_close: RefCell<Vec<Box<dyn Fn(String)>>>,
+    on_close: RefCell<Vec<CloseHook>>,
 }
+
+type CloseHook = Box<dyn Fn(String)>;
 
 /// A connected RPC client. Clone freely; all clones share one socket.
 #[derive(Clone)]

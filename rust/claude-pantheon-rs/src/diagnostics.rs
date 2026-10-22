@@ -14,13 +14,16 @@ use std::rc::Rc;
 
 const HISTORY: usize = 60;
 
+/// (cpu %, rss bytes) samples, newest last.
+type History = VecDeque<(f64, f64)>;
+
 pub struct DiagnosticsPage {
     root: gtk::Box,
     status: gtk::Label,
     groups: gtk::Box,
     processes: gtk::Box,
     /// group name → (cpu %, rss bytes) history, newest last.
-    history: RefCell<Vec<(String, VecDeque<(f64, f64)>)>>,
+    history: RefCell<Vec<(String, History)>>,
     sub_id: RefCell<Option<String>>,
     samples: RefCell<u64>,
 }

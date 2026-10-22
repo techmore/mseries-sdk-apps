@@ -66,8 +66,7 @@ pub async fn request(
 
 fn dechunk(mut raw: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(raw.len());
-    loop {
-        let Some(nl) = find(raw, b"\r\n") else { break };
+    while let Some(nl) = find(raw, b"\r\n") {
         let size_line = String::from_utf8_lossy(&raw[..nl]);
         let size = usize::from_str_radix(size_line.split(';').next().unwrap_or("0").trim(), 16).unwrap_or(0);
         if size == 0 {
