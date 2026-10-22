@@ -88,6 +88,7 @@ start-up probe; the table tracks drift per feature.
 | #472 | sidebar polish: accent dots, running spinner, unread/needs-you badges, collapsible sections, drag-ordered projects, context menu (pin, rename, hand off, copy link, archive) | 64 | 0.0 | 189 – 201 |
 | #473 | permission prompts as cards: Allow once / Allow for this thread / Deny with reason, Y/N keys, notification mirror | 65 | 0.0 | 193 – 212 |
 | #474 | Changes page: file tree with status, inline/side-by-side GtkSourceView diff, per-hunk copy, restore to checkpoint | 65 | 0.0 | 219 – 240 |
+| #475 | vte4 terminal pane fed from the server's terminal stream (hidden by default; libvte linked at start) | 65 | 0.0 | 247 – 257 |
 
 ## Reproduce
 

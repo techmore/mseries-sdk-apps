@@ -42,6 +42,7 @@ Other entry points:
 | Ctrl+W | Close the thread |
 | Ctrl+Shift+U | Usage |
 | Ctrl+, | Settings |
+| Ctrl+Shift+T | Terminal pane for the open thread (the server's PTY, no local shell) |
 | Ctrl+Q | Quit |
 | Y / N | Allow once / deny the oldest waiting permission prompt (when not typing) |
 

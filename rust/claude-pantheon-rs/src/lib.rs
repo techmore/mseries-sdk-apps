@@ -20,6 +20,7 @@ pub mod repos;
 pub mod sidebar;
 pub mod status;
 pub mod t3;
+pub mod terminal;
 pub mod transcript;
 pub mod usage;
 pub mod workflow;

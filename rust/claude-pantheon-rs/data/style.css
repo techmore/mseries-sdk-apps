@@ -118,6 +118,10 @@ levelbar.usage-gauge block.full { background: @error_color; }
 .prompt-summary { font-weight: 500; }
 .deny-reason { font-size: 0.9em; }
 
+/* Terminal pane */
+.terminal-pane { border-top: 1px solid alpha(currentColor, 0.1); }
+.term-status { padding: 3px 0; }
+
 /* Changes page */
 .changes-bar { padding: 8px 12px; border-bottom: 1px solid alpha(currentColor, 0.1); }
 .diff-old { background: alpha(@error_color, 0.06); }

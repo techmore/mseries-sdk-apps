@@ -11,7 +11,7 @@ use crate::t3::model::{Provider, ServerConfig, Shell, ThreadShell, ThreadView, T
 use crate::t3::{self, Rpc, auth, ws::WsError};
 use crate::transcript::{self, Transcript};
 use crate::workflow::{self, Issue, PinnedRepo};
-use crate::{changes, composer, diagnostics, handoff, notify, palette, repos, sidebar, usage};
+use crate::{changes, composer, diagnostics, handoff, notify, palette, repos, sidebar, terminal, usage};
 use futures_util::StreamExt;
 use granite::prelude::{PlaceholderExt, ToastExt};
 use gtk::{gdk, gio, glib, pango, prelude::*};
@@ -98,6 +98,8 @@ pub struct App {
     repos_page: Rc<repos::ReposPage>,
     diagnostics_page: Rc<diagnostics::DiagnosticsPage>,
     changes_page: Rc<changes::ChangesPage>,
+    terminal_pane: Rc<terminal::TerminalPane>,
+    terminal_revealer: gtk::Revealer,
     // state
     conn: RefCell<Option<Conn>>,
     sessions: RefCell<Vec<Session>>,
@@ -212,6 +214,7 @@ impl App {
                 ("Hand Off to Repo", "win.handoff"),
                 ("Open Offline Twin", "win.offline"),
                 ("Close Thread", "win.close-thread"),
+                ("Terminal", "win.terminal"),
             ]),
         );
         menu_model.append_section(
@@ -275,8 +278,15 @@ impl App {
         composer.append(&pickers);
         composer.append(&entry_row);
 
+        let terminal_pane = terminal::TerminalPane::new();
+        let terminal_revealer = gtk::Revealer::builder()
+            .child(&terminal_pane.root)
+            .transition_type(gtk::RevealerTransitionType::SlideUp)
+            .reveal_child(false)
+            .build();
         let chat_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
         chat_page.append(&chat_scroll);
+        chat_page.append(&terminal_revealer);
         chat_page.append(&composer);
 
         // ---- other pages ---------------------------------------------------------------------
@@ -396,6 +406,8 @@ impl App {
             repos_page,
             diagnostics_page,
             changes_page,
+            terminal_pane,
+            terminal_revealer,
             conn: RefCell::new(None),
             sessions: RefCell::new(Vec::new()),
             current_session: RefCell::new(None),
@@ -504,6 +516,7 @@ impl App {
             ("handoff", &[], Box::new(|a| a.handoff_to_repo())),
             ("offline", &[], Box::new(|a| a.open_offline_twin())),
             ("close-thread", &["<Control>w"], Box::new(|a| a.close_thread())),
+            ("terminal", &["<Control><Shift>t"], Box::new(|a| a.toggle_terminal())),
             ("settings", &["<Control>comma"], Box::new(|a| a.settings())),
             ("reconnect", &[], Box::new(|a| a.connect_stored())),
             ("forget", &[], Box::new(|a| a.forget())),
@@ -1596,7 +1609,47 @@ impl App {
 
     // ---- offline transcript ------------------------------------------------------------------
 
+    /// Ctrl+Shift+T: the thread's terminal on the server, in a pane under the chat.
+    pub fn toggle_terminal(self: &Rc<Self>) {
+        let showing = self.terminal_revealer.reveals_child();
+        if showing {
+            self.terminal_revealer.set_reveal_child(false);
+            self.terminal_pane.detach();
+            self.entry.view.grab_focus();
+            return;
+        }
+        let (rpc, thread_id, cwd) = {
+            let conn = self.conn.borrow();
+            let live = self.live.borrow();
+            match (conn.as_ref(), live.as_ref()) {
+                (Some(c), Some(l)) => {
+                    let cwd = c.shell.projects.iter().find(|p| p.id == l.project_id).map(|p| p.workspace_root.clone());
+                    (c.rpc.clone(), l.thread_id.clone(), cwd)
+                }
+                _ => {
+                    self.toast("Open a live thread first; the terminal runs in its project on the server.");
+                    return;
+                }
+            }
+        };
+        let Some(cwd) = cwd else {
+            self.toast("This thread's project has no folder.");
+            return;
+        };
+        self.terminal_revealer.set_reveal_child(true);
+        self.terminal_pane.attach(rpc, thread_id, cwd);
+        self.terminal_pane.grab_focus();
+    }
+
+    pub fn terminal_pane(&self) -> &Rc<terminal::TerminalPane> {
+        &self.terminal_pane
+    }
+
     fn leave_live(&self) {
+        if self.terminal_revealer.reveals_child() {
+            self.terminal_revealer.set_reveal_child(false);
+            self.terminal_pane.detach();
+        }
         let taken = self.live.borrow_mut().take();
         if let Some(live) = taken
             && let Some(c) = self.conn.borrow().as_ref()

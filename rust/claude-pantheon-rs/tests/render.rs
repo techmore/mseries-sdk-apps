@@ -260,6 +260,22 @@ fn main() {
         pump(1300);
         println!("composer drafts ok");
 
+        // ---- terminal pane (the server's PTY) --------------------------------------------------------
+        app.toggle_terminal();
+        assert!(
+            pump_until("the terminal to attach", 60, || shown(&app)
+                .iter()
+                .any(|x| x.contains("pid ") || x.contains("running"))),
+            "terminal status: {:?}",
+            shown(&app).iter().filter(|x| x.contains("~/") || x.contains("Terminal")).collect::<Vec<_>>()
+        );
+        assert!(app.terminal_pane().is_attached());
+        pump(300);
+        app.toggle_terminal();
+        pump(200);
+        assert!(!app.terminal_pane().is_attached(), "hiding the pane detaches");
+        println!("terminal ok");
+
         // ---- changes page ------------------------------------------------------------------------------
         app.show_changes();
         assert!(pump_until("the diff", 60, || shown(&app)
