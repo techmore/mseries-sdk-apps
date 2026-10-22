@@ -535,6 +535,33 @@ impl App {
             });
             self.window.add_action(&action);
         }
+        // Y and N answer the oldest pending permission prompt when nothing is being typed.
+        let keys = gtk::EventControllerKey::new();
+        let a = self.clone();
+        keys.connect_key_pressed(move |_, key, _, state| {
+            if state.intersects(gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::ALT_MASK) {
+                return glib::Propagation::Proceed;
+            }
+            let typing = GtkWindowExt::focus(&a.window).is_some_and(|w| {
+                w.is::<gtk::Text>() || w.is::<gtk::TextView>() || w.is::<gtk::Entry>() || w.is::<gtk::SearchEntry>()
+            });
+            if typing {
+                return glib::Propagation::Proceed;
+            }
+            let decision = match key {
+                gdk::Key::y | gdk::Key::Y => "accept",
+                gdk::Key::n | gdk::Key::N => "decline",
+                _ => return glib::Propagation::Proceed,
+            };
+            match a.oldest_pending_request() {
+                Some(id) => {
+                    a.answer_request(&id, decision);
+                    glib::Propagation::Stop
+                }
+                None => glib::Propagation::Proceed,
+            }
+        });
+        self.window.add_controller(keys);
         let application = self.window.application();
         for (name, accels, f) in actions {
             let action = gio::SimpleAction::new(name, None);
@@ -1848,26 +1875,61 @@ impl App {
 
     fn decide_callback(self: &Rc<Self>) -> chat::Decide {
         let app = self.clone();
-        Rc::new(move |request_id: &str, decision: &str| {
-            let (rpc, thread_id) = {
-                let conn = app.conn.borrow();
-                let live = app.live.borrow();
-                match (conn.as_ref(), live.as_ref()) {
-                    (Some(c), Some(l)) => (c.rpc.clone(), l.thread_id.clone()),
-                    _ => return,
-                }
-            };
-            let payload = json!({
-                "type": "runtime-request.respond", "commandId": new_id(), "threadId": thread_id,
-                "requestId": request_id, "decision": decision,
-            });
-            let app2 = app.clone();
-            glib::spawn_future_local(async move {
-                if let Err(e) = rpc.call("orchestration.dispatchCommand", payload).await {
-                    app2.toast(&format!("Could not answer: {}", e.message()));
-                }
-            });
-        })
+        Rc::new(move |request_id: &str, decision: &str| app.answer_request(request_id, decision))
+    }
+
+    /// Answers a permission prompt; a `decline` may carry a reason after a newline, which is sent to
+    /// the thread as a steering message so the agent knows why.
+    pub fn answer_request(self: &Rc<Self>, request_id: &str, decision: &str) {
+        let (rpc, thread_id, run_id) = {
+            let conn = self.conn.borrow();
+            let live = self.live.borrow();
+            match (conn.as_ref(), live.as_ref()) {
+                (Some(c), Some(l)) => (c.rpc.clone(), l.thread_id.clone(), l.view.active_run_id.clone()),
+                _ => return,
+            }
+        };
+        let (decision, note) = match decision.split_once('\n') {
+            Some((d, n)) => (d.to_string(), n.trim().to_string()),
+            None => (decision.to_string(), String::new()),
+        };
+        let payload = json!({
+            "type": "runtime-request.respond", "commandId": new_id(), "threadId": thread_id,
+            "requestId": request_id, "decision": decision,
+        });
+        let app = self.clone();
+        glib::spawn_future_local(async move {
+            if let Err(e) = rpc.call("orchestration.dispatchCommand", payload).await {
+                app.toast(&format!("Could not answer: {}", e.message()));
+                return;
+            }
+            if !note.is_empty() {
+                let dispatch_mode = match run_id {
+                    Some(run) => json!({"type": "steer_active", "targetRunId": run}),
+                    None => json!({"type": "start_immediately"}),
+                };
+                let message = json!({
+                    "type": "message.dispatch", "commandId": new_id(), "threadId": thread_id, "messageId": new_id(),
+                    "text": format!("Denied: {note}"), "attachments": [], "createdBy": "user", "creationSource": "web",
+                    "dispatchMode": dispatch_mode,
+                });
+                let _ = rpc.call("orchestration.dispatchCommand", message).await;
+            }
+            if let Some(application) = app.window.application() {
+                notify::withdraw(
+                    &application,
+                    &format!("ask:{}", app.live.borrow().as_ref().map(|l| l.thread_id.clone()).unwrap_or_default()),
+                );
+            }
+        });
+    }
+
+    /// The oldest pending prompt of the open thread, for the Y/N keys.
+    fn oldest_pending_request(&self) -> Option<String> {
+        self.live
+            .borrow()
+            .as_ref()
+            .and_then(|l| l.view.items.iter().find(|i| i.is_pending_request()).and_then(|i| i.request_id.clone()))
     }
 
     fn render_live(self: &Rc<Self>) {

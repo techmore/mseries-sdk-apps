@@ -112,3 +112,8 @@ levelbar.usage-gauge block.full { background: @error_color; }
 .sb-unread.sb-ask { min-width: 14px; border-radius: 7px; background: @warning_color; color: white; font-weight: 700; font-size: 0.75em; padding: 0 3px; }
 .sb-spinner { min-width: 12px; min-height: 12px; }
 .sb-header { padding: 4px 0 0 0; }
+
+/* Permission prompts */
+.prompt-pending { border-left: 3px solid @warning_color; }
+.prompt-summary { font-weight: 500; }
+.deny-reason { font-size: 0.9em; }
