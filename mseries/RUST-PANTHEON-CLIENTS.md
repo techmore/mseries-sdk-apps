@@ -81,6 +81,12 @@ unknown outcome keeps the bubble and draft, tells the user to check the iPhone,
 and does not claim delivery. The in-memory outbox is capped at 128 unresolved
 entries per app session.
 
+The application menu exposes a keyboard-shortcuts sheet. Ctrl+N starts a
+message, Ctrl+F searches, Ctrl+R or F5 refreshes, Alt+Left returns to the
+conversation list, Ctrl+Enter sends, and Escape clears search or returns from a
+compact conversation. Returning to the list clears the selected conversation
+and retains its draft.
+
 Imported pin review remains open until BlueFerry exposes a stable opaque
 per-phone profile identifier through its supported status API. The Python
 client currently derives this from BlueFerry's private configuration; the Rust

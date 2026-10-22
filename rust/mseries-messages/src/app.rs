@@ -410,6 +410,18 @@ impl App {
         refresh.set_tooltip_text(Some("Refresh conversations"));
         mseries_pantheon_kit::set_accessible_label(&refresh, "Refresh conversations");
         header.pack_start(&refresh);
+        let shortcuts_button = gtk::Button::with_label("Keyboard Shortcuts");
+        shortcuts_button.add_css_class("flat");
+        mseries_pantheon_kit::set_accessible_label(&shortcuts_button, "Show keyboard shortcuts");
+        let menu = gtk::Popover::new();
+        menu.set_child(Some(&shortcuts_button));
+        let menu_button = gtk::MenuButton::builder()
+            .icon_name("open-menu-symbolic")
+            .tooltip_text("Menu")
+            .build();
+        menu_button.set_popover(Some(&menu));
+        mseries_pantheon_kit::set_accessible_label(&menu_button, "Menu");
+        header.pack_end(&menu_button);
 
         let status = gtk::Label::builder()
             .label("Connecting to BlueFerry…")
@@ -593,7 +605,13 @@ impl App {
             state: RefCell::new(State::default()),
             media: RefCell::new(MediaState::new()),
         });
-        app.connect_signals(&refresh, &new_message, &app.copy_addresses_button);
+        app.connect_signals(
+            &refresh,
+            &new_message,
+            &menu,
+            &shortcuts_button,
+            &app.copy_addresses_button,
+        );
         app.connect_responsive_layout();
         app.watch_history();
         app.window.present();
@@ -605,6 +623,8 @@ impl App {
         self: &Rc<Self>,
         refresh: &gtk::Button,
         new_message: &gtk::Button,
+        menu: &gtk::Popover,
+        shortcuts: &gtk::Button,
         copy_addresses: &gtk::Button,
     ) {
         let weak = Rc::downgrade(self);
@@ -626,6 +646,15 @@ impl App {
         new_message.connect_clicked(move |_| {
             if let Some(app) = weak.upgrade() {
                 app.show_new_message_dialog();
+            }
+        });
+
+        let weak = Rc::downgrade(self);
+        let menu = menu.clone();
+        shortcuts.connect_clicked(move |_| {
+            menu.popdown();
+            if let Some(app) = weak.upgrade() {
+                app.show_shortcuts();
             }
         });
 
@@ -660,7 +689,18 @@ impl App {
             let Some(app) = weak.upgrade() else {
                 return glib::Propagation::Proceed;
             };
+            if state.contains(gtk::gdk::ModifierType::ALT_MASK)
+                && key == gtk::gdk::Key::Left
+                && app.state.borrow().selected.is_some()
+            {
+                app.go_back_to_conversations();
+                return glib::Propagation::Stop;
+            }
             let control = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+            if !control && key == gtk::gdk::Key::F5 {
+                app.refresh();
+                return glib::Propagation::Stop;
+            }
             match (control, key) {
                 (true, gtk::gdk::Key::f) => {
                     if app.window.has_css_class("pantheon-compact")
@@ -689,7 +729,7 @@ impl App {
                     if app.window.has_css_class("pantheon-compact")
                         && app.state.borrow().selected.is_some() =>
                 {
-                    app.show_conversation_list();
+                    app.go_back_to_conversations();
                     glib::Propagation::Stop
                 }
                 _ => glib::Propagation::Proceed,
@@ -743,7 +783,7 @@ impl App {
         let weak = Rc::downgrade(self);
         self.back_button.connect_clicked(move |_| {
             if let Some(app) = weak.upgrade() {
-                app.show_conversation_list();
+                app.go_back_to_conversations();
             }
         });
 
@@ -812,6 +852,59 @@ impl App {
             self.detail.set_visible(false);
             self.back_button.set_visible(false);
         }
+    }
+
+    fn go_back_to_conversations(self: &Rc<Self>) {
+        self.state.borrow_mut().selected = None;
+        self.list.unselect_all();
+        self.render_conversation(None);
+        self.show_conversation_list();
+        self.sync_favorite_selection();
+    }
+
+    fn show_shortcuts(self: &Rc<Self>) {
+        let dialog = gtk::Window::builder()
+            .title("Keyboard Shortcuts")
+            .transient_for(&self.window)
+            .modal(true)
+            .destroy_with_parent(true)
+            .default_width(380)
+            .build();
+        let header = gtk::HeaderBar::new();
+        let title = gtk::Label::new(Some("Keyboard Shortcuts"));
+        title.add_css_class("title");
+        header.set_title_widget(Some(&title));
+        dialog.set_titlebar(Some(&header));
+
+        let shortcuts = [
+            ("New message", "Ctrl+N"),
+            ("Search conversations", "Ctrl+F"),
+            ("Refresh conversations", "Ctrl+R or F5"),
+            ("Back to conversations", "Alt+Left"),
+            ("Send message", "Ctrl+Enter"),
+            ("Clear search / back in compact view", "Escape"),
+        ];
+        let rows = gtk::Grid::builder()
+            .row_spacing(12)
+            .column_spacing(28)
+            .margin_start(20)
+            .margin_end(20)
+            .margin_top(16)
+            .margin_bottom(20)
+            .build();
+        for (index, (description, shortcut)) in shortcuts.iter().enumerate() {
+            let description = gtk::Label::builder()
+                .label(*description)
+                .xalign(0.0)
+                .hexpand(true)
+                .build();
+            let shortcut = gtk::Label::builder().label(*shortcut).xalign(1.0).build();
+            shortcut.add_css_class("dim-label");
+            rows.attach(&description, 0, index as i32, 1, 1);
+            rows.attach(&shortcut, 1, index as i32, 1, 1);
+        }
+        dialog.set_child(Some(&rows));
+        dialog.present();
     }
 
     fn watch_history(self: &Rc<Self>) {
