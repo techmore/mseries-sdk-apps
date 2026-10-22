@@ -376,6 +376,35 @@ fn main() {
     } else {
         println!("not connected to a T3 server; live checks skipped");
     }
+    // ---- environments switcher: an unreachable environment, then back to this computer ----------
+    {
+        use claude_pantheon_rs::environments::{Environment, Route, State};
+        let was_connected = app.is_connected();
+        assert_eq!(app.current_environment_id().as_deref(), Some("local"));
+        app.save_environment(
+            Environment {
+                id: "probe".into(),
+                name: "Nowhere".into(),
+                route: Route::Direct { url: "http://127.0.0.1:1".into() },
+            },
+            true,
+        );
+        assert!(pump_until("the probe environment to settle", 30, || matches!(
+            app.environment_state("probe"),
+            State::Offline | State::Idle
+        ) && app.page() == "pair"));
+        assert_eq!(app.current_environment_id().as_deref(), Some("probe"));
+        assert!(shown(&app).iter().any(|x| x.contains("Nowhere")), "the switcher shows the current environment");
+        assert_eq!(app.current_server(), "http://127.0.0.1:1");
+        app.switch_environment("local");
+        if was_connected {
+            assert!(pump_until("reconnect to this computer", 60, || app.is_connected()));
+        }
+        app.remove_environment("probe");
+        assert!(!app.environments().iter().any(|e| e.id == "probe"));
+        assert_eq!(app.current_environment_id().as_deref(), Some("local"));
+        println!("environments ok");
+    }
     app.window().destroy();
     println!("PASS: Claude render test");
 }
