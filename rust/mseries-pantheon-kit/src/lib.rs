@@ -27,8 +27,8 @@ pub use layout::{
     set_margins_text_units, text_unit, watch_responsive_width,
 };
 pub use messages::{
-    ContactMatch, Message, MessageLayout, MessagePosition, Reaction, Thread,
-    format_message_timestamp, layout_messages,
+    ContactMatch, Message, MessageLayout, MessagePosition, Reaction, RecentMessage, Thread,
+    format_message_timestamp, layout_messages, merge_recent_inbox, recipients_share_inbox_identity,
 };
 pub use phone_pins::{
     APPLE_PINS_SCHEMA, ApplePin, ImportedPinState, PhonePinStore, PinSnapshot,

@@ -1,5 +1,6 @@
 use gtk::glib::{self, DateTime, TimeZone};
 use serde::Deserialize;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 /// Format a BlueFerry ISO timestamp in local time using stable calendar labels.
@@ -229,6 +230,22 @@ pub struct Message {
     pub reactions: Vec<Reaction>,
 }
 
+/// One bounded entry from BlueFerry's supported `Messages1.ListRecent` API.
+/// Fields introduced by newer BlueFerry builds remain optional for API v2
+/// compatibility.
+#[derive(Clone, Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct RecentMessage {
+    pub handle: String,
+    pub sender: String,
+    pub sender_phone_norm: String,
+    pub contact_name: String,
+    pub sender_alphanumeric: Option<String>,
+    pub body: String,
+    pub timestamp: String,
+    pub read: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(default)]
 pub struct Reaction {
@@ -255,6 +272,127 @@ impl Message {
     }
 }
 
+#[cfg(test)]
+mod recent_inbox_tests {
+    use super::*;
+
+    fn direct(key: &str, recipient: &str) -> Thread {
+        Thread {
+            key: key.to_string(),
+            name: "Mike".to_string(),
+            recipients: vec![recipient.to_string()],
+            reply_ready: true,
+            ..Thread::default()
+        }
+    }
+
+    fn recent(handle: &str, sender: &str, timestamp: &str, read: bool) -> RecentMessage {
+        RecentMessage {
+            handle: handle.to_string(),
+            sender: sender.to_string(),
+            sender_phone_norm: sender.trim_start_matches('+').to_string(),
+            body: handle.to_string(),
+            timestamp: timestamp.to_string(),
+            read,
+            ..RecentMessage::default()
+        }
+    }
+
+    #[test]
+    fn inbox_snapshot_matches_phone_formatting_and_counts_unread_messages() {
+        let thread = direct("email:mike@example.com", "(908) 642-0729");
+        let merged = merge_recent_inbox(
+            vec![thread],
+            &[
+                recent("new1", "+19086420729", "2026-10-20T20:18:09", false),
+                recent("new2", "19086420729", "2026-10-20T20:32:02", false),
+            ],
+        );
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].key, "email:mike@example.com");
+        assert_eq!(
+            merged[0]
+                .messages
+                .iter()
+                .map(|message| message.handle.as_str())
+                .collect::<Vec<_>>(),
+            ["new1", "new2"]
+        );
+        assert_eq!(merged[0].unread(), 2);
+        assert!(merged[0].messages.iter().all(|message| message.phone_list));
+    }
+
+    #[test]
+    fn ambiguous_direct_owners_get_one_phone_only_thread() {
+        let merged = merge_recent_inbox(
+            vec![direct("a", "+19086420729"), direct("b", "9086420729")],
+            &[
+                recent("new1", "19086420729", "2026-10-20T20:18:09", true),
+                recent("new2", "+19086420729", "2026-10-20T20:32:02", true),
+            ],
+        );
+        assert!(
+            merged
+                .iter()
+                .all(|thread| thread.messages.is_empty() || thread.inbox_only)
+        );
+        let phone_only = merged.iter().find(|thread| thread.inbox_only).unwrap();
+        assert_eq!(phone_only.messages.len(), 2);
+        assert_eq!(phone_only.key, "inbox:19086420729");
+    }
+
+    #[test]
+    fn groups_invalid_sender_fallbacks_and_duplicate_handles_are_safe() {
+        let group = Thread {
+            key: "group".to_string(),
+            is_group: true,
+            recipients: vec!["+19086420729".to_string(), "+19086420730".to_string()],
+            ..Thread::default()
+        };
+        let initial = merge_recent_inbox(
+            vec![group],
+            &[
+                recent("same", "19086420729", "2026-10-20T20:18:09", true),
+                recent("bad", "(908) 642-0729", "2026-10-20T20:19:09", true),
+            ],
+        );
+        assert_eq!(
+            initial.len(),
+            2,
+            "the group plus one direct phone-only thread"
+        );
+        let merged = merge_recent_inbox(
+            initial,
+            &[recent("same", "19086420729", "2026-10-20T20:18:09", true)],
+        );
+        let phone_only = merged.iter().find(|thread| thread.inbox_only).unwrap();
+        assert_eq!(
+            phone_only.messages.len(),
+            1,
+            "a repeated handle must not duplicate"
+        );
+        assert!(
+            merged
+                .iter()
+                .find(|thread| thread.key == "group")
+                .unwrap()
+                .messages
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn alphanumeric_sender_metadata_disables_replying_to_the_phone_only_route() {
+        let mut item = recent("alert", "12345", "2026-10-20T20:18:09", false);
+        item.sender_alphanumeric = Some("Bank Alert".to_string());
+        let merged = merge_recent_inbox(Vec::new(), &[item]);
+        let thread = merged.first().unwrap();
+        assert_eq!(thread.name, "Bank Alert");
+        assert!(!thread.reply_ready);
+        assert_eq!(thread.sender_alphanumeric.as_deref(), Some("Bank Alert"));
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Default)]
 #[serde(default)]
 pub struct Thread {
@@ -273,6 +411,10 @@ pub struct Thread {
     pub unread_count: usize,
     #[serde(skip)]
     pub local_only: bool,
+    #[serde(skip)]
+    pub inbox_only: bool,
+    #[serde(skip)]
+    pub sender_alphanumeric: Option<String>,
     #[serde(skip)]
     pub search_index: Arc<String>,
 }
@@ -377,6 +519,268 @@ impl Thread {
             text
         }
     }
+}
+
+/// Merge the phone's bounded inbox snapshot into backend threads without
+/// guessing a group route or choosing between ambiguous direct conversations.
+/// Messages unmatched to one direct conversation get a phone-only local thread.
+pub fn merge_recent_inbox(mut threads: Vec<Thread>, recent: &[RecentMessage]) -> Vec<Thread> {
+    let mut handles = threads
+        .iter()
+        .flat_map(|thread| thread.messages.iter())
+        .filter_map(|message| (!message.handle.is_empty()).then_some(message.handle.clone()))
+        .collect::<HashSet<_>>();
+    let mut owners: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut phone_only: HashMap<String, usize> = HashMap::new();
+
+    for (index, thread) in threads.iter().enumerate() {
+        if thread.inbox_only
+            && let Some(recipient) = thread.recipients.first()
+            && let Some(address) = normalize_thread_recipient(recipient)
+        {
+            for identity in inbox_identity_keys(&address) {
+                phone_only.entry(identity).or_insert(index);
+            }
+        }
+        if thread.inbox_only || thread.is_group || thread.recipients.len() != 1 {
+            continue;
+        }
+        let Some(address) = normalize_thread_recipient(&thread.recipients[0]) else {
+            continue;
+        };
+        for identity in inbox_identity_keys(&address) {
+            let candidates = owners.entry(identity).or_default();
+            if !candidates.contains(&index) {
+                candidates.push(index);
+            }
+        }
+    }
+
+    for item in recent {
+        // Prefer BlueFerry's normalized address. It is generated from the
+        // phone's sender field and avoids interpreting arbitrary display text.
+        let sender = if item.sender_phone_norm.trim().is_empty() {
+            item.sender.as_str()
+        } else {
+            item.sender_phone_norm.as_str()
+        };
+        let Some(address) = normalize_inbox_address(sender) else {
+            continue;
+        };
+        let identities = inbox_identity_keys(&address);
+        let mut candidates = Vec::new();
+        for identity in &identities {
+            if let Some(indices) = owners.get(identity) {
+                for index in indices {
+                    if !candidates.contains(index) {
+                        candidates.push(*index);
+                    }
+                }
+            }
+        }
+        let mut target = if candidates.len() == 1 {
+            Some(candidates[0])
+        } else {
+            identities
+                .iter()
+                .find_map(|identity| phone_only.get(identity).copied())
+        };
+
+        if !item.handle.is_empty() && handles.contains(&item.handle) {
+            continue;
+        }
+        if target.is_none() {
+            let index = threads.len();
+            let mut thread = Thread {
+                key: format!("inbox:{address}"),
+                name: if item.contact_name.trim().is_empty() {
+                    if item.sender.trim().is_empty() {
+                        address.clone()
+                    } else {
+                        item.sender.clone()
+                    }
+                } else {
+                    item.contact_name.clone()
+                },
+                recipients: vec![address.clone()],
+                reply_ready: true,
+                local_only: true,
+                inbox_only: true,
+                ..Thread::default()
+            };
+            if let Some(sender) = item
+                .sender_alphanumeric
+                .as_deref()
+                .filter(|s| !s.is_empty())
+            {
+                thread.name = sender.to_string();
+                thread.reply_ready = false;
+                thread.sender_alphanumeric = Some(sender.to_string());
+            }
+            threads.push(thread);
+            for identity in identities {
+                phone_only.entry(identity).or_insert(index);
+            }
+            target = Some(index);
+        }
+
+        let Some(index) = target else {
+            continue;
+        };
+        let thread = &mut threads[index];
+        if let Some(sender) = item
+            .sender_alphanumeric
+            .as_deref()
+            .filter(|s| !s.is_empty())
+        {
+            thread.name = sender.to_string();
+            thread.reply_ready = false;
+            thread.sender_alphanumeric = Some(sender.to_string());
+        }
+        thread.messages.push(Message {
+            handle: item.handle.clone(),
+            body: item.body.clone(),
+            timestamp: item.timestamp.clone(),
+            outgoing: false,
+            read: item.read,
+            sender: item.sender.clone(),
+            phone_list: true,
+            ..Message::default()
+        });
+        if !item.handle.is_empty() {
+            handles.insert(item.handle.clone());
+        }
+    }
+
+    for thread in &mut threads {
+        thread
+            .messages
+            .sort_by(|left, right| left.timestamp.cmp(&right.timestamp));
+        if let Some(last) = thread.messages.last() {
+            thread.last_ts.clone_from(&last.timestamp);
+        }
+        thread.refresh_search_index();
+    }
+    threads.sort_by(|left, right| right.last_ts.cmp(&left.last_ts));
+    threads
+}
+
+fn inbox_identity_keys(address: &str) -> Vec<String> {
+    if address.contains('@') {
+        return vec![format!("email:{}", address.to_ascii_lowercase())];
+    }
+    let digits = address
+        .bytes()
+        .filter(u8::is_ascii_digit)
+        .map(char::from)
+        .collect::<String>();
+    if digits.is_empty() {
+        return Vec::new();
+    }
+    let mut keys = vec![format!("phone:{digits}")];
+    if digits.len() == 10 {
+        keys.push(format!("phone:1{digits}"));
+    } else if digits.len() == 11 && digits.starts_with('1') {
+        keys.push(format!("phone:{}", &digits[1..]));
+    }
+    keys
+}
+
+/// Whether two valid direct-address spellings resolve to the same conservative
+/// inbox identity, including North American ten/eleven-digit number twins.
+pub fn recipients_share_inbox_identity(left: &str, right: &str) -> bool {
+    let (Some(left), Some(right)) = (
+        normalize_thread_recipient(left),
+        normalize_thread_recipient(right),
+    ) else {
+        return false;
+    };
+    let left_keys = inbox_identity_keys(&left);
+    let right_keys = inbox_identity_keys(&right);
+    left_keys.iter().any(|key| right_keys.contains(key))
+}
+
+fn normalize_thread_recipient(input: &str) -> Option<String> {
+    let candidate = input.trim();
+    let bytes = candidate.as_bytes();
+    let phone = !bytes.is_empty()
+        && (bytes[0] != b'+' || bytes.len() > 1)
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            byte.is_ascii_digit() || (index == 0 && *byte == b'+') || b" ()-.".contains(byte)
+        });
+    if phone {
+        let digits = candidate
+            .bytes()
+            .filter(u8::is_ascii_digit)
+            .map(char::from)
+            .collect::<String>();
+        if (3..=20).contains(&digits.len()) {
+            return Some(format!(
+                "{}{digits}",
+                if candidate.starts_with('+') { "+" } else { "" }
+            ));
+        }
+        return None;
+    }
+    normalize_inbox_address(candidate)
+}
+
+/// Inbox identities accept conservative phone spelling and email addresses.
+/// Parentheses are excluded for raw sender fallbacks; BlueFerry's normalized
+/// sender field already handles legitimate formatted phone numbers.
+fn normalize_inbox_address(input: &str) -> Option<String> {
+    let candidate = input.trim();
+    let bytes = candidate.as_bytes();
+    let phone = !bytes.is_empty()
+        && (bytes[0] != b'+' || bytes.len() > 1)
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            byte.is_ascii_digit() || (index == 0 && *byte == b'+') || b" -.".contains(byte)
+        });
+    if phone {
+        let digits = candidate
+            .bytes()
+            .filter(u8::is_ascii_digit)
+            .map(char::from)
+            .collect::<String>();
+        if (3..=20).contains(&digits.len()) {
+            return Some(format!(
+                "{}{digits}",
+                if candidate.starts_with('+') { "+" } else { "" }
+            ));
+        }
+        return None;
+    }
+
+    if candidate.len() > 254 || candidate.matches('@').count() != 1 || !candidate.is_ascii() {
+        return None;
+    }
+    let (local, domain) = candidate.split_once('@')?;
+    if local.is_empty()
+        || local.len() > 64
+        || domain.is_empty()
+        || domain.len() > 253
+        || local.starts_with('.')
+        || local.ends_with('.')
+        || local.contains("..")
+        || !local
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+/=?^_`{|}~.-".contains(&byte))
+    {
+        return None;
+    }
+    for label in domain.split('.') {
+        if label.is_empty()
+            || label.len() > 63
+            || !label.as_bytes()[0].is_ascii_alphanumeric()
+            || !label.as_bytes()[label.len() - 1].is_ascii_alphanumeric()
+            || !label
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        {
+            return None;
+        }
+    }
+    Some(format!("{local}@{}", domain.to_ascii_lowercase()))
 }
 
 impl Message {

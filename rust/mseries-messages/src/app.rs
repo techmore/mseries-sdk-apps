@@ -4,8 +4,9 @@ use granite::prelude::PlaceholderExt;
 use gtk::{gio, glib, prelude::*};
 use mseries_pantheon_kit::{
     BlueFerryMessagesClient as Backend, BlueFerryStatus, ContactMatch, DockBadge, ImportedPinState,
-    Message, MessagePosition, PhonePinStore, PinSnapshot, Polling, ResumeWatcher, Thread,
-    format_message_timestamp, is_valid_phone_profile_id, layout_messages, suggested_pin_matches,
+    Message, MessagePosition, PhonePinStore, PinSnapshot, Polling, RecentMessage, ResumeWatcher,
+    Thread, format_message_timestamp, is_valid_phone_profile_id, layout_messages,
+    merge_recent_inbox, recipients_share_inbox_identity, suggested_pin_matches,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -14,9 +15,33 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 const MAX_OUTBOX_MESSAGES: usize = 128;
+const RECENT_INBOX_FOLDER: &str = "telecom/msg/INBOX";
+const RECENT_INBOX_LIMIT: u32 = 200;
+const RECENT_INBOX_MAX_AGE: Duration = Duration::from_secs(300);
+
+fn recent_inbox_due(
+    map_ready: bool,
+    was_map_ready: bool,
+    has_snapshot: bool,
+    force_requested: bool,
+    last_success: Option<SystemTime>,
+    now: SystemTime,
+) -> bool {
+    if !map_ready {
+        return false;
+    }
+    if force_requested || !was_map_ready || !has_snapshot {
+        return true;
+    }
+    last_success.is_none_or(|last| {
+        now.duration_since(last)
+            .unwrap_or_default()
+            .ge(&RECENT_INBOX_MAX_AGE)
+    })
+}
 
 #[derive(Default)]
 struct RefreshGate {
@@ -374,6 +399,11 @@ pub struct App {
     enter_generation: Cell<u64>,
     refresh_poller: RefCell<Option<Polling>>,
     resume_watcher: RefCell<Option<ResumeWatcher>>,
+    recent_inbox_snapshot: RefCell<Option<Vec<RecentMessage>>>,
+    recent_inbox_last_success: Cell<Option<SystemTime>>,
+    recent_inbox_force_generation: Cell<u64>,
+    recent_inbox_satisfied_generation: Cell<u64>,
+    recent_inbox_warning: RefCell<Option<String>>,
     pin_profile_id: RefCell<Option<String>>,
     pin_state: RefCell<ImportedPinState>,
     pin_load_generation: Cell<u64>,
@@ -719,6 +749,11 @@ impl App {
             enter_generation: Cell::new(0),
             refresh_poller: RefCell::new(None),
             resume_watcher: RefCell::new(None),
+            recent_inbox_snapshot: RefCell::new(None),
+            recent_inbox_last_success: Cell::new(None),
+            recent_inbox_force_generation: Cell::new(0),
+            recent_inbox_satisfied_generation: Cell::new(0),
+            recent_inbox_warning: RefCell::new(None),
             pin_profile_id: RefCell::new(None),
             pin_state: RefCell::new(ImportedPinState::default()),
             pin_load_generation: Cell::new(0),
@@ -759,7 +794,7 @@ impl App {
         app.watch_history();
         app.install_refresh_controls();
         app.window.present();
-        app.refresh();
+        app.refresh_recent();
         Some(app)
     }
 
@@ -790,7 +825,7 @@ impl App {
         let weak = Rc::downgrade(self);
         refresh.connect_clicked(move |_| {
             if let Some(app) = weak.upgrade() {
-                app.refresh();
+                app.refresh_recent();
             }
         });
 
@@ -892,7 +927,7 @@ impl App {
             }
             let control = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
             if !control && key == gtk::gdk::Key::F5 {
-                app.refresh();
+                app.refresh_recent();
                 return glib::Propagation::Stop;
             }
             match (control, key) {
@@ -906,7 +941,7 @@ impl App {
                     glib::Propagation::Stop
                 }
                 (true, gtk::gdk::Key::r) => {
-                    app.refresh();
+                    app.refresh_recent();
                     glib::Propagation::Stop
                 }
                 (true, gtk::gdk::Key::n) => {
@@ -1062,7 +1097,7 @@ impl App {
         self.resume_watcher
             .replace(Some(ResumeWatcher::new(move || {
                 if let Some(app) = weak.upgrade() {
-                    app.refresh();
+                    app.refresh_recent();
                 }
             })));
     }
@@ -1177,8 +1212,18 @@ impl App {
     }
 
     fn update_send_shortcut(&self) {
+        let state = self.state.borrow();
+        let alpha_sender = state.selected.as_deref().and_then(|key| {
+            state
+                .threads
+                .iter()
+                .find(|thread| thread.key == key)
+                .and_then(|thread| thread.sender_alphanumeric.as_ref())
+        });
         self.send_button
-            .set_tooltip_text(Some(if self.enter_sends.get() {
+            .set_tooltip_text(Some(if alpha_sender.is_some() {
+                "Replies are unavailable for this alphanumeric sender"
+            } else if self.enter_sends.get() {
                 "Send message (Enter; Ctrl+Enter also works)"
             } else {
                 "Send message (Ctrl+Enter)"
@@ -1196,37 +1241,92 @@ impl App {
     }
 
     fn refresh(self: &Rc<Self>) {
+        self.refresh_with_recent(false);
+    }
+
+    fn refresh_recent(self: &Rc<Self>) {
+        self.refresh_with_recent(true);
+    }
+
+    fn refresh_with_recent(self: &Rc<Self>, request_recent: bool) {
+        if request_recent {
+            self.recent_inbox_force_generation
+                .set(self.recent_inbox_force_generation.get().saturating_add(1));
+        }
         if !self.refresh_gate.request() {
             return;
         }
-        self.status.remove_css_class("warning");
-        self.status.set_tooltip_text(None);
+        let force_generation = self.recent_inbox_force_generation.get();
+        let satisfied_generation = self.recent_inbox_satisfied_generation.get();
+        let was_map_ready = self.state.borrow().map_ready;
+        let has_recent_snapshot = self.recent_inbox_snapshot.borrow().is_some();
+        let recent_last_success = self.recent_inbox_last_success.get();
         self.status.set_text("Refreshing conversations…");
         let weak = Rc::downgrade(self);
         let backend = self.backend.clone();
         glib::MainContext::default().spawn_local(async move {
             let outcome = async {
                 let status = backend.status().await?;
+                let should_fetch_recent = recent_inbox_due(
+                    status.map,
+                    was_map_ready,
+                    has_recent_snapshot,
+                    force_generation > satisfied_generation,
+                    recent_last_success,
+                    SystemTime::now(),
+                );
+                let recent = if should_fetch_recent {
+                    Some(
+                        backend
+                            .recent_inbox(RECENT_INBOX_FOLDER, RECENT_INBOX_LIMIT)
+                            .await,
+                    )
+                } else {
+                    None
+                };
                 let threads = backend.threads().await?;
-                Ok::<_, String>((status, threads))
+                Ok::<_, String>((status, threads, recent))
             }
             .await;
             if let Some(app) = weak.upgrade() {
                 let refresh_again = app.refresh_gate.finish();
                 match outcome {
-                    Ok((status, threads)) => {
+                    Ok((status, threads, recent)) => {
                         app.update_contact_photo_revision(&status);
-                        app.status.remove_css_class("warning");
-                        app.status.set_tooltip_text(None);
+                        match recent {
+                            Some(Ok(snapshot)) => {
+                                app.recent_inbox_snapshot.replace(Some(snapshot));
+                                app.recent_inbox_last_success.set(Some(SystemTime::now()));
+                                app.recent_inbox_satisfied_generation
+                                    .set(force_generation);
+                                app.recent_inbox_warning.replace(None);
+                            }
+                            Some(Err(error)) => {
+                                app.recent_inbox_warning.replace(Some(error));
+                            }
+                            None => {}
+                        }
                         let ready = status.map;
                         let detail = status.connectivity_detail.as_deref().unwrap_or("");
-                        app.status.set_text(if ready {
-                            "Connected to BlueFerry · iPhone Messages available"
-                        } else if detail.is_empty() {
-                            "BlueFerry is connected · iPhone Messages are unavailable"
+                        app.status.remove_css_class("warning");
+                        app.status.set_tooltip_text(None);
+                        if ready
+                            && let Some(error) = app.recent_inbox_warning.borrow().as_deref()
+                        {
+                            app.status.set_text(
+                                "Could not refresh the iPhone inbox. Showing messages already received.",
+                            );
+                            app.status.set_tooltip_text(Some(error));
+                            app.status.add_css_class("warning");
                         } else {
-                            detail
-                        });
+                            app.status.set_text(if ready {
+                                "Connected to BlueFerry · iPhone Messages available"
+                            } else if detail.is_empty() {
+                                "BlueFerry is connected · iPhone Messages are unavailable"
+                            } else {
+                                detail
+                            });
+                        }
                         let mut state = app.state.borrow_mut();
                         state.map_ready = ready;
                         let mut server_threads: Vec<Thread> = threads
@@ -1247,13 +1347,56 @@ impl App {
                             }
                             let address =
                                 local.recipients.first().map(String::as_str).unwrap_or("");
-                            if let Some(server) = server_threads.iter().find(|server| {
-                                !server.is_group
-                                    && server.recipients.iter().any(|recipient| {
-                                        normalize_recipient(recipient).as_deref() == Some(address)
-                                    })
-                            }) {
+                            let matching_servers = server_threads
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, server)| {
+                                    !server.is_group
+                                        && server.recipients.len() == 1
+                                        && server.recipients.iter().any(|recipient| {
+                                            recipients_share_inbox_identity(recipient, address)
+                                        })
+                                })
+                                .map(|(index, _)| index)
+                                .collect::<Vec<_>>();
+                            if matching_servers.len() == 1 {
+                                let server = &mut server_threads[matching_servers[0]];
                                 let server_key = server.key.clone();
+                                if local.inbox_only {
+                                    let known_handles = server
+                                        .messages
+                                        .iter()
+                                        .filter_map(|message| {
+                                            (!message.handle.is_empty())
+                                                .then_some(message.handle.clone())
+                                        })
+                                        .collect::<HashSet<_>>();
+                                    server.messages.extend(
+                                        local
+                                            .messages
+                                            .iter()
+                                            .filter(|message| {
+                                                message.phone_list
+                                                    && (message.handle.is_empty()
+                                                        || !known_handles.contains(
+                                                            &message.handle,
+                                                        ))
+                                            })
+                                            .cloned(),
+                                    );
+                                    if let Some(sender) = local.sender_alphanumeric.as_deref() {
+                                        server.sender_alphanumeric = Some(sender.to_string());
+                                        server.name = sender.to_string();
+                                        server.reply_ready = false;
+                                    }
+                                    server.messages.sort_by(|left, right| {
+                                        left.timestamp.cmp(&right.timestamp)
+                                    });
+                                    if let Some(last) = server.messages.last() {
+                                        server.last_ts.clone_from(&last.timestamp);
+                                    }
+                                    server.refresh_search_index();
+                                }
                                 if state.selected.as_deref() == Some(local.key.as_str()) {
                                     state.selected = Some(server_key.clone());
                                 }
@@ -1270,7 +1413,12 @@ impl App {
                             }
                         }
                         server_threads.extend(keep_local);
-                        state.threads = server_threads;
+                        let snapshot = app.recent_inbox_snapshot.borrow();
+                        state.threads = if let Some(snapshot) = snapshot.as_deref() {
+                            merge_recent_inbox(server_threads, snapshot)
+                        } else {
+                            server_threads
+                        };
                         let unread_count = state.threads.iter().fold(0_u64, |total, thread| {
                             total.saturating_add(thread.unread() as u64)
                         });
@@ -1284,6 +1432,7 @@ impl App {
                     Err(error) => {
                         app.state.borrow_mut().map_ready = false;
                         app.send_button.set_sensitive(false);
+                        app.status.remove_css_class("warning");
                         app.status.set_text(&backend_error_summary(&error));
                         app.status.set_tooltip_text(Some(&error));
                         app.status.add_css_class("warning");
@@ -2249,8 +2398,9 @@ impl App {
                     self.request_media_preview(url, card, message.outgoing);
                 }
             }
-            let permitted = thread.local_only
-                || (thread.reply_ready && !thread.participants_required && !thread.roster_changed);
+            let permitted =
+                thread.reply_ready && !thread.participants_required && !thread.roster_changed;
+            self.update_send_shortcut();
             self.editor.set_sensitive(true);
             let state = self.state.borrow();
             self.send_button.set_sensitive(
@@ -2540,6 +2690,10 @@ impl App {
                 .set_text("Your iPhone is offline. Your draft is kept while this window is open.");
             return;
         }
+        if !thread.reply_ready {
+            self.status.set_text("BlueFerry has blocked replies to this conversation. Review its status before sending.");
+            return;
+        }
         if thread.local_only {
             let Some(recipient) = thread.recipients.first() else {
                 self.status
@@ -2555,7 +2709,7 @@ impl App {
             );
             return;
         }
-        if !thread.reply_ready || thread.participants_required || thread.roster_changed {
+        if thread.participants_required || thread.roster_changed {
             self.status.set_text("BlueFerry has blocked replies to this conversation. Review its status before sending.");
             return;
         }
@@ -3333,6 +3487,25 @@ mod tests {
             gate.request(),
             "a completed gate should allow a new refresh"
         );
+    }
+
+    #[test]
+    fn recent_inbox_refresh_policy_catches_up_without_polling_every_status_tick() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(10_000);
+        let last = Some(now - Duration::from_secs(299));
+        assert!(!recent_inbox_due(true, true, true, false, last, now));
+        assert!(recent_inbox_due(
+            true,
+            true,
+            true,
+            false,
+            Some(now - Duration::from_secs(300)),
+            now
+        ));
+        assert!(recent_inbox_due(true, true, true, true, last, now));
+        assert!(recent_inbox_due(true, false, true, false, last, now));
+        assert!(recent_inbox_due(true, true, false, false, None, now));
+        assert!(!recent_inbox_due(false, false, false, true, None, now));
     }
 
     #[test]

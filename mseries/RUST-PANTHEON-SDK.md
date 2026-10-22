@@ -122,15 +122,23 @@ existing opt-in unchanged. The SDK formats BlueFerry ISO timestamps in the
 local calendar for message timelines and direct-conversation rows. Its shared
 timeline helper groups nearby messages by direction and group sender and emits
 date/time headings after long gaps. BlueFerry PR [#277](https://github.com/erikwb/blueferry/pull/277)
-remains open at `d85819f`; no checks have been reported. It adds an optional
-stable UUID for the configured phone to the existing status contract. The SDK
-accepts that field and scopes imported pin metadata in Secret Service with the
-ID. The current Python client reads the same field and keyring item; when
-BlueFerry reports a valid ID, it can migrate the old Python-only item locally.
-Until the change is merged and released, older BlueFerry versions omit the ID
-and import actions ask the user to update BlueFerry. Neither client uses the
-Bluetooth address as its new preference scope. See BlueFerry's
+merged at `ff418298e3e9b71b650e0d72b4b1ba61576cf29f`; it adds an optional stable
+UUID for the configured phone to the existing status contract. The SDK accepts
+that field and scopes imported pin metadata in Secret Service with the ID. The
+current Python client reads the same field and keyring item; when BlueFerry
+reports a valid ID, it can migrate the old Python-only item locally. The latest
+public release remains v0.8.1 from 2026-09-15, before the merge, so released
+packages omit the ID and import actions ask the user to update BlueFerry. Neither
+client uses the Bluetooth address as its new preference scope. See BlueFerry's
 [pinned D-Bus API contract](https://github.com/erikwb/blueferry/blob/60fd7ef1abbd25947981f0cf27a521d82784a75f/docs/en/developer/dbus-api.md#compatibility).
+The same released API v2 also exposes `Messages1.ListRecent`; the SDK now
+provides a bounded typed client for that method. Rust Messages refreshes this
+phone-exposed inbox snapshot on startup, manual refresh, reconnect and resume,
+then every five minutes while connected when auto-refresh is enabled. It merges by validated address and
+message handle, avoids ambiguous and group routing, and retains the last good
+snapshot when the phone read fails. This adds no polling timer of its own: the
+existing switch-controlled status poll schedules the five-minute check, while manual and
+resume events request it directly.
 The Rust Messages preview now includes bounded public HTTPS image, GIF, and
 YouTube previews. Incoming links require an explicit load; sent links can load
 automatically. Downloads are DNS-pinned to validated public addresses, limited

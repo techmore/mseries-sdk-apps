@@ -101,21 +101,30 @@ the saved order and conversation matches in Secret Service by BlueFerry's
 optional stable phone UUID. The Python GTK client reads the same status field
 and keyring item, migrating its prior custom-schema/MAC-hash item locally when
 it first sees the UUID. BlueFerry PR [#277](https://github.com/erikwb/blueferry/pull/277)
-is open; older BlueFerry versions omit the ID, so both clients keep pin import
-unavailable until the upstream change is released. A direct switch to Rust
-before running the updated Python client leaves the old private keyring item in
-place; the user can re-import the snapshot if needed.
+merged at `ff418298e3e9b71b650e0d72b4b1ba61576cf29f`. The latest public
+release remains v0.8.1 from 2026-09-15, before the merge, so released packages
+still omit the ID. Both clients keep pin import unavailable until a release
+with the field is available. A direct switch to Rust before running the updated
+Python client leaves the old private keyring item in place; the user can
+re-import the snapshot if needed.
 
-The Rust client still lacks the Python app's phone-exposed recent-inbox catch-up,
-which currently uses `BackendClient.recent` outside the Rust adapter's versioned
-Messages1 D-Bus surface. Add it only through a documented, supported BlueFerry
-contract; do not read BlueFerry's private database or compete for MAP. Full
-accessibility and keyboard review, narrow-window qualification, localization,
-package/launcher handoff, private GUI review and owner-phone acceptance also
-remain. Imported pins need the open BlueFerry API change to ship and pass live
-acceptance; MAP does not expose recipient delivery receipts. The contact
-picker, Reply/Copy actions and shared Enter-to-send preference still need
-runtime interaction review.
+The Rust client now fetches the phone's bounded recent inbox through the
+released `Messages1.ListRecent` contract using the shared SDK. It requests a
+snapshot at startup, manual refresh, reconnect and resume, then every five
+minutes while connected if auto-refresh is enabled. Failed inbox reads retain
+the last snapshot and show a warning. The in-memory merge matches only one
+direct recipient by typed address identity, leaves ambiguous senders in
+phone-only conversations, never
+guesses group routes, and deduplicates by message handle. No private database or
+second MAP session is used.
+
+Full accessibility and keyboard review, narrow-window qualification,
+localization, package/launcher handoff, private GUI review and owner-phone
+acceptance also remain. Imported pins need the merged BlueFerry API change to
+ship in a release and pass live acceptance; MAP does not expose recipient
+delivery receipts. The contact picker, Reply/Copy actions, shared
+Enter-to-send preference and recent-inbox behavior still need owner-session
+interaction review.
 
 ## Signal
 

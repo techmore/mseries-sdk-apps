@@ -1,4 +1,4 @@
-use crate::messages::{ContactMatch, Thread};
+use crate::messages::{ContactMatch, RecentMessage, Thread};
 use gtk::{gio, glib, prelude::*};
 use serde::Deserialize;
 
@@ -9,7 +9,10 @@ const EVENTS_IFACE: &str = "io.weirdware.BlueFerry.Events1";
 const STATUS_TIMEOUT_MS: i32 = 10_000;
 const CONTACT_TIMEOUT_MS: i32 = 8_000;
 const SNAPSHOT_TIMEOUT_MS: i32 = 20_000;
+const RECENT_TIMEOUT_MS: i32 = 240_000;
 const SEND_TIMEOUT_MS: i32 = 240_000;
+const MAX_RECENT_MESSAGES: u32 = 200;
+const MAX_RECENT_JSON_BYTES: usize = 8 * 1024 * 1024;
 
 /// Version of the public BlueFerry Messages D-Bus contract consumed by this SDK.
 pub const BLUEFERRY_MESSAGES_API_VERSION: u64 = 2;
@@ -136,6 +139,33 @@ impl BlueFerryMessagesClient {
             thread.refresh_search_index();
         }
         Ok(threads)
+    }
+
+    /// Fetch the phone's bounded recent-message snapshot through BlueFerry's
+    /// released Messages1 API. The phone remains the source of MAP access.
+    pub async fn recent_inbox(
+        &self,
+        folder: &str,
+        limit: u32,
+    ) -> Result<Vec<RecentMessage>, String> {
+        let limit = limit.clamp(1, MAX_RECENT_MESSAGES);
+        let args = (folder, limit).to_variant();
+        let result = self
+            .call("ListRecent", Some(&args), RECENT_TIMEOUT_MS)
+            .await?;
+        let json: String = result
+            .child_value(0)
+            .get()
+            .ok_or_else(|| "BlueFerry returned an invalid recent inbox response".to_string())?;
+        if json.len() > MAX_RECENT_JSON_BYTES {
+            return Err("BlueFerry returned an oversized recent inbox response".to_string());
+        }
+        let messages: Vec<RecentMessage> = serde_json::from_str(&json)
+            .map_err(|error| format!("BlueFerry returned invalid recent inbox JSON: {error}"))?;
+        if messages.len() > MAX_RECENT_MESSAGES as usize {
+            return Err("BlueFerry returned too many recent inbox messages".to_string());
+        }
+        Ok(messages)
     }
 
     pub async fn find_contacts(&self, query: &str) -> Result<Vec<ContactMatch>, String> {
