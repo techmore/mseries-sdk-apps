@@ -12,8 +12,8 @@ use crate::t3::{self, Rpc, auth, ws::WsError};
 use crate::transcript::{self, Transcript};
 use crate::workflow::{self, Issue, PinnedRepo};
 use crate::{
-    changes, composer, diagnostics, environments, handoff, notify, palette, repos, settings, sidebar, snapshot,
-    terminal, usage,
+    changes, composer, diagnostics, environments, handoff, notify, palette, repos, settings, sidebar, skeleton,
+    snapshot, terminal, usage,
 };
 use futures_util::StreamExt;
 use granite::prelude::{PlaceholderExt, ToastExt};
@@ -27,6 +27,9 @@ use std::time::Instant;
 /// Transcripts longer than this start folded; a button at the top reveals the rest.
 const TAIL_TURNS: usize = 200;
 pub const DEFAULT_SERVER: &str = "http://127.0.0.1:3773";
+
+/// What a toast's Retry button runs.
+pub type Retry = Rc<dyn Fn(&Rc<App>)>;
 
 const RUNTIME_MODES: [(&str, &str); 4] = [
     ("approval-required", "Ask before actions"),
@@ -71,6 +74,9 @@ pub struct App {
     window: gtk::ApplicationWindow,
     // sidebar
     list: gtk::ListBox,
+    side_placeholder: gtk::Stack,
+    side_empty: gtk::Box,
+    toast_retry_cb: RefCell<Option<Retry>>,
     rows: RefCell<Vec<Option<Row>>>,
     search: gtk::SearchEntry,
     status: gtk::Label,
@@ -160,6 +166,17 @@ impl App {
             .selection_mode(gtk::SelectionMode::Single)
             .activate_on_single_click(true)
             .build();
+        // Shown by the ListBox while it has no rows: skeleton rows while indexing or connecting, else a hint.
+        let side_placeholder = gtk::Stack::new();
+        side_placeholder.add_named(&skeleton::rows(6), Some("skeleton"));
+        let side_empty = skeleton::empty(
+            "mail-read-symbolic",
+            "No threads yet",
+            "Pair with a T3 server or import your Claude Code sessions.",
+        );
+        side_placeholder.add_named(&side_empty, Some("empty"));
+        side_placeholder.set_visible_child_name("skeleton");
+        list.set_placeholder(Some(&side_placeholder));
         let list_scroll =
             gtk::ScrolledWindow::builder().child(&list).hscrollbar_policy(gtk::PolicyType::Never).vexpand(true).build();
         let status = label("Not connected", &["caption", "dim-label"]);
@@ -319,9 +336,8 @@ impl App {
         let empty = granite::Placeholder::new("Claude for elementary OS");
         empty.set_description("Pick a thread on the left, or start a new one.");
         empty.set_icon(&gio::ThemedIcon::new("mail-read-symbolic"));
-        let busy = gtk::Spinner::builder().spinning(true).width_request(32).height_request(32).build();
-        busy.set_valign(gtk::Align::Center);
-        busy.set_halign(gtk::Align::Center);
+        let busy = skeleton::chat(4);
+        busy.set_valign(gtk::Align::Start);
 
         let pair_box = gtk::Box::new(gtk::Orientation::Vertical, 10);
         pair_box.set_valign(gtk::Align::Center);
@@ -406,6 +422,9 @@ impl App {
         let app = Rc::new(App {
             window,
             list,
+            side_placeholder,
+            side_empty,
+            toast_retry_cb: RefCell::new(None),
             rows: RefCell::new(Vec::new()),
             search,
             status,
@@ -493,6 +512,13 @@ impl App {
     }
 
     fn wire(self: &Rc<Self>, new_chat: &gtk::Button) {
+        let a = self.clone();
+        self.toast.connect_default_action(move |_| {
+            let cb = a.toast_retry_cb.borrow().clone();
+            if let Some(cb) = cb {
+                cb(&a);
+            }
+        });
         let a = self.clone();
         self.list.connect_row_selected(move |_, row| {
             if a.syncing.get() {
@@ -968,8 +994,42 @@ impl App {
     }
 
     pub fn toast(&self, text: &str) {
+        *self.toast_retry_cb.borrow_mut() = None;
+        self.toast.set_default_action(None);
         self.toast.set_title(text);
         self.toast.send_notification();
+    }
+
+    /// A toast for a transient error with a Retry button that runs `retry`.
+    pub fn toast_retry(&self, text: &str, retry: Retry) {
+        *self.toast_retry_cb.borrow_mut() = Some(retry);
+        self.toast.set_default_action(Some("Retry"));
+        self.toast.set_title(text);
+        self.toast.send_notification();
+    }
+
+    pub fn toast_widget(&self) -> &granite::Toast {
+        &self.toast
+    }
+
+    /// Which placeholder the empty thread list shows: "skeleton" or "empty".
+    pub fn side_placeholder_name(&self) -> String {
+        self.side_placeholder.visible_child_name().map(|n| n.to_string()).unwrap_or_default()
+    }
+
+    fn update_side_placeholder(&self, searching: bool) {
+        let loading = self.indexing.get() || self.connecting.get();
+        let (title, hint) = if searching {
+            ("Nothing matches", "Try another word; the search covers thread titles and projects.")
+        } else if self.conn.borrow().is_none() {
+            ("No threads yet", "Pair with a T3 server, or import your Claude Code sessions from the menu.")
+        } else {
+            ("No threads yet", "Start one with Ctrl+N, or import your Claude Code sessions from the menu.")
+        };
+        let (t, h) = skeleton::empty_labels(&self.side_empty);
+        t.set_text(title);
+        h.set_text(hint);
+        self.side_placeholder.set_visible_child_name(if loading && !searching { "skeleton" } else { "empty" });
     }
 
     pub fn show_page(&self, name: &str) {
@@ -1375,6 +1435,9 @@ impl App {
                 self.pair_status.set_text(&text);
                 self.show_page("pair");
                 self.rebuild_list();
+                if !matches!(&e, WsError::Refused { .. }) {
+                    self.toast_retry("Could not reach the server.", Rc::new(|a| a.connect_stored()));
+                }
                 return;
             }
         };
@@ -1806,6 +1869,7 @@ impl App {
             None => self.list.unselect_all(),
         }
         self.syncing.set(false);
+        self.update_side_placeholder(searching);
         // CLAUDE_PANTHEON_OPEN=<thread or session id> opens that chat as soon as its row exists (benchmarks).
         if !self.auto_opened.get()
             && let Ok(id) = std::env::var("CLAUDE_PANTHEON_OPEN")
@@ -2097,8 +2161,19 @@ impl App {
             app.loading.set(false);
             match loaded {
                 Ok(Ok(t)) => app.show_transcript(Rc::new(t)),
-                Ok(Err(e)) => app.toast(&format!("Could not read the chat: {e}")),
-                Err(_) => app.toast("Could not read the chat"),
+                Ok(Err(e)) => {
+                    let s = session.clone();
+                    app.show_page("empty");
+                    app.toast_retry(
+                        &format!("Could not read the chat: {e}"),
+                        Rc::new(move |a| a.open_session(s.clone())),
+                    );
+                }
+                Err(_) => {
+                    let s = session.clone();
+                    app.show_page("empty");
+                    app.toast_retry("Could not read the chat", Rc::new(move |a| a.open_session(s.clone())));
+                }
             }
         });
     }
@@ -2230,7 +2305,11 @@ impl App {
                 match item {
                     Ok(v) => app.thread_event(&v),
                     Err(e) => {
-                        app.toast(&format!("Thread stream ended: {e}"));
+                        let t = thread.clone();
+                        app.toast_retry(
+                            &format!("Thread stream ended: {e}"),
+                            Rc::new(move |a| a.open_thread(t.clone())),
+                        );
                         break;
                     }
                 }
