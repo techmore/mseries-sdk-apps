@@ -5,11 +5,13 @@
 pub mod app;
 pub mod chat;
 pub mod claude_cli;
+pub mod composer;
 pub mod diagnostics;
 pub mod handoff;
 pub mod index;
 pub mod look;
 pub mod markdown;
+pub mod palette;
 pub mod probe;
 pub mod repos;
 pub mod status;
