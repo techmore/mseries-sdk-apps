@@ -504,6 +504,8 @@ impl App {
         let send_button = gtk::Button::with_label("Send");
         send_button.add_css_class("suggested-action");
         send_button.set_sensitive(false);
+        send_button.set_tooltip_text(Some("Send message (Ctrl+Enter)"));
+        mseries_pantheon_kit::set_accessible_label(&send_button, "Send message");
         let compose = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         mseries_pantheon_kit::set_box_spacing_text_units(&compose, 0.5);
         mseries_pantheon_kit::set_margins_text_units(&compose, 0.65, 0.75, 0.65, 0.75);
@@ -671,6 +673,24 @@ impl App {
             }
         });
         self.window.add_controller(keys);
+
+        let composer_keys = gtk::EventControllerKey::new();
+        composer_keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+        let weak = Rc::downgrade(self);
+        composer_keys.connect_key_pressed(move |_, key, _, state| {
+            let is_send_shortcut = state.contains(gtk::gdk::ModifierType::CONTROL_MASK)
+                && matches!(key, gtk::gdk::Key::Return | gtk::gdk::Key::KP_Enter);
+            if !is_send_shortcut {
+                return glib::Propagation::Proceed;
+            }
+            if let Some(app) = weak.upgrade()
+                && app.send_button.is_sensitive()
+            {
+                app.send_current();
+            }
+            glib::Propagation::Stop
+        });
+        self.editor.add_controller(composer_keys);
 
         let weak = Rc::downgrade(self);
         self.search.connect_search_changed(move |_| {

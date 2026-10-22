@@ -52,8 +52,9 @@ public addresses, limit response bytes, dimensions, animation frames and
 in-memory cache, and never save previews to disk or retrieve MAP attachments.
 
 The main window now supports Ctrl+F to focus conversation search, Ctrl+R to
-refresh, Ctrl+N to start a message, and Escape to clear a focused search or
-return from a selected conversation to the compact conversation list. Search,
+refresh, Ctrl+N to start a message, and Ctrl+Enter in the composer to send while
+plain Enter inserts a newline. Escape clears a focused search or returns from a
+selected conversation to the compact conversation list. Search,
 conversation list, favorite control and composer expose accessible names
 through the SDK. The conversation header can explicitly copy its recipient
 addresses to the clipboard. Conversation rows also provide right-click and
