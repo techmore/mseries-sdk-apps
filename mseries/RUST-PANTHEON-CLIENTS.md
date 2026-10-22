@@ -1,3 +1,25 @@
+## Messages long-content layout correction — 2026-10-22
+
+Long/unbroken message text initially expanded the compact fixture to 2308 pixels
+and clipped regular content. Message labels now wrap by word or character. The
+updated real GTK regression renders long names, multiline text, accented text and
+unbroken tokens, asserts compact window width <=520 and editor horizontal bounds,
+and settles layout even when PNG capture is disabled. Light/dark captures in
+/tmp/messages-long-{light,dark}-fixed were inspected: text wraps, title ellipsizes,
+and composer/actions remain visible. The fixture and strict Messages Clippy pass.
+This batch also adds the explicit acceptance ledger; live/assistive-technology
+acceptance remains open. Unrelated updater edits are preserved.
+
+## Native-client acceptance ledger — 2026-10-22
+
+See NATIVE-CLIENT-ACCEPTANCE.md for explicit remaining gates instead of subjective
+completion percentages. The private Messages GTK test passes under elementary
+blueberry light and dark themes; regular/compact captures were inspected at
+/tmp/messages-review-light and /tmp/messages-review-dark. The short synthetic
+conversation and composer are unclipped/readable in these four captures; long
+content, broader state coverage and assistive technology remain open. This
+local evidence batch is retained without another CI-cancelling push.
+
 ## Screenshot release package ready; privileged install blocked — 2026-10-22
 
 Built build/screenshot-native-release/pantheon-rust-compositor_0.1.0+git0de7b82e_arm64.deb.

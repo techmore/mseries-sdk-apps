@@ -2483,6 +2483,7 @@ impl App {
                         .label(&visible_body)
                         .xalign(0.0)
                         .wrap(true)
+                        .wrap_mode(gtk::pango::WrapMode::WordChar)
                         .selectable(true)
                         .max_width_chars(72)
                         .build();
@@ -3894,16 +3895,16 @@ mod tests {
             );
         };
         let capture = |name: &str| {
-            let Ok(directory) = std::env::var("MSERIES_MESSAGES_GUI_CAPTURE_DIR") else {
-                return;
-            };
-            std::fs::create_dir_all(&directory).unwrap();
             app.window.queue_draw();
             let until = std::time::Instant::now() + std::time::Duration::from_millis(100);
             while std::time::Instant::now() < until {
                 gtk::glib::MainContext::default().iteration(false);
                 std::thread::sleep(std::time::Duration::from_millis(2));
             }
+            let Ok(directory) = std::env::var("MSERIES_MESSAGES_GUI_CAPTURE_DIR") else {
+                return;
+            };
+            std::fs::create_dir_all(&directory).unwrap();
             let snapshot = gtk::Snapshot::new();
             let paintable = gtk::WidgetPaintable::new(Some(&app.window));
             paintable.snapshot(
@@ -3926,11 +3927,49 @@ mod tests {
         assert!(app.detail.is_visible());
         assert!(app.back_button.is_visible());
         capture("compact");
+        let original_thread = app
+            .state
+            .borrow()
+            .threads
+            .iter()
+            .find(|thread| thread.key == "shared-key")
+            .unwrap()
+            .clone();
+        let mut long_thread = original_thread.clone();
+        long_thread.name =
+            "A long synthetic conversation name with several participants — ".repeat(5);
+        long_thread.messages[0].body = format!(
+            "{}\n{}",
+            "Readable long message text with accents café résumé. ".repeat(15),
+            "unbroken".repeat(40)
+        );
+        long_thread.messages.push(super::Message {
+            body: "Outgoing multiline draft fixture\nA second line\nA third line".into(),
+            outgoing: true,
+            read: true,
+            ..Default::default()
+        });
+        app.render_conversation(Some(long_thread));
+        resize("520");
+        wait_for_layout(true);
+        capture("compact-long");
+        assert!(
+            app.window.width() <= 520,
+            "long message expanded compact window to {}",
+            app.window.width()
+        );
+        let editor_bounds = app.editor.compute_bounds(&app.window).unwrap();
+        assert!(
+            editor_bounds.x() >= 0.0
+                && editor_bounds.x() + editor_bounds.width() <= app.window.width() as f32
+        );
         resize("1040");
         wait_for_layout(false);
         assert!(app.sidebar.is_visible());
         assert!(app.detail.is_visible());
         assert!(!app.back_button.is_visible());
+        capture("regular-long");
+        app.render_conversation(Some(original_thread));
         let settings = gtk::Settings::default().unwrap();
         let original_font = settings.property::<String>("gtk-font-name");
         let normal_text_unit = mseries_pantheon_kit::text_unit(&app.window, 1.0);
