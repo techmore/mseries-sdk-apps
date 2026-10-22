@@ -1,11 +1,17 @@
+use crate::media::{self, LinkPreview, PreviewKind};
 use granite::prelude::PlaceholderExt;
 use gtk::{gio, glib, prelude::*};
 use mseries_pantheon_kit::{
     BlueFerryMessagesClient as Backend, BlueFerryStatus, ContactMatch, Message, Thread,
 };
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::{Rc, Weak};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
 #[derive(Default)]
 struct State {
@@ -14,6 +20,294 @@ struct State {
     drafts: HashMap<String, String>,
     pending: Vec<String>,
     map_ready: bool,
+}
+
+struct RenderedFrame {
+    texture: gtk::gdk::MemoryTexture,
+    delay: Duration,
+}
+
+struct RenderedPreview {
+    title: String,
+    kind: PreviewKind,
+    source_size: (u32, u32),
+    size: (u32, u32),
+    frames: Vec<RenderedFrame>,
+}
+
+impl RenderedPreview {
+    fn new(preview: LinkPreview) -> Rc<Self> {
+        let (width, height) = preview.size;
+        let frames = preview
+            .frames
+            .into_iter()
+            .map(|frame| RenderedFrame {
+                texture: gtk::gdk::MemoryTexture::new(
+                    width as i32,
+                    height as i32,
+                    gtk::gdk::MemoryFormat::R8g8b8a8,
+                    &glib::Bytes::from_owned(frame.rgba),
+                    width as usize * 4,
+                ),
+                delay: frame.delay,
+            })
+            .collect();
+        Rc::new(Self {
+            title: preview.title,
+            kind: preview.kind,
+            source_size: preview.source_size,
+            size: preview.size,
+            frames,
+        })
+    }
+
+    fn memory_bytes(&self) -> usize {
+        self.frames
+            .len()
+            .saturating_mul(self.size.0 as usize)
+            .saturating_mul(self.size.1 as usize)
+            .saturating_mul(4)
+    }
+}
+
+#[derive(Clone)]
+struct MediaCard {
+    root: gtk::Box,
+    status: gtk::Label,
+    load: gtk::Button,
+    original: gtk::LinkButton,
+    content: gtk::Box,
+}
+
+impl MediaCard {
+    fn new(url: &str, outgoing: bool) -> Self {
+        let youtube = media::is_youtube_url(url);
+        let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        root.add_css_class("card");
+        root.add_css_class("pantheon-surface");
+        root.add_css_class("pantheon-link-preview");
+        root.set_halign(if outgoing {
+            gtk::Align::End
+        } else {
+            gtk::Align::Start
+        });
+        let status = gtk::Label::builder()
+            .label(if youtube { "YouTube" } else { "Image" })
+            .xalign(0.0)
+            .wrap(true)
+            .max_width_chars(36)
+            .build();
+        status.add_css_class("dim-label");
+        let load = gtk::Button::with_label("Load Preview");
+        load.set_halign(gtk::Align::Start);
+        mseries_pantheon_kit::set_accessible_label(&load, "Load link preview");
+        let original = gtk::LinkButton::with_label(
+            url,
+            if youtube {
+                "Open YouTube"
+            } else {
+                "Open Image"
+            },
+        );
+        mseries_pantheon_kit::set_accessible_label(
+            &original,
+            if youtube {
+                "Open YouTube link"
+            } else {
+                "Open image link"
+            },
+        );
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        root.append(&status);
+        root.append(&load);
+        root.append(&original);
+        Self {
+            root,
+            status,
+            load,
+            original,
+            content,
+        }
+    }
+
+    fn show_error(&self) {
+        if self.root.root().is_none() {
+            return;
+        }
+        self.status
+            .set_text("Preview unavailable · open the link to view it.");
+        self.status.add_css_class("dim-label");
+        self.load.set_sensitive(true);
+    }
+
+    fn show_preview(&self, preview: Rc<RenderedPreview>) {
+        if self.root.root().is_none() {
+            return;
+        }
+        while let Some(child) = self.content.first_child() {
+            self.content.remove(&child);
+        }
+        self.status.set_visible(false);
+        self.load.set_visible(false);
+        let (width, height) = preview.size;
+        let picture = gtk::Picture::builder()
+            .can_shrink(true)
+            .content_fit(gtk::ContentFit::Contain)
+            .build();
+        picture.set_size_request(width as i32, height as i32);
+        picture.set_paintable(preview.frames.first().map(|frame| &frame.texture));
+        mseries_pantheon_kit::set_accessible_label(&picture, &preview.title);
+        self.content.append(&picture);
+        let title = gtk::Label::builder()
+            .label(&preview.title)
+            .xalign(0.0)
+            .wrap(true)
+            .max_width_chars(36)
+            .build();
+        title.add_css_class("heading");
+        self.content.append(&title);
+        let (source_width, source_height) = preview.source_size;
+        let dimensions = if preview.frames.len() > 1 {
+            format!(
+                "{source_width} × {source_height} · {} frames",
+                preview.frames.len()
+            )
+        } else {
+            format!("{source_width} × {source_height}")
+        };
+        let dimensions = gtk::Label::builder().label(&dimensions).xalign(0.0).build();
+        dimensions.add_css_class("caption");
+        dimensions.add_css_class("dim-label");
+        self.content.append(&dimensions);
+        self.original
+            .set_label(if preview.kind == PreviewKind::Youtube {
+                "Watch on YouTube"
+            } else {
+                "Open Original"
+            });
+        mseries_pantheon_kit::set_accessible_label(
+            &self.original,
+            if preview.kind == PreviewKind::Youtube {
+                "Watch video on YouTube"
+            } else {
+                "Open original image"
+            },
+        );
+        self.root.remove(&self.original);
+        self.root.append(&self.content);
+        self.root.append(&self.original);
+        if preview.frames.len() > 1
+            && gtk::Settings::default()
+                .is_some_and(|settings| settings.property::<bool>("gtk-enable-animations"))
+        {
+            let first_delay = preview.frames[0].delay;
+            schedule_preview_animation(picture, preview, 0, first_delay);
+        }
+    }
+}
+
+fn schedule_preview_animation(
+    picture: gtk::Picture,
+    preview: Rc<RenderedPreview>,
+    index: usize,
+    delay: Duration,
+) {
+    glib::timeout_add_local_once(delay, move || {
+        if picture.root().is_none() || preview.frames.is_empty() {
+            return;
+        }
+        let mapped = picture.is_mapped();
+        let next = if mapped {
+            (index + 1) % preview.frames.len()
+        } else {
+            index
+        };
+        if mapped {
+            picture.set_paintable(Some(&preview.frames[next].texture));
+        }
+        let next_delay = if mapped {
+            preview.frames[next].delay
+        } else {
+            Duration::from_millis(500)
+        };
+        schedule_preview_animation(picture, preview, next, next_delay);
+    });
+}
+
+struct MediaState {
+    jobs: Option<Sender<String>>,
+    results: Receiver<(String, Result<LinkPreview, String>)>,
+    pending: HashMap<String, Vec<MediaCard>>,
+    cache: VecDeque<(String, Rc<RenderedPreview>)>,
+    result_poll: Option<glib::SourceId>,
+    cancelled: Arc<AtomicBool>,
+}
+
+impl MediaState {
+    fn new() -> Self {
+        let (job_sender, job_receiver) = mpsc::channel::<String>();
+        let (result_sender, result_receiver) = mpsc::channel();
+        let job_receiver = Arc::new(Mutex::new(job_receiver));
+        let cancelled = Arc::new(AtomicBool::new(false));
+        for _ in 0..2 {
+            let jobs = Arc::clone(&job_receiver);
+            let results = result_sender.clone();
+            let cancelled = Arc::clone(&cancelled);
+            thread::Builder::new()
+                .name("mseries-message-preview".into())
+                .spawn(move || {
+                    loop {
+                        let job = match jobs
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .recv()
+                        {
+                            Ok(job) => job,
+                            Err(_) => break,
+                        };
+                        if cancelled.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        let result = media::load_preview(&job);
+                        if results.send((job, result)).is_err() {
+                            break;
+                        }
+                    }
+                })
+                .expect("could not start Messages preview worker");
+        }
+        Self {
+            jobs: Some(job_sender),
+            results: result_receiver,
+            pending: HashMap::new(),
+            cache: VecDeque::new(),
+            result_poll: None,
+            cancelled,
+        }
+    }
+
+    fn take_cached(&mut self, url: &str) -> Option<Rc<RenderedPreview>> {
+        let index = self.cache.iter().position(|(cached, _)| cached == url)?;
+        let entry = self.cache.remove(index)?;
+        let preview = Rc::clone(&entry.1);
+        self.cache.push_back(entry);
+        Some(preview)
+    }
+
+    fn cache(&mut self, url: String, preview: Rc<RenderedPreview>) {
+        self.cache.retain(|(cached, _)| cached != &url);
+        self.cache.push_back((url, preview));
+        while self.cache.len() > 8
+            || self
+                .cache
+                .iter()
+                .map(|(_, item)| item.memory_bytes())
+                .sum::<usize>()
+                > 24 * 1024 * 1024
+        {
+            self.cache.pop_front();
+        }
+    }
 }
 
 pub struct App {
@@ -43,6 +337,7 @@ pub struct App {
     star_button: gtk::ToggleButton,
     syncing_star: Cell<bool>,
     state: RefCell<State>,
+    media: RefCell<MediaState>,
 }
 
 impl App {
@@ -243,6 +538,7 @@ impl App {
             star_button,
             syncing_star: Cell::new(false),
             state: RefCell::new(State::default()),
+            media: RefCell::new(MediaState::new()),
         });
         app.connect_signals(&refresh, &new_message);
         app.connect_responsive_layout();
@@ -253,6 +549,14 @@ impl App {
     }
 
     fn connect_signals(self: &Rc<Self>, refresh: &gtk::Button, new_message: &gtk::Button) {
+        let weak = Rc::downgrade(self);
+        self.window.connect_close_request(move |_| {
+            if let Some(app) = weak.upgrade() {
+                app.stop_media_workers();
+            }
+            glib::Propagation::Proceed
+        });
+
         let weak = Rc::downgrade(self);
         refresh.connect_clicked(move |_| {
             if let Some(app) = weak.upgrade() {
@@ -796,6 +1100,7 @@ impl App {
                     gtk::Align::Start
                 });
                 let visible_body = message.visible_body();
+                let mut media_cards = Vec::new();
                 if !visible_body.is_empty() {
                     let text = gtk::Label::builder()
                         .label(&visible_body)
@@ -828,6 +1133,10 @@ impl App {
                         "Attachment. Open Messages on your iPhone to view it.",
                     );
                     bubble.append(&attachment);
+                }
+                for url in media::media_links(&visible_body) {
+                    let card = MediaCard::new(&url, message.outgoing);
+                    media_cards.push((url, card));
                 }
                 let (reaction_symbols, reaction_description) = message.reaction_summary();
                 if !reaction_symbols.is_empty() {
@@ -865,6 +1174,10 @@ impl App {
                 }
                 self.attach_message_actions(&bubble, message, thread.is_group);
                 self.messages.append(&bubble);
+                for (url, card) in media_cards {
+                    self.messages.append(&card.root);
+                    self.request_media_preview(url, card, message.outgoing);
+                }
             }
             let permitted = thread.local_only
                 || (thread.reply_ready && !thread.participants_required && !thread.roster_changed);
@@ -898,6 +1211,127 @@ impl App {
             empty.set_icon(&gio::ThemedIcon::new("mail-message-new"));
             self.messages.append(&empty);
         }
+    }
+
+    fn request_media_preview(self: &Rc<Self>, url: String, card: MediaCard, automatic: bool) {
+        if let Some(preview) = self.media.borrow_mut().take_cached(&url) {
+            card.show_preview(preview);
+            return;
+        }
+
+        if let Some(cards) = self.media.borrow_mut().pending.get_mut(&url) {
+            card.load.set_sensitive(false);
+            cards.push(card);
+            return;
+        }
+
+        let weak = Rc::downgrade(self);
+        let requested_url = url.clone();
+        let requested_card = card.clone();
+        card.load.connect_clicked(move |_| {
+            if let Some(app) = weak.upgrade() {
+                app.start_media_preview(requested_url.clone(), requested_card.clone());
+            }
+        });
+        if automatic {
+            self.start_media_preview(url, card);
+        }
+    }
+
+    fn start_media_preview(self: &Rc<Self>, url: String, card: MediaCard) {
+        if let Some(preview) = self.media.borrow_mut().take_cached(&url) {
+            card.show_preview(preview);
+            return;
+        }
+        let mut media = self.media.borrow_mut();
+        if let Some(cards) = media.pending.get_mut(&url) {
+            card.load.set_sensitive(false);
+            cards.push(card);
+            return;
+        }
+        if media.pending.len() >= 6 {
+            card.status
+                .set_text("Other previews are loading. Try again shortly.");
+            return;
+        }
+        card.load.set_sensitive(false);
+        card.status.set_text("Loading preview…");
+        media.pending.insert(url.clone(), vec![card.clone()]);
+        let submitted = media
+            .jobs
+            .as_ref()
+            .is_some_and(|jobs| jobs.send(url.clone()).is_ok());
+        if !submitted {
+            media.pending.remove(&url);
+            drop(media);
+            card.show_error();
+            return;
+        }
+        drop(media);
+        self.ensure_media_poll();
+    }
+
+    fn ensure_media_poll(self: &Rc<Self>) {
+        if self.media.borrow().result_poll.is_some() {
+            return;
+        }
+        let weak = Rc::downgrade(self);
+        let source = glib::timeout_add_local(Duration::from_millis(100), move || {
+            let Some(app) = weak.upgrade() else {
+                return glib::ControlFlow::Break;
+            };
+            app.drain_media_results();
+            let mut media = app.media.borrow_mut();
+            if media.pending.is_empty() {
+                media.result_poll.take();
+                glib::ControlFlow::Break
+            } else {
+                glib::ControlFlow::Continue
+            }
+        });
+        self.media.borrow_mut().result_poll = Some(source);
+    }
+
+    fn drain_media_results(&self) {
+        let mut ready = Vec::new();
+        {
+            let media = self.media.borrow();
+            while let Ok(result) = media.results.try_recv() {
+                ready.push(result);
+            }
+        }
+        for (url, result) in ready {
+            let cards = self
+                .media
+                .borrow_mut()
+                .pending
+                .remove(&url)
+                .unwrap_or_default();
+            if let Ok(preview) = result {
+                let preview = RenderedPreview::new(preview);
+                self.media
+                    .borrow_mut()
+                    .cache(url.clone(), Rc::clone(&preview));
+                for card in cards {
+                    card.show_preview(Rc::clone(&preview));
+                }
+            } else {
+                for card in cards {
+                    card.show_error();
+                }
+            }
+        }
+    }
+
+    fn stop_media_workers(&self) {
+        let mut media = self.media.borrow_mut();
+        if let Some(source) = media.result_poll.take() {
+            source.remove();
+        }
+        media.cancelled.store(true, Ordering::Relaxed);
+        media.pending.clear();
+        media.cache.clear();
+        media.jobs.take();
     }
 
     fn attach_message_actions(

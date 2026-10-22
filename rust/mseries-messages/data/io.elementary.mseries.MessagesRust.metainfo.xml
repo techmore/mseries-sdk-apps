@@ -7,7 +7,7 @@
   <summary>Native Pantheon conversation client for BlueFerry</summary>
   <description>
     <p>A Rust, GTK 4 and Granite client for the existing BlueFerry Messages API. BlueFerry remains responsible for the iPhone MAP session, recipient validation and encrypted history.</p>
-    <p>This preview includes conversation search, message history, local drafts, favorites, read state, checked replies and explicit group participant confirmation. It is not yet a feature-parity replacement for the current Messages app.</p>
+    <p>This preview includes conversation search, message history, local drafts, favorites, read state, checked replies, explicit group participant confirmation, and bounded HTTPS image, GIF, and YouTube link previews. It is not yet a feature-parity replacement for the current Messages app.</p>
   </description>
   <developer id="io.elementary.mseries">
     <name>elementary OS M-Series</name>

@@ -92,6 +92,11 @@ existing opt-in unchanged. A Rust import of Apple pin snapshots also needs
 BlueFerry to publish a stable, opaque per-phone profile identifier through its
 supported status contract so the SDK can scope the Secret Service item. The
 Rust app must not read BlueFerry's private configuration to derive that key.
+The Rust Messages preview now includes bounded public HTTPS image, GIF, and
+YouTube previews. Incoming links require an explicit load; sent links can load
+automatically. Downloads are DNS-pinned to validated public addresses, limited
+in bytes, dimensions, frames and in-memory cache, and never write to disk or
+fetch MAP attachments.
 Likewise, the compositor owns frame and client counters; its future read-only
 metrics protocol belongs to the OS, with a typed SDK adapter for System
 Monitor. This keeps CPU/memory polling and compositor telemetry on one
