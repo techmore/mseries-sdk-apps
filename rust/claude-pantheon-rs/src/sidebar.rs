@@ -126,7 +126,7 @@ pub fn thread_row(t: &ThreadShell, title: &str, accent: &str, now: i64) -> gtk::
         b.set_tooltip_text(Some("Needs your answer"));
         head.append(&b);
     } else if is_unread(t) {
-        let b = label("", &["sb-unread"]);
+        let b = dot("#3689e6");
         b.set_tooltip_text(Some("New activity"));
         head.append(&b);
     }

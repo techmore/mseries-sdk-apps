@@ -48,6 +48,15 @@ The same actions sit in the app menu (header bar, right) with their accelerator 
 and Issues, Changes, Diagnostics, Import Sessions, Hand Off to Repo, Open Offline Twin, Reconnect,
 Forget Pairing and About (version, server, providers ready).
 
+## Sidebar
+
+Threads sit under their project with the provider's accent dot, a spinner while a turn runs, a
+"?" badge when a prompt waits and a blue dot for activity since the last visit (the server's
+`lastVisitedAt`; opening a thread records a visit). Pinned threads lead their section. Right-click or
+long-press a thread for Pin, Rename, Hand Off to Repo, Copy Link (a `claude-pantheon-rs --thread <id>`
+command) and Archive. Section headers collapse on click and project headers can be dragged into the
+order you want; both persist in `~/.config/claude-pantheon-rs/sidebar.json`.
+
 ## Composer
 
 The message box grows to eight lines and then scrolls. Paste or drop images and files to attach
