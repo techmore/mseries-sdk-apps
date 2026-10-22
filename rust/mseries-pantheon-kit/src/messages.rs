@@ -71,6 +71,14 @@ impl Thread {
     /// Folds the plain-text Tapbacks exposed by BlueFerry onto the messages
     /// they quote. Unknown or ambiguous targets remain visible as messages.
     pub fn fold_reactions(&mut self) {
+        // The Tapback event disappears from the rendered list when it folds;
+        // retain its incoming unread state for the conversation indicator.
+        self.unread_count = self.unread_count.max(
+            self.messages
+                .iter()
+                .filter(|message| !message.outgoing && !message.read)
+                .count(),
+        );
         let mut folded: Vec<Message> = Vec::with_capacity(self.messages.len());
         for message in std::mem::take(&mut self.messages) {
             let Some(parsed) = parse_tapback(&message.body) else {
