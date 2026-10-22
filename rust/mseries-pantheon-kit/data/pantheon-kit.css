@@ -26,3 +26,8 @@
 .pantheon-caption {
     font-size: 0.9em;
 }
+
+.pantheon-avatar {
+    border-radius: 50%;
+    overflow: hidden;
+}

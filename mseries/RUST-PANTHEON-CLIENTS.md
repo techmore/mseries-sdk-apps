@@ -14,9 +14,10 @@ The broader SDK design and app-by-app port inventory are in
 
 ## Messages
 
-`rust/mseries-messages` is the native client prototype. It talks to BlueFerry's
-versioned session D-Bus `Messages1` API (currently API v2) for status, history,
-favorites, read state and checked sends. BlueFerry remains the only owner of the
+`rust/mseries-messages` is the native client prototype. It uses the shared SDK's
+typed BlueFerry client for the versioned session D-Bus `Messages1` API
+(currently API v2) for status, history, favorites, read state and checked
+sends. BlueFerry remains the only owner of the
 iPhone MAP session, recipient/group validation and encrypted message history.
 The Rust client never opens BlueFerry's private database or starts a competing
 MAP connection.
@@ -31,13 +32,17 @@ the phone. The Rust app also has a new-message picker that searches contacts
 through BlueFerry's supported `FindContacts` API, validates direct phone/email
 destinations, and sends through BlueFerry's supported `Send` method. New
 conversations stay local to the app until BlueFerry reports the resulting
-thread. It installs beside the existing
+thread. When BlueFerry's existing contact-photo opt-in is enabled, it requests
+photos through the supported `GetContactPhoto` method, validates bounded JPEG/PNG
+headers in the shared SDK, decodes small in-memory avatars, and drops its cache
+when the service photo revision changes. It never enables the preference or
+writes photos to disk. It installs beside the existing
 Python GTK/Granite Messages app. The Python app remains the qualified client
 until the Rust app reaches feature and accessibility parity and passes the
 owner's live phone acceptance.
 
-Parity work still includes imported iPhone pins, contact photos, bounded
-link/image previews, Tapback/reaction folding, detailed
+Parity work still includes imported iPhone pins, bounded link/image previews,
+Tapback/reaction folding, detailed
 delivery and retry feedback, additional message actions, accessibility,
 keyboard and narrow-window behavior, localization, package/launcher handoff,
 and fixture plus private GUI and owner-phone qualification. Those are migration gates, not

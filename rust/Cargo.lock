@@ -1613,8 +1613,6 @@ dependencies = [
  "gtk4",
  "mseries-pantheon-kit",
  "percent-encoding",
- "serde",
- "serde_json",
  "url",
 ]
 
@@ -1622,8 +1620,12 @@ dependencies = [
 name = "mseries-pantheon-kit"
 version = "0.1.0"
 dependencies = [
+ "gdk-pixbuf",
+ "gio",
  "granite-rs",
  "gtk4",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -1,9 +1,10 @@
-use crate::backend::Backend;
-use crate::model::{ContactMatch, Message, Thread};
 use granite::prelude::PlaceholderExt;
 use gtk::{gio, glib, prelude::*};
+use mseries_pantheon_kit::{
+    BlueFerryMessagesClient as Backend, BlueFerryStatus, ContactMatch, Message, Thread,
+};
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
 
 #[derive(Default)]
@@ -26,6 +27,10 @@ pub struct App {
     favorites_section: gtk::Box,
     favorites_strip: gtk::Box,
     favorite_buttons: RefCell<HashMap<String, gtk::ToggleButton>>,
+    contact_photos: RefCell<HashMap<String, Option<mseries_pantheon_kit::gtk::gdk_pixbuf::Pixbuf>>>,
+    requested_contact_photos: RefCell<HashSet<String>>,
+    contact_photo_revision: RefCell<Option<(bool, Option<u64>)>>,
+    contact_photo_generation: Cell<u64>,
     sidebar: gtk::Box,
     detail: gtk::Box,
     pane: gtk::Paned,
@@ -222,6 +227,10 @@ impl App {
             favorites_section,
             favorites_strip,
             favorite_buttons: RefCell::new(HashMap::new()),
+            contact_photos: RefCell::new(HashMap::new()),
+            requested_contact_photos: RefCell::new(HashSet::new()),
+            contact_photo_revision: RefCell::new(None),
+            contact_photo_generation: Cell::new(0),
             sidebar,
             detail,
             pane,
@@ -381,14 +390,9 @@ impl App {
             if let Some(app) = weak.upgrade() {
                 match outcome {
                     Ok((status, threads)) => {
-                        let ready = status
-                            .get("map")
-                            .and_then(serde_json::Value::as_bool)
-                            .unwrap_or(false);
-                        let detail = status
-                            .get("connectivity_detail")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or("");
+                        app.update_contact_photo_revision(&status);
+                        let ready = status.map;
+                        let detail = status.connectivity_detail.as_deref().unwrap_or("");
                         app.status.set_text(if ready {
                             "Connected to BlueFerry · iPhone Messages available"
                         } else if detail.is_empty() {
@@ -437,6 +441,7 @@ impl App {
                         state.threads = server_threads;
                         drop(state);
                         app.rebuild_sidebar();
+                        app.load_contact_photos();
                     }
                     Err(error) => {
                         app.state.borrow_mut().map_ready = false;
@@ -511,7 +516,13 @@ impl App {
             meta.add_css_class("caption");
             meta.add_css_class("dim-label");
             copy.append(&meta);
-            row.set_child(Some(&copy));
+            let content = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+            content.set_valign(gtk::Align::Center);
+            content.append(
+                &self.avatar_for_thread(thread, mseries_pantheon_kit::text_unit(&self.list, 2.8)),
+            );
+            content.append(&copy);
+            row.set_child(Some(&content));
             if selected.as_deref() == Some(thread.key.as_str()) {
                 selected_index = Some(order.len() as i32);
             }
@@ -555,8 +566,8 @@ impl App {
             let tile = gtk::Box::new(gtk::Orientation::Vertical, 3);
             mseries_pantheon_kit::set_box_spacing_text_units(&tile, 0.2);
             mseries_pantheon_kit::set_margins_text_units(&tile, 0.25, 0.35, 0.25, 0.35);
-            let avatar = gtk::Image::from_icon_name("avatar-default-symbolic");
-            avatar.set_pixel_size(mseries_pantheon_kit::text_unit(&tile, 2.0));
+            let avatar =
+                self.avatar_for_thread(thread, mseries_pantheon_kit::text_unit(&tile, 2.8));
             tile.append(&avatar);
             let name = gtk::Label::builder()
                 .label(&thread.name)
@@ -586,6 +597,122 @@ impl App {
                 .insert(thread.key.clone(), button);
         }
         self.favorites_section.set_visible(!favorites.is_empty());
+    }
+
+    fn avatar_for_thread(&self, thread: &Thread, size: i32) -> gtk::Widget {
+        let pixbuf = if thread.is_group {
+            None
+        } else {
+            thread
+                .recipients
+                .first()
+                .and_then(|address| self.contact_photos.borrow().get(address).cloned().flatten())
+        };
+        let picture = if let Some(pixbuf) = pixbuf {
+            let scaled = pixbuf
+                .scale_simple(size, size, gtk::gdk_pixbuf::InterpType::Bilinear)
+                .unwrap_or(pixbuf);
+            let pixels = scaled.read_pixel_bytes();
+            let format = if scaled.has_alpha() {
+                gtk::gdk::MemoryFormat::R8g8b8a8
+            } else {
+                gtk::gdk::MemoryFormat::R8g8b8
+            };
+            let texture = gtk::gdk::MemoryTexture::new(
+                scaled.width(),
+                scaled.height(),
+                format,
+                &pixels,
+                scaled.rowstride() as usize,
+            );
+            gtk::Image::from_paintable(Some(&texture))
+        } else {
+            let icon = gtk::Image::from_icon_name(if thread.is_group {
+                "system-users-symbolic"
+            } else {
+                "avatar-default-symbolic"
+            });
+            icon.set_pixel_size(size);
+            icon.set_size_request(size, size);
+            icon.add_css_class("pantheon-avatar");
+            return icon.upcast();
+        };
+        picture.set_size_request(size, size);
+        picture.add_css_class("pantheon-avatar");
+        picture.upcast()
+    }
+
+    fn update_contact_photo_revision(&self, status: &BlueFerryStatus) {
+        let enabled = status.contact_photos;
+        let revision = status.contact_photo_revision;
+        let next = (enabled, revision);
+        if self.contact_photo_revision.borrow().as_ref() == Some(&next) {
+            return;
+        }
+        *self.contact_photo_revision.borrow_mut() = Some(next);
+        self.contact_photo_generation
+            .set(self.contact_photo_generation.get().wrapping_add(1));
+        self.contact_photos.borrow_mut().clear();
+        self.requested_contact_photos.borrow_mut().clear();
+    }
+
+    fn load_contact_photos(self: &Rc<Self>) {
+        let enabled = self
+            .contact_photo_revision
+            .borrow()
+            .as_ref()
+            .is_some_and(|(enabled, _)| *enabled);
+        if !enabled {
+            return;
+        }
+
+        let addresses = {
+            let state = self.state.borrow();
+            let photos = self.contact_photos.borrow();
+            let mut requested = self.requested_contact_photos.borrow_mut();
+            state
+                .threads
+                .iter()
+                .filter(|thread| !thread.is_group)
+                .take(40)
+                .filter_map(|thread| thread.recipients.first())
+                .filter(|address| !address.is_empty() && !photos.contains_key(*address))
+                .filter(|address| requested.insert((*address).clone()))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        if addresses.is_empty() {
+            return;
+        }
+
+        let generation = self.contact_photo_generation.get();
+        let backend = self.backend.clone();
+        let weak = Rc::downgrade(self);
+        glib::MainContext::default().spawn_local(async move {
+            let mut loaded = HashMap::new();
+            let mut failed = Vec::new();
+            for address in &addresses {
+                match backend.contact_photo(address).await {
+                    Ok(bytes) => {
+                        let pixbuf = mseries_pantheon_kit::decode_contact_avatar(&bytes, 96);
+                        loaded.insert(address.clone(), pixbuf);
+                    }
+                    Err(_) => failed.push(address.clone()),
+                }
+            }
+            let Some(app) = weak.upgrade() else { return };
+            if app.contact_photo_generation.get() != generation {
+                return;
+            }
+            for address in failed {
+                app.requested_contact_photos.borrow_mut().remove(&address);
+            }
+            let changed = loaded.values().any(Option::is_some);
+            app.contact_photos.borrow_mut().extend(loaded);
+            if changed {
+                app.rebuild_sidebar();
+            }
+        });
     }
 
     fn sync_favorite_selection(&self) {

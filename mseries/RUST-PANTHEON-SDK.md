@@ -81,6 +81,13 @@ their service provider and privileged helper stay OS-owned. Keep that contract
 versioned and publish its supported range with the SDK integration; the
 current CLI adapter remains in the app crate and should move behind the SDK
 boundary as the repositories split.
+Messages follows the same boundary for BlueFerry's session D-Bus service: the
+SDK owns the API v2 client and typed status, thread and contact models, while
+BlueFerry remains the only owner of MAP access, message history, recipient
+validation and photo policy. The app does not open BlueFerry's database or
+manage its Bluetooth session. Contact-photo decoding is also shared SDK code;
+it accepts bounded JPEG/PNG headers, scales in memory and leaves the user's
+existing opt-in unchanged.
 Likewise, the compositor owns frame and client counters; its future read-only
 metrics protocol belongs to the OS, with a typed SDK adapter for System
 Monitor. This keeps CPU/memory polling and compositor telemetry on one
