@@ -1,3 +1,11 @@
+## SDK phone identity validation — 2026-10-22
+
+The public status parser now rejects malformed supplied phone UUIDs before any
+app can use them for session/cache keys. Missing IDs remain compatible with
+released BlueFerry. A focused SDK regression checks valid/missing IDs, malformed
+values, API version rejection and omission of invalid identity values from the
+error. The focused test passes; live service acceptance remains open.
+
 ## Messages avatar cache isolation — 2026-10-22
 
 A reported phone change invalidates the stored photo revision before the normal

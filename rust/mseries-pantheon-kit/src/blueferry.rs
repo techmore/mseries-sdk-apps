@@ -30,6 +30,27 @@ pub struct BlueFerryStatus {
     pub phone_profile_id: Option<String>,
 }
 
+fn parse_status(json: &str) -> Result<BlueFerryStatus, String> {
+    let status: BlueFerryStatus = serde_json::from_str(json)
+        .map_err(|error| format!("BlueFerry returned invalid status JSON: {error}"))?;
+    if status.api_version != BLUEFERRY_MESSAGES_API_VERSION {
+        return Err(format!(
+            "This app needs BlueFerry Messages API v{BLUEFERRY_MESSAGES_API_VERSION}."
+        ));
+    }
+    if status
+        .phone_profile_id
+        .as_deref()
+        .is_some_and(|id| !crate::is_valid_phone_profile_id(id))
+    {
+        return Err(
+            "BlueFerry returned an invalid phone identity. Refresh after checking the service."
+                .into(),
+        );
+    }
+    Ok(status)
+}
+
 /// A send failure whose transport outcome can be distinguished from an error
 /// that is known to have prevented the send.
 #[derive(Clone, Debug)]
@@ -113,14 +134,7 @@ impl BlueFerryMessagesClient {
             .child_value(0)
             .get()
             .ok_or_else(|| "BlueFerry returned an invalid status response".to_string())?;
-        let status: BlueFerryStatus = serde_json::from_str(&json)
-            .map_err(|error| format!("BlueFerry returned invalid status JSON: {error}"))?;
-        if status.api_version != BLUEFERRY_MESSAGES_API_VERSION {
-            return Err(format!(
-                "This app needs BlueFerry Messages API v{BLUEFERRY_MESSAGES_API_VERSION}."
-            ));
-        }
-        Ok(status)
+        parse_status(&json)
     }
 
     pub async fn threads(&self) -> Result<Vec<Thread>, String> {
@@ -242,5 +256,26 @@ impl BlueFerryMessagesClient {
             gio::DBusSignalFlags::NONE,
             move |_| changed(),
         )
+    }
+}
+
+#[cfg(test)]
+mod status_tests {
+    #[test]
+    fn optional_phone_identity_is_validated_at_the_sdk_boundary() {
+        assert!(super::parse_status(r#"{"api_version":2}"#).is_ok());
+        assert!(
+            super::parse_status(
+                r#"{"api_version":2,"phone_profile_id":"12345678-1234-4234-8234-123456789abc"}"#
+            )
+            .is_ok()
+        );
+        for id in ["", "phone-A", "../profile", "private invalid identity"] {
+            let json = serde_json::json!({"api_version":2,"phone_profile_id":id}).to_string();
+            let error = super::parse_status(&json).unwrap_err();
+            assert!(error.contains("invalid phone identity"));
+            assert!(!error.contains(id) || id.is_empty());
+        }
+        assert!(super::parse_status(r#"{"api_version":1}"#).is_err());
     }
 }
