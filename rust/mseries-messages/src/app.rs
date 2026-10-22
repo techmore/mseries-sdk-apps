@@ -590,6 +590,12 @@ impl App {
                         .build();
                     text.add_css_class("card");
                     text.add_css_class("pantheon-surface");
+                    let markup = crate::links::linkify_message(&visible_body);
+                    text.set_markup(&markup);
+                    let expected = visible_body.replace("\r\n", "\n").replace('\r', "\n");
+                    if text.text() != expected {
+                        text.set_text(&visible_body);
+                    }
                     bubble.append(&text);
                 }
                 if message.has_attachment() {

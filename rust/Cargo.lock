@@ -1612,8 +1612,10 @@ dependencies = [
  "granite-rs",
  "gtk4",
  "mseries-pantheon-kit",
+ "percent-encoding",
  "serde",
  "serde_json",
+ "url",
 ]
 
 [[package]]
