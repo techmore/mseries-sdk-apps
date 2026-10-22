@@ -1,3 +1,15 @@
+## Screenshot orientation regression fixed — 2026-10-22
+
+An asymmetric Wayland fixture exposed vertically inverted nested captures despite
+valid PNG dimensions. Corrected the mapping.flipped interpretation. A fresh
+capture was visually inspected upright; the harness now decodes pixels with
+system Pillow and asserts substantial red/blue regions with red above blue,
+catching orientation and channel errors. The updated end-to-end test passes;
+receipt /tmp/pantheon-capture-probe.eg5Psc (earlier inverted receipt TgefcJ retained).
+The fixture is synthetic and no live desktop was captured. Requires system
+python3-gi/GTK4/Cairo and python3-pil. Native DRM orientation, multiple outputs,
+selection/+4 and shelf behavior remain unqualified. No compositor installed.
+
 ## Nested full-screen screenshot acceptance — 2026-10-22
 
 `SCREENSHOT_TEST_BIN=/path/to/pantheon-compositor bash
