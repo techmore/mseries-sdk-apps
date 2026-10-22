@@ -169,6 +169,14 @@ rebuilding whole screens for each poll, stop hidden-window polling, and measure
 idle CPU/RSS before claiming a performance win. The SDK must not add a global
 animation, timer, renderer, or font-scale override.
 
+First release-build smoke baseline (2026-10-22): one Messages process on the
+MacBookPro18,3 host after a 10-second warm-up, sampled for 20 seconds in a
+1280×900 Xvfb display with Cairo rendering and an empty private D-Bus service
+directory, reported 0.00% process CPU at `/proc` tick resolution and 146.9 MiB
+median RSS. This is an offline, single-sample baseline only; it does not qualify
+the owner Wayland session, BlueFerry-connected use, other text scales, or compare
+polling on versus off. Repeat those cases before claiming a performance win.
+
 ## Migration inventory
 
 ### Rust Pantheon applications and first-party GTK app candidates
