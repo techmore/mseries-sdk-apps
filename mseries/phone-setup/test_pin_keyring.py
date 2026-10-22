@@ -9,7 +9,7 @@ from test_message_pins import snapshot, threads
 @unittest.skipUnless(os.environ.get('MSERIES_PRIVATE_PIN_TEST') == '1', 'Requires private bus/home')
 class KeyringTests(unittest.TestCase):
     def test_real_secret_service_roundtrip_and_phone_isolation(self):
-        subprocess.run(['gnome-keyring-daemon', '--unlock', '--components=secrets'],
+        subprocess.run(['gnome-keyring-daemon', '--start', '--unlock', '--components=secrets'],
                        input=b'fixture-only-password', check=True, capture_output=True, timeout=10)
         first, second = PinStore('fixture-phone-one'), PinStore('fixture-phone-two')
         self.assertIsNone(first.load()['snapshot'])
