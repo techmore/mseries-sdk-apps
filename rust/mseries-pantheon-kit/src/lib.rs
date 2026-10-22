@@ -35,4 +35,6 @@ pub use phone_pins::{
     is_valid_phone_profile_id, suggested_pin_matches,
 };
 pub use polling::Polling;
-pub use system::{CpuUsage, MemoryUsage, SystemSample, SystemSampler, poll_system_metrics};
+pub use system::{
+    CpuUsage, MemoryUsage, ResumeWatcher, SystemSample, SystemSampler, poll_system_metrics,
+};

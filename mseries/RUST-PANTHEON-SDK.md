@@ -51,6 +51,13 @@ while connecting, hides a zero count, and has no polling timer. Messages uses
 its unread-message total; T3 uses the shared API for its running-thread count
 and progress indicator.
 
+`ResumeWatcher` provides a best-effort, asynchronous logind resume signal for
+apps that need to refresh after sleep without a permanent wake-up timer. Rust
+Messages now combines it with a user-controlled 30-second `Polling` fallback;
+the poller is disabled while the window is unmapped, and duplicate refresh
+requests coalesce into one follow-up so delayed D-Bus replies cannot pile up or
+replace newer history with an older snapshot.
+
 Disk Space now uses the SDK's text-relative spacing and margin helpers for
 persistent layout groups, GTK font-relative CSS padding for repeated rows, and
 SDK accessible names for icon-only actions and its main content lists. Its

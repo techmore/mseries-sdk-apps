@@ -3,8 +3,8 @@ use granite::prelude::PlaceholderExt;
 use gtk::{gio, glib, prelude::*};
 use mseries_pantheon_kit::{
     BlueFerryMessagesClient as Backend, BlueFerryStatus, ContactMatch, DockBadge, ImportedPinState,
-    Message, MessagePosition, PhonePinStore, PinSnapshot, Thread, format_message_timestamp,
-    is_valid_phone_profile_id, layout_messages, suggested_pin_matches,
+    Message, MessagePosition, PhonePinStore, PinSnapshot, Polling, ResumeWatcher, Thread,
+    format_message_timestamp, is_valid_phone_profile_id, layout_messages, suggested_pin_matches,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -16,6 +16,30 @@ use std::thread;
 use std::time::Duration;
 
 const MAX_OUTBOX_MESSAGES: usize = 128;
+
+#[derive(Default)]
+struct RefreshGate {
+    in_flight: Cell<bool>,
+    requested_again: Cell<bool>,
+}
+
+impl RefreshGate {
+    /// Start one refresh, or coalesce another request behind the active one.
+    fn request(&self) -> bool {
+        if self.in_flight.replace(true) {
+            self.requested_again.set(true);
+            false
+        } else {
+            true
+        }
+    }
+
+    /// Finish the current refresh and report whether one follow-up was queued.
+    fn finish(&self) -> bool {
+        self.in_flight.set(false);
+        self.requested_again.replace(false)
+    }
+}
 
 #[derive(Default)]
 struct State {
@@ -343,6 +367,9 @@ pub struct App {
     pin_note: gtk::Label,
     pin_import_button: gtk::Button,
     pin_review_button: gtk::Button,
+    auto_refresh_switch: gtk::Switch,
+    refresh_poller: RefCell<Option<Polling>>,
+    resume_watcher: RefCell<Option<ResumeWatcher>>,
     pin_profile_id: RefCell<Option<String>>,
     pin_state: RefCell<ImportedPinState>,
     pin_load_generation: Cell<u64>,
@@ -369,6 +396,7 @@ pub struct App {
     star_button: gtk::ToggleButton,
     syncing_star: Cell<bool>,
     state: RefCell<State>,
+    refresh_gate: RefreshGate,
     media: RefCell<MediaState>,
 }
 
@@ -429,10 +457,39 @@ impl App {
         pin_review_button.add_css_class("flat");
         mseries_pantheon_kit::set_accessible_label(&pin_review_button, "Review imported pins");
         pin_review_button.set_sensitive(false);
+        let auto_refresh_switch = gtk::Switch::builder()
+            .active(true)
+            .valign(gtk::Align::Center)
+            .build();
+        mseries_pantheon_kit::set_accessible_label(
+            &auto_refresh_switch,
+            "Refresh conversations automatically every 30 seconds",
+        );
+        let refresh_description = gtk::Label::builder()
+            .label("Refresh every 30 seconds while this window is open")
+            .xalign(0.0)
+            .wrap(true)
+            .max_width_chars(34)
+            .build();
+        refresh_description.add_css_class("dim-label");
+        refresh_description.add_css_class("caption");
+        let refresh_label = gtk::Label::builder()
+            .label("Automatic refresh")
+            .xalign(0.0)
+            .build();
+        let refresh_text = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        refresh_text.append(&refresh_label);
+        refresh_text.append(&refresh_description);
+        let refresh_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        refresh_row.set_valign(gtk::Align::Center);
+        refresh_row.append(&refresh_text);
+        refresh_row.append(&auto_refresh_switch);
         let menu_actions = gtk::Box::new(gtk::Orientation::Vertical, 2);
         mseries_pantheon_kit::set_margins_text_units(&menu_actions, 0.35, 0.35, 0.35, 0.35);
         menu_actions.append(&pin_import_button);
         menu_actions.append(&pin_review_button);
+        menu_actions.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+        menu_actions.append(&refresh_row);
         menu_actions.append(&shortcuts_button);
         let menu = gtk::Popover::new();
         menu.set_child(Some(&menu_actions));
@@ -618,6 +675,9 @@ impl App {
             pin_note,
             pin_import_button,
             pin_review_button,
+            auto_refresh_switch,
+            refresh_poller: RefCell::new(None),
+            resume_watcher: RefCell::new(None),
             pin_profile_id: RefCell::new(None),
             pin_state: RefCell::new(ImportedPinState::default()),
             pin_load_generation: Cell::new(0),
@@ -644,11 +704,13 @@ impl App {
             star_button,
             syncing_star: Cell::new(false),
             state: RefCell::new(State::default()),
+            refresh_gate: RefreshGate::default(),
             media: RefCell::new(MediaState::new()),
         });
         app.connect_signals(&refresh, &new_message, &menu, &shortcuts_button);
         app.connect_responsive_layout();
         app.watch_history();
+        app.install_refresh_controls();
         app.window.present();
         app.refresh();
         Some(app)
@@ -664,6 +726,11 @@ impl App {
         let weak = Rc::downgrade(self);
         self.window.connect_close_request(move |_| {
             if let Some(app) = weak.upgrade() {
+                if let Some(poller) = app.refresh_poller.borrow().as_ref() {
+                    poller.set_enabled(false);
+                }
+                app.resume_watcher.borrow_mut().take();
+                app.history_subscription.borrow_mut().take();
                 app.stop_media_workers();
             }
             glib::Propagation::Proceed
@@ -869,6 +936,32 @@ impl App {
         });
     }
 
+    fn install_refresh_controls(self: &Rc<Self>) {
+        let weak = Rc::downgrade(self);
+        let poller = Polling::new(Duration::from_secs(30), move || {
+            if let Some(app) = weak.upgrade() {
+                app.refresh();
+            }
+        });
+        poller.bind_to_widget_mapped(&self.window);
+        let poller_for_switch = poller.clone();
+        self.auto_refresh_switch
+            .connect_state_set(move |_, active| {
+                poller_for_switch.set_enabled(active);
+                glib::Propagation::Proceed
+            });
+        poller.set_enabled(self.auto_refresh_switch.is_active());
+        self.refresh_poller.replace(Some(poller));
+
+        let weak = Rc::downgrade(self);
+        self.resume_watcher
+            .replace(Some(ResumeWatcher::new(move || {
+                if let Some(app) = weak.upgrade() {
+                    app.refresh();
+                }
+            })));
+    }
+
     fn connect_responsive_layout(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
         mseries_pantheon_kit::watch_responsive_width(&self.window, 52.0, move |class| {
@@ -970,6 +1063,9 @@ impl App {
     }
 
     fn refresh(self: &Rc<Self>) {
+        if !self.refresh_gate.request() {
+            return;
+        }
         self.status.set_text("Refreshing conversations…");
         let weak = Rc::downgrade(self);
         let backend = self.backend.clone();
@@ -981,6 +1077,7 @@ impl App {
             }
             .await;
             if let Some(app) = weak.upgrade() {
+                let refresh_again = app.refresh_gate.finish();
                 match outcome {
                     Ok((status, threads)) => {
                         app.update_contact_photo_revision(&status);
@@ -1052,6 +1149,9 @@ impl App {
                         app.send_button.set_sensitive(false);
                         app.status.set_text(&error);
                     }
+                }
+                if refresh_again {
+                    app.refresh();
                 }
             }
         });
@@ -3011,6 +3111,28 @@ fn normalize_recipient(input: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refresh_gate_coalesces_concurrent_refresh_requests() {
+        let gate = RefreshGate::default();
+        assert!(gate.request(), "the first refresh should start");
+        assert!(!gate.request(), "parallel requests should be coalesced");
+        assert!(!gate.request(), "only one follow-up should be queued");
+        assert!(gate.finish(), "a coalesced request needs one follow-up");
+        assert!(gate.request(), "the follow-up refresh should start");
+        assert!(!gate.finish(), "no extra refresh should be queued");
+    }
+
+    #[test]
+    fn refresh_gate_finishes_without_an_unrequested_follow_up() {
+        let gate = RefreshGate::default();
+        assert!(gate.request());
+        assert!(!gate.finish());
+        assert!(
+            gate.request(),
+            "a completed gate should allow a new refresh"
+        );
+    }
 
     #[test]
     fn normalizes_complete_phone_numbers_and_email_domains() {
