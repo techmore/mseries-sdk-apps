@@ -25,6 +25,17 @@ const RECENT_INBOX_FOLDER: &str = "telecom/msg/INBOX";
 const RECENT_INBOX_LIMIT: u32 = 200;
 const RECENT_INBOX_MAX_AGE: Duration = Duration::from_secs(300);
 
+fn ensure_refresh_phone_unchanged(
+    before: &BlueFerryStatus,
+    after: &BlueFerryStatus,
+) -> Result<(), String> {
+    if before.phone_profile_id != after.phone_profile_id || before.map != after.map {
+        Err("The iPhone connection changed during refresh. Retry to load its conversations.".into())
+    } else {
+        Ok(())
+    }
+}
+
 fn recent_inbox_due(
     map_ready: bool,
     was_map_ready: bool,
@@ -1416,7 +1427,9 @@ impl App {
                     None
                 };
                 let threads = backend.threads().await?;
-                Ok::<_, String>((status, threads, recent))
+                let final_status = backend.status().await?;
+                ensure_refresh_phone_unchanged(&status, &final_status)?;
+                Ok::<_, String>((final_status, threads, recent))
             }
             .await;
             if let Some(app) = weak.upgrade() {
@@ -1577,6 +1590,7 @@ impl App {
                         app.load_contact_photos();
                     }
                     Err(error) => {
+                        app.state.borrow_mut().map_ready = false;
                         app.state.borrow_mut().map_ready = false;
                         app.backend_available.set(false);
                         app.send_button.set_sensitive(false);
@@ -3651,6 +3665,32 @@ fn normalize_recipient(input: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn refresh_rejects_phone_changes_and_disconnects() {
+        let before = super::BlueFerryStatus {
+            map: true,
+            phone_profile_id: Some("A".into()),
+            ..Default::default()
+        };
+        assert!(super::ensure_refresh_phone_unchanged(&before, &before).is_ok());
+        for after in [
+            super::BlueFerryStatus {
+                phone_profile_id: Some("B".into()),
+                ..before.clone()
+            },
+            super::BlueFerryStatus {
+                phone_profile_id: None,
+                ..before.clone()
+            },
+            super::BlueFerryStatus {
+                map: false,
+                ..before.clone()
+            },
+        ] {
+            assert!(super::ensure_refresh_phone_unchanged(&before, &after).is_err());
+        }
+    }
+
     #[test]
     fn phone_switch_preserves_drafts_without_sharing_or_retrying_sends() {
         let mut state = super::State::default();

@@ -1,3 +1,14 @@
+## Messages refresh identity consistency — 2026-10-22
+
+Refresh now rereads public status after inbox/history calls and rejects results
+when phone identity or MAP readiness changed during the request. Failed refresh
+also clears send readiness, preventing keyboard sends from bypassing the disabled
+button. All 17 Messages library tests pass, including identity/disconnect rejection.
+Formatting and diff checks pass. Endpoint checks cannot detect an A-to-B-to-A
+switch or distinguish phones on old releases without UUIDs; a backend snapshot
+identity/generation contract is still needed for that guarantee. Delayed D-Bus
+integration and live phone acceptance remain open.
+
 ## Messages phone-state regression coverage — 2026-10-22
 
 The production phone-state transition is now exercised by tests covering A/B
