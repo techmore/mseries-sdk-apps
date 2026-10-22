@@ -46,7 +46,8 @@ fn main() -> gtk::glib::ExitCode {
     // Mesa on Asahi loads LLVM and ~180 MB of shader heap for the GL renderers; cairo draws this window in
     // a third of the memory (see docs/PERFORMANCE.md). CLAUDE_PANTHEON_RENDERER=gl|ngl|vulkan switches back.
     if std::env::var_os("GSK_RENDERER").is_none() {
-        let renderer = std::env::var("CLAUDE_PANTHEON_RENDERER").unwrap_or_else(|_| "cairo".into());
+        let renderer = std::env::var("CLAUDE_PANTHEON_RENDERER")
+            .unwrap_or_else(|_| claude_pantheon_rs::settings::Settings::load().renderer);
         // SAFETY: single-threaded here; GTK has not been initialised and no other thread reads the environment.
         unsafe { std::env::set_var("GSK_RENDERER", renderer) };
     }

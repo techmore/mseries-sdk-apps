@@ -112,3 +112,20 @@ levelbar.usage-gauge block.full { background: @error_color; }
 .sb-unread.sb-ask { min-width: 14px; border-radius: 7px; background: @warning_color; color: white; font-weight: 700; font-size: 0.75em; padding: 0 3px; }
 .sb-spinner { min-width: 12px; min-height: 12px; }
 .sb-header { padding: 4px 0 0 0; }
+
+/* Permission prompts */
+.prompt-pending { border-left: 3px solid @warning_color; }
+.prompt-summary { font-weight: 500; }
+.deny-reason { font-size: 0.9em; }
+
+/* Settings window */
+.settings-row { padding: 8px 0; border-bottom: 1px solid alpha(currentColor, 0.08); }
+
+/* Terminal pane */
+.terminal-pane { border-top: 1px solid alpha(currentColor, 0.1); }
+.term-status { padding: 3px 0; }
+
+/* Changes page */
+.changes-bar { padding: 8px 12px; border-bottom: 1px solid alpha(currentColor, 0.1); }
+.diff-old { background: alpha(@error_color, 0.06); }
+.diff-new { background: alpha(@success_color, 0.06); }

@@ -146,6 +146,47 @@ fn main() {
         save_png(app.window(), path);
     }
 
+    // ---- permission card (synthetic pending approval) -----------------------------------------------
+    {
+        use claude_pantheon_rs::t3::model::TurnItem;
+        let item: TurnItem = serde_json::from_value(serde_json::json!({
+            "id": "item-1", "type": "approval_request", "status": "waiting", "requestId": "req-1",
+            "requestKind": "command", "prompt": "rm -rf build/\nand then rebuild", "reason": "The agent wants to run a command"
+        })).unwrap();
+        let answered = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let seen = answered.clone();
+        let widget = claude_pantheon_rs::chat::item_widget(
+            &item,
+            Some(std::rc::Rc::new(move |id: &str, decision: &str| {
+                seen.borrow_mut().push(format!("{id}:{decision}"));
+            })),
+        )
+        .expect("a card");
+        let mut t = Vec::new();
+        texts(&widget, &mut t);
+        for expect in ["Run a command?", "rm -rf build/", "Allow Once", "Allow for This Thread", "Deny"] {
+            assert!(t.iter().any(|x| x.contains(expect)), "card shows '{expect}': {t:?}");
+        }
+        fn first_button(w: &gtk::Widget, label_text: &str) -> Option<gtk::Button> {
+            if let Some(b) = w.downcast_ref::<gtk::Button>()
+                && b.label().is_some_and(|l| l == label_text)
+            {
+                return Some(b.clone());
+            }
+            let mut child = w.first_child();
+            while let Some(c) = child {
+                if let Some(b) = first_button(&c, label_text) {
+                    return Some(b);
+                }
+                child = c.next_sibling();
+            }
+            None
+        }
+        first_button(&widget, "Allow for This Thread").expect("button").emit_clicked();
+        assert_eq!(answered.borrow().as_slice(), ["req-1:acceptForSession"]);
+        println!("permission card ok");
+    }
+
     // ---- milestone 2: live threads ------------------------------------------------------------
     if app.is_connected() {
         assert!(pump_until("the thread list", 30, || !app.threads().is_empty()), "the server sent threads");
@@ -218,6 +259,49 @@ fn main() {
         app.set_entry("");
         pump(1300);
         println!("composer drafts ok");
+
+        // ---- terminal pane (the server's PTY) --------------------------------------------------------
+        app.toggle_terminal();
+        assert!(
+            pump_until("the terminal to attach", 60, || shown(&app)
+                .iter()
+                .any(|x| x.contains("pid ") || x.contains("running"))),
+            "terminal status: {:?}",
+            shown(&app).iter().filter(|x| x.contains("~/") || x.contains("Terminal")).collect::<Vec<_>>()
+        );
+        assert!(app.terminal_pane().is_attached());
+        pump(300);
+        app.toggle_terminal();
+        pump(200);
+        assert!(!app.terminal_pane().is_attached(), "hiding the pane detaches");
+        println!("terminal ok");
+
+        // ---- changes page ------------------------------------------------------------------------------
+        app.show_changes();
+        assert!(pump_until("the diff", 60, || shown(&app)
+            .iter()
+            .any(|x| x.contains(" files · +") || x.contains("No file changes") || x.starts_with("Diff failed"))));
+        pump(200);
+        println!("changes page: {} files", app.changes_page().file_count());
+        app.select_id(&pick.id);
+        assert!(pump_until("the thread again", 60, || app.live_item_count() > 0));
+        pump(200);
+
+        // ---- settings window -----------------------------------------------------------------------
+        WidgetExt::activate_action(app.window(), "win.settings", None).expect("settings action");
+        pump(400);
+        let settings_window = gtk::Window::list_toplevels()
+            .into_iter()
+            .find(|w| w.downcast_ref::<gtk::Window>().is_some_and(|w| w.title().is_some_and(|t| t == "Settings")));
+        let settings_window = settings_window.expect("a Settings window").downcast::<gtk::Window>().unwrap();
+        let mut t = Vec::new();
+        texts(settings_window.upcast_ref(), &mut t);
+        for expect in ["Default permission mode", "Pairing", "Renderer", "Turn finished"] {
+            assert!(t.iter().any(|x| x.contains(expect)), "settings shows '{expect}'");
+        }
+        settings_window.close();
+        pump(200);
+        println!("settings ok");
 
         // ---- command palette (Ctrl+K) --------------------------------------------------------------
         let palette = app.palette();
