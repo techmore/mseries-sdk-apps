@@ -894,6 +894,10 @@ impl App {
                             .recipients
                             .iter()
                             .any(|recipient| recipient.to_lowercase().contains(&filter))
+                        || thread
+                            .messages
+                            .iter()
+                            .any(|message| message.body.to_lowercase().contains(&filter))
                 })
                 .cloned()
                 .collect::<Vec<_>>();

@@ -26,8 +26,9 @@ If BlueFerry's Messages API cannot be reached at startup, the error screen
 offers Retry and reactivates the app after closing the placeholder. The user
 does not have to close and relaunch Messages to try again.
 
-The preview currently supports conversation search, message history, in-memory
-per-thread drafts that remain editable offline, favorites, read state, checked
+The preview currently supports search across conversation names, recipients,
+latest previews and loaded message bodies; message history; in-memory per-thread
+drafts that remain editable offline; favorites; read state; checked
 replies, history invalidation, a starred-conversation strip, and a
 participant-review dialog before a group send. Message bubbles offer Reply
 and Copy actions, render safe clickable web
