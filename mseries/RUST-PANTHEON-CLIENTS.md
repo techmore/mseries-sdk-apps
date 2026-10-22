@@ -1,3 +1,13 @@
+## Messages per-phone session state — 2026-10-22
+
+On an observed phone change, Messages parks identified phones' in-memory drafts
+and outbox separately and restores them when that UUID returns. Selection is
+cleared, old inbox-only rows are removed, and unresolved Sending entries become
+OutcomeUnknown; no retry is dispatched. Unknown-identity state is not assigned
+to a newly identified phone. Existing 14 library tests pass; dedicated synthetic
+switch/delayed-response tests remain required. Released BlueFerry without phone
+UUIDs cannot provide this isolation. Live phone qualification remains open.
+
 ## Messages confirmation and read callback guards — 2026-10-22
 
 Group confirmation refuses to dispatch after an observed phone-profile change

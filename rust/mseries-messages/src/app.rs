@@ -463,6 +463,7 @@ pub struct App {
     star_button: gtk::ToggleButton,
     syncing_star: Cell<bool>,
     state: RefCell<State>,
+    parked_phone_states: RefCell<HashMap<String, State>>,
     backend_available: Cell<bool>,
     refresh_gate: RefreshGate,
     media: RefCell<MediaState>,
@@ -840,6 +841,7 @@ impl App {
             star_button,
             syncing_star: Cell::new(false),
             state: RefCell::new(State::default()),
+            parked_phone_states: RefCell::new(HashMap::new()),
             backend_available: Cell::new(true),
             refresh_gate: RefreshGate::default(),
             media: RefCell::new(MediaState::new()),
@@ -1403,9 +1405,25 @@ impl App {
                             app.recent_inbox_snapshot.replace(None);
                             app.recent_inbox_last_success.set(None);
                             app.recent_inbox_warning.replace(None);
-                            // These rows were synthesized from the previous phone inbox.
-                            // Never carry them into another phone's server-thread merge.
-                            app.state.borrow_mut().threads.retain(|thread| !thread.inbox_only);
+                            let mut previous = std::mem::take(&mut *app.state.borrow_mut());
+                            previous.selected = None;
+                            previous.pending.clear();
+                            previous.map_ready = false;
+                            previous.threads.retain(|thread| !thread.inbox_only);
+                            for entry in &mut previous.outbox {
+                                if entry.status == OutboxStatus::Sending {
+                                    entry.status = OutboxStatus::OutcomeUnknown;
+                                }
+                            }
+                            if let Some(profile) = app.pin_profile_id.borrow().as_ref() {
+                                app.parked_phone_states.borrow_mut().insert(profile.clone(), previous);
+                            }
+                            let restored = status.phone_profile_id.as_ref().and_then(|profile| {
+                                app.parked_phone_states.borrow_mut().remove(profile)
+                            }).unwrap_or_default();
+                            app.state.replace(restored);
+                            // No selection is active while clearing the previous editor text.
+                            app.editor.buffer().set_text("");
                         }
                         app.backend_available.set(true);
                         app.update_contact_photo_revision(&status);
