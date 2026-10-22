@@ -50,6 +50,11 @@ window.csd:backdrop decoration { box-shadow: 0 0 0 1px alpha(black, 0.18); }
 .env-row { padding: 6px 8px; }
 .env-list { background: transparent; }
 
+/* Keyboard focus stays visible on list rows and flat buttons, which the stylesheet otherwise leaves faint. */
+.navigation-sidebar row:focus-visible, .env-list row:focus-visible, button.flat:focus-visible, .issue-row:focus-visible {
+  outline: 2px solid alpha(@accent_color, 0.7); outline-offset: -2px; border-radius: 4px;
+}
+
 /* Skeletons and empty states */
 .skeleton-bar { background: alpha(currentColor, 0.12); border-radius: 6px; }
 .skeleton.pulsing .skeleton-bar { animation: skeleton-pulse 1.4s ease-in-out infinite; }

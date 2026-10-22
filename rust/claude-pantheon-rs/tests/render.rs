@@ -149,6 +149,54 @@ fn main() {
     pump(100);
     assert!(!has_type(app.window().upcast_ref(), "GtkSpinner"), "loading states are skeletons, not spinners");
 
+    // ---- window state, zoom, HiDPI, a11y ------------------------------------------------------
+    {
+        let scale = app.window().scale_factor();
+        println!("scale factor: {scale}");
+        if std::env::var("GDK_SCALE").as_deref() == Ok("2") {
+            assert_eq!(scale, 2, "GDK_SCALE=2 gives a 2x window");
+        }
+        assert!(app.sidebar_width() >= 200);
+        app.zoom_to(1.2);
+        pump(100);
+        assert!((app.text_zoom() - 1.2).abs() < 1e-9);
+        let dpi = gtk::Settings::default().unwrap().gtk_xft_dpi();
+        assert!(dpi >= 96 * 1024 * 11 / 10, "xft dpi scaled: {dpi}");
+        app.zoom_to(1.0);
+        pump(100);
+        let state = claude_pantheon_rs::winstate::WindowState::capture(
+            app.window(),
+            &gtk::Paned::new(gtk::Orientation::Horizontal),
+        );
+        assert!(state.width >= 640 && state.height >= 420);
+        // Icon-only buttons: each one needs a tooltip (shown) and a label (read); the ones without a
+        // tooltip are listed so a new one stands out in the log.
+        fn icon_buttons_without_tooltip(w: &gtk::Widget, out: &mut Vec<String>) {
+            if let Some(b) = w.downcast_ref::<gtk::Button>()
+                && b.label().is_none()
+                && b.child().is_some_and(|c| c.is::<gtk::Image>())
+                && b.tooltip_text().is_none()
+            {
+                out.push(b.icon_name().map(|n| n.to_string()).unwrap_or_default());
+            }
+            let mut child = w.first_child();
+            while let Some(c) = child {
+                icon_buttons_without_tooltip(&c, out);
+                child = c.next_sibling();
+            }
+        }
+        let mut bare = Vec::new();
+        icon_buttons_without_tooltip(app.window().upcast_ref(), &mut bare);
+        println!("icon buttons without a tooltip: {bare:?}");
+        use claude_pantheon_rs::t3::model::TurnItem;
+        let item: TurnItem = serde_json::from_value(
+            serde_json::json!({"id": "a", "type": "assistant_message", "text": "Hello  there\nfriend"}),
+        )
+        .unwrap();
+        assert_eq!(claude_pantheon_rs::chat::accessible_name(&item), "Assistant: Hello there friend");
+        println!("window state, zoom and a11y ok");
+    }
+
     // ---- a transient error toast carries Retry ------------------------------------------------
     {
         let hit = std::rc::Rc::new(std::cell::Cell::new(false));

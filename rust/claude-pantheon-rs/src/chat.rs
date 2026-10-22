@@ -239,7 +239,38 @@ fn page_resolver() -> Option<PageResolver> {
 
 /// One T3 turn item as a widget; `pending_result` lets an imported tool call pick up the result that
 /// follows it in the same text.
+/// A turn item as a widget, named for assistive technology by its kind and a short excerpt.
 pub fn item_widget(item: &TurnItem, decide: Option<Decide>) -> Option<gtk::Widget> {
+    let widget = item_widget_inner(item, decide)?;
+    widget.update_property(&[gtk::accessible::Property::Label(&accessible_name(item))]);
+    Some(widget)
+}
+
+/// "You: …", "Assistant: …", "Tool call Bash: …" and so on, 120 characters of excerpt at most.
+pub fn accessible_name(item: &TurnItem) -> String {
+    fn excerpt(s: &str) -> String {
+        let one: String = s.split_whitespace().collect::<Vec<_>>().join(" ");
+        if one.chars().count() > 120 { format!("{}…", one.chars().take(120).collect::<String>()) } else { one }
+    }
+    let name = item.name.clone().or(item.title.clone()).unwrap_or_default();
+    match item.kind.as_str() {
+        "user_message" => format!("You: {}", excerpt(&item.text)),
+        "assistant_message" => format!("Assistant: {}", excerpt(&item.text)),
+        "reasoning" => "Assistant reasoning".to_string(),
+        "command_execution" => format!("Command: {}", excerpt(item.input.as_deref().unwrap_or(&item.text))),
+        "file_change" => format!("File change: {}", item.file_name.clone().unwrap_or_default()),
+        "file_search" | "web_search" => format!("Search: {}", excerpt(item.pattern.as_deref().unwrap_or(&name))),
+        "tool_call" => format!("Tool call {}: {}", name, excerpt(item.input.as_deref().unwrap_or(""))),
+        "approval_request" => format!("Permission request: {}", excerpt(item.prompt.as_deref().unwrap_or(""))),
+        "user_input_request" => format!("Question from the agent: {}", excerpt(item.prompt.as_deref().unwrap_or(""))),
+        "proposed_plan" => "Proposed plan".to_string(),
+        "todo_list" => "To-do list".to_string(),
+        "subagent" => format!("Subagent: {}", excerpt(&name)),
+        other => format!("{}: {}", other.replace('_', " "), excerpt(&item.text)),
+    }
+}
+
+fn item_widget_inner(item: &TurnItem, decide: Option<Decide>) -> Option<gtk::Widget> {
     match item.kind.as_str() {
         "user_message" => Some(user_bubble(&item.text).upcast()),
         "assistant_message" => {

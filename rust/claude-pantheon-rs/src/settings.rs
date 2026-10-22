@@ -41,6 +41,32 @@ pub struct Settings {
     /// "cairo" (default), "gl", "ngl", "vulkan"
     #[serde(default = "default_renderer")]
     pub renderer: String,
+    /// Text zoom factor (Ctrl+plus / Ctrl+minus / Ctrl+0), 0.8 – 2.0.
+    #[serde(default = "default_zoom")]
+    pub text_zoom: f64,
+}
+
+fn default_zoom() -> f64 {
+    1.0
+}
+
+thread_local! {
+    /// The Xft DPI GTK started with (the system's text scaling), so zoom multiplies it instead of replacing it.
+    static BASE_DPI: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
+}
+
+/// Scales every font in the process by `zoom` through gtk-xft-dpi, relative to the DPI GTK started with.
+pub fn apply_zoom(zoom: f64) {
+    let Some(settings) = gtk::Settings::default() else { return };
+    let base = BASE_DPI.with(|b| {
+        if b.get().is_none() {
+            let now = settings.gtk_xft_dpi();
+            b.set(Some(if now > 0 { now } else { 96 * 1024 }));
+        }
+        b.get().unwrap_or(96 * 1024)
+    });
+    let zoom = zoom.clamp(0.8, 2.0);
+    settings.set_gtk_xft_dpi((base as f64 * zoom).round() as i32);
 }
 
 fn default_system() -> String {
@@ -67,6 +93,7 @@ impl Default for Settings {
             notify_prompts: true,
             dock_badge: true,
             renderer: default_renderer(),
+            text_zoom: 1.0,
         }
     }
 }
@@ -220,6 +247,17 @@ impl SettingsWindow {
             st.apply_appearance();
         });
         appearance.append(&row("Style", Some("Which stylesheet variant the window uses"), &choices));
+        let zoom = gtk::SpinButton::with_range(80.0, 200.0, 10.0);
+        zoom.set_value((s.borrow().text_zoom * 100.0).round());
+        zoom.update_property(&[gtk::accessible::Property::Label("Text zoom percent")]);
+        let s3 = s.clone();
+        zoom.connect_value_changed(move |z| {
+            let mut st = s3.borrow_mut();
+            st.text_zoom = z.value() / 100.0;
+            st.save();
+            apply_zoom(st.text_zoom);
+        });
+        appearance.append(&row("Text zoom", Some("Ctrl+plus, Ctrl+minus and Ctrl+0 change it anywhere"), &zoom));
         stack.add_titled(&appearance, Some("appearance"), "Appearance");
 
         // ---- Defaults ------------------------------------------------------------------------

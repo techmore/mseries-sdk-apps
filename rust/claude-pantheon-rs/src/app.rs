@@ -13,7 +13,7 @@ use crate::transcript::{self, Transcript};
 use crate::workflow::{self, Issue, PinnedRepo};
 use crate::{
     changes, composer, diagnostics, environments, handoff, notify, palette, repos, settings, sidebar, skeleton,
-    snapshot, terminal, usage,
+    snapshot, terminal, usage, winstate,
 };
 use futures_util::StreamExt;
 use granite::prelude::{PlaceholderExt, ToastExt};
@@ -73,6 +73,7 @@ struct Draft {
 pub struct App {
     window: gtk::ApplicationWindow,
     // sidebar
+    paned: gtk::Paned,
     list: gtk::ListBox,
     side_placeholder: gtk::Stack,
     side_empty: gtk::Box,
@@ -416,11 +417,30 @@ impl App {
             .icon_name("io.github.techmore.ClaudePantheonRs")
             .child(&paned)
             .build();
+        winstate::WindowState::load().apply(&window, &paned);
+        {
+            let paned = paned.clone();
+            window.connect_close_request(move |w| {
+                winstate::WindowState::capture(w, &paned).save();
+                glib::Propagation::Proceed
+            });
+        }
+        // Names for assistive technology on the controls whose only visible label is an icon or a hint.
+        new_chat.update_property(&[gtk::accessible::Property::Label("New Thread")]);
+        send_btn.update_property(&[gtk::accessible::Property::Label("Send")]);
+        stop_btn.update_property(&[gtk::accessible::Property::Label("Stop")]);
+        search.update_property(&[gtk::accessible::Property::Label("Search chats")]);
+        provider_dd.update_property(&[gtk::accessible::Property::Label("Provider")]);
+        model_dd.update_property(&[gtk::accessible::Property::Label("Model")]);
+        mode_dd.update_property(&[gtk::accessible::Property::Label("Permission mode")]);
+        list.update_property(&[gtk::accessible::Property::Label("Threads")]);
+        side.update_property(&[gtk::accessible::Property::Label("Sidebar")]);
         // Both header bars carry the window controls, so the real title bar stays hidden (elementary style).
         window.set_titlebar(Some(&gtk::Grid::builder().visible(false).build()));
 
         let app = Rc::new(App {
             window,
+            paned,
             list,
             side_placeholder,
             side_empty,
@@ -501,6 +521,10 @@ impl App {
         app.install_page_resolver();
         app.refresh_environments();
         app.settings.borrow().apply_appearance();
+        let zoom = app.settings.borrow().text_zoom;
+        if (zoom - 1.0).abs() > f64::EPSILON {
+            settings::apply_zoom(zoom);
+        }
         app.window.present();
         app.reindex();
         if std::env::var_os("CLAUDE_PANTHEON_OFFLINE").is_none() {
@@ -585,6 +609,9 @@ impl App {
             ("forget", &[], Box::new(|a| a.forget())),
             ("about", &[], Box::new(|a| a.about())),
             ("quit", &["<Control>q"], Box::new(|a| a.window.close())),
+            ("zoom-in", &["<Control>plus", "<Control>equal", "<Control>KP_Add"], Box::new(|a| a.zoom_by(0.1))),
+            ("zoom-out", &["<Control>minus", "<Control>KP_Subtract"], Box::new(|a| a.zoom_by(-0.1))),
+            ("zoom-reset", &["<Control>0", "<Control>KP_0"], Box::new(|a| a.zoom_to(1.0))),
         ];
         for (name, what) in [
             ("thread-pin", "pin"),
@@ -805,6 +832,31 @@ impl App {
         self.window.set_title(Some("Claude"));
         self.subtitle.set_visible(false);
         self.show_page("empty");
+    }
+
+    /// Ctrl+plus / Ctrl+minus: text zoom in steps of 10 %, remembered in the settings.
+    fn zoom_by(self: &Rc<Self>, delta: f64) {
+        let current = self.settings.borrow().text_zoom;
+        self.zoom_to(((current + delta) * 10.0).round() / 10.0);
+    }
+
+    pub fn zoom_to(self: &Rc<Self>, zoom: f64) {
+        let zoom = zoom.clamp(0.8, 2.0);
+        {
+            let mut s = self.settings.borrow_mut();
+            s.text_zoom = zoom;
+            s.save();
+        }
+        settings::apply_zoom(zoom);
+        self.toast(&format!("Text zoom {} %", (zoom * 100.0).round() as i32));
+    }
+
+    pub fn text_zoom(&self) -> f64 {
+        self.settings.borrow().text_zoom
+    }
+
+    pub fn sidebar_width(&self) -> i32 {
+        self.paned.position()
     }
 
     /// Ctrl+,: the settings window.
