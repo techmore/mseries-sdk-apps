@@ -91,6 +91,7 @@ start-up probe; the table tracks drift per feature.
 | #475 | vte4 terminal pane fed from the server's terminal stream (hidden by default; libvte linked at start) | 65 | 0.0 | 247 – 257 |
 | #476 | Settings window (appearance, defaults per project, server, notifications, renderer) | 64 | 0.0 | 304 – 717 (machine at load 16–19 from other agents; the window is built only when opened) |
 | #477 | SnapShot: portal screenshot + AT-SPI window title, attached to the draft (Ctrl+Shift+S) | 66 | 0.0 | 206 – 235 (load 5; the #476 figures were load, not the branch) |
+| #478 | Visual replies: WebKitGTK page cards, view and web process created only on Show page | 69 | 0.0 | 197 – 264 (+3 MB is libwebkitgtk linked in; no WebKit process while no page is shown) |
 
 ## Reproduce
 

@@ -121,6 +121,9 @@ levelbar.usage-gauge block.full { background: @error_color; }
 /* Settings window */
 .settings-row { padding: 8px 0; border-bottom: 1px solid alpha(currentColor, 0.08); }
 
+/* Visual replies */
+.page-card { padding: 8px 12px; margin-right: 48px; }
+
 /* Terminal pane */
 .terminal-pane { border-top: 1px solid alpha(currentColor, 0.1); }
 .term-status { padding: 3px 0; }

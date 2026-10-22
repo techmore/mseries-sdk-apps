@@ -18,6 +18,7 @@ futures-util = { version = "0.3", default-features = false }
 pulldown-cmark = { version = "0.13", default-features = false }
 sourceview5 = "0.11"
 vte4 = "0.10"
+webkit6 = "0.6"
 
 [[test]]
 name = "render"
