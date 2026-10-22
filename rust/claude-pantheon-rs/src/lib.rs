@@ -5,6 +5,7 @@
 pub mod app;
 pub mod chat;
 pub mod claude_cli;
+pub mod composer;
 pub mod diagnostics;
 pub mod handoff;
 pub mod index;

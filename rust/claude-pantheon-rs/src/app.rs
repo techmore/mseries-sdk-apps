@@ -5,12 +5,13 @@
 use crate::chat::{self, label};
 use crate::index::{self, Session};
 use crate::look::{iso_to_unix, now_unix, relative_time, tilde};
+use crate::t3::attach;
 use crate::t3::model::Project;
 use crate::t3::model::{Provider, ServerConfig, Shell, ThreadShell, ThreadView, TurnItem};
 use crate::t3::{self, Rpc, auth, ws::WsError};
 use crate::transcript::{self, Transcript};
 use crate::workflow::{self, Issue, PinnedRepo};
-use crate::{diagnostics, handoff, palette, repos, usage};
+use crate::{composer, diagnostics, handoff, palette, repos, usage};
 use futures_util::StreamExt;
 use granite::prelude::{PlaceholderExt, ToastExt};
 use gtk::{gdk, gio, glib, pango, prelude::*};
@@ -83,7 +84,7 @@ pub struct App {
     provider_dd: gtk::DropDown,
     model_dd: gtk::DropDown,
     mode_dd: gtk::DropDown,
-    entry: gtk::TextView,
+    entry: Rc<composer::Composer>,
     send_btn: gtk::Button,
     stop_btn: gtk::Button,
     composer_note: gtk::Label,
@@ -254,26 +255,10 @@ impl App {
         composer_note.set_hexpand(true);
         composer_note.set_halign(gtk::Align::End);
         pickers.append(&composer_note);
-        let entry = gtk::TextView::builder()
-            .wrap_mode(gtk::WrapMode::WordChar)
-            .accepts_tab(false)
-            .top_margin(8)
-            .bottom_margin(8)
-            .left_margin(10)
-            .right_margin(10)
-            .build();
-        entry.add_css_class("composer-entry");
-        let entry_scroll = gtk::ScrolledWindow::builder()
-            .child(&entry)
-            .hscrollbar_policy(gtk::PolicyType::Never)
-            .max_content_height(180)
-            .propagate_natural_height(true)
-            .hexpand(true)
-            .build();
-        entry_scroll.add_css_class("frame");
+        let entry = composer::Composer::new();
         let send_btn = gtk::Button::from_icon_name("mail-send-symbolic");
         send_btn.add_css_class("suggested-action");
-        send_btn.set_tooltip_text(Some("Send (Ctrl+Enter)"));
+        send_btn.set_tooltip_text(Some("Send (Enter; Shift+Enter for a new line)"));
         send_btn.set_valign(gtk::Align::End);
         let stop_btn = gtk::Button::from_icon_name("media-playback-stop-symbolic");
         stop_btn.add_css_class("destructive-action");
@@ -281,7 +266,7 @@ impl App {
         stop_btn.set_valign(gtk::Align::End);
         stop_btn.set_visible(false);
         let entry_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        entry_row.append(&entry_scroll);
+        entry_row.append(&entry.root);
         entry_row.append(&stop_btn);
         entry_row.append(&send_btn);
         let composer = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -455,6 +440,7 @@ impl App {
         }
 
         app.wire(&new_chat);
+        app.wire_composer();
         app.window.present();
         app.reindex();
         if std::env::var_os("CLAUDE_PANTHEON_OFFLINE").is_none() {
@@ -753,6 +739,67 @@ impl App {
         dialog.present();
     }
 
+    /// Enter sends; pasted or dropped files upload to the server; `@` searches the project's files.
+    fn wire_composer(self: &Rc<Self>) {
+        let a = self.clone();
+        self.entry.on_send(Rc::new(move || a.send()));
+        let a = self.clone();
+        self.entry.on_attach(Rc::new(move |bytes, name| a.upload_attachment(bytes, name)));
+        let a = self.clone();
+        self.entry.on_search(Rc::new(move |query, reply| a.search_project_files(query, reply)));
+    }
+
+    fn upload_attachment(self: &Rc<Self>, bytes: Vec<u8>, name: String) {
+        let (rpc, server) = match self.conn.borrow().as_ref() {
+            Some(c) => (c.rpc.clone(), c.cred.server.clone()),
+            None => {
+                self.entry.set_status("Connect to the server to attach files.");
+                return;
+            }
+        };
+        let app = self.clone();
+        glib::spawn_future_local(async move {
+            match attach::upload(&server, &rpc, &name, bytes).await {
+                Ok(a) => app.entry.add_attachment(a),
+                Err(e) => app.entry.set_status(&format!("Could not attach {name}: {e}")),
+            }
+        });
+    }
+
+    /// The project folder the composer writes into: the open thread's, the draft's, else none.
+    fn composer_cwd(&self) -> Option<String> {
+        let conn = self.conn.borrow();
+        let c = conn.as_ref()?;
+        let project_id = self
+            .live
+            .borrow()
+            .as_ref()
+            .map(|l| l.project_id.clone())
+            .or_else(|| self.draft.borrow().as_ref().map(|d| d.project_id.clone()))?;
+        c.shell.projects.iter().find(|p| p.id == project_id).map(|p| p.workspace_root.clone())
+    }
+
+    fn search_project_files(self: &Rc<Self>, query: String, reply: composer::SearchReply) {
+        let (Some(rpc), Some(cwd)) = (self.conn.borrow().as_ref().map(|c| c.rpc.clone()), self.composer_cwd()) else {
+            reply(Vec::new());
+            return;
+        };
+        glib::spawn_future_local(async move {
+            let payload = json!({"cwd": cwd, "query": query, "limit": 40});
+            let paths = match rpc.call("projects.searchEntries", payload).await {
+                Ok(v) => v
+                    .get("entries")
+                    .and_then(Value::as_array)
+                    .map(|a| {
+                        a.iter().filter_map(|e| e.get("path").and_then(Value::as_str).map(str::to_string)).collect()
+                    })
+                    .unwrap_or_default(),
+                Err(_) => Vec::new(),
+            };
+            reply(paths);
+        });
+    }
+
     pub fn window(&self) -> &gtk::ApplicationWindow {
         &self.window
     }
@@ -785,8 +832,12 @@ impl App {
         self.search.set_text(text);
     }
 
+    pub fn composer(&self) -> &Rc<composer::Composer> {
+        &self.entry
+    }
+
     pub fn set_entry(&self, text: &str) {
-        self.entry.buffer().set_text(text);
+        self.entry.set_text(text);
     }
 
     pub fn toast(&self, text: &str) {
@@ -1397,6 +1448,7 @@ impl App {
             self.show_page("busy");
         }
         let twin = self.imported_uuids().get(&session.id).cloned();
+        self.entry.set_draft_key(None);
         self.composer.set_visible(false);
         self.composer_note.set_text(match twin {
             Some(_) => "Imported on the server: open it from the project above to continue.",
@@ -1510,6 +1562,7 @@ impl App {
         self.composer_note.set_text("");
         self.select_provider(&thread.provider_instance_id, thread.model_selection.get("model").and_then(Value::as_str));
         self.select_mode(&thread.runtime_mode);
+        self.entry.set_draft_key(Some(thread.id.clone()));
         let (sub_id, mut stream) = rpc.subscribe(
             "orchestration.subscribeThread",
             json!({"threadId": thread.id, "requestCompletionMarker": true, "acceptBoundedSnapshot": true, "acceptCompactTurnItems": true}),
@@ -1833,6 +1886,7 @@ impl App {
         *self.current_session.borrow_mut() = None;
         *self.transcript.borrow_mut() = None;
         *self.draft.borrow_mut() = Some(Draft { project_id: project.id.clone() });
+        self.entry.set_draft_key(Some(format!("draft:{}", project.id)));
         self.list.unselect_all();
         self.clear_chat();
         let hint = granite::Placeholder::new("New thread");
@@ -1850,22 +1904,15 @@ impl App {
         self.composer.set_visible(true);
         self.composer_note.set_text("");
         self.show_page("chat");
-        self.entry.grab_focus();
-    }
-
-    fn take_entry(&self) -> String {
-        let buffer = self.entry.buffer();
-        let text = buffer.text(&buffer.start_iter(), &buffer.end_iter(), false).to_string();
-        buffer.set_text("");
-        text
+        self.entry.view.grab_focus();
     }
 
     pub fn send(self: &Rc<Self>) {
-        let buffer = self.entry.buffer();
-        let text = buffer.text(&buffer.start_iter(), &buffer.end_iter(), false).trim().to_string();
-        if text.is_empty() {
+        let text = self.entry.text().trim().to_string();
+        if text.is_empty() && self.entry.attachment_count() == 0 {
             return;
         }
+        let text = if text.is_empty() { "See the attached files.".to_string() } else { text };
         self.send_text(text, true);
     }
 
@@ -1883,8 +1930,9 @@ impl App {
             self.toast(&format!("{} is not ready on the server ({}).", provider.name(), provider.auth_text()));
             return;
         }
+        let attachments: Vec<Value> = if clear { self.entry.attachments_json() } else { Vec::new() };
         if clear {
-            self.take_entry();
+            self.entry.clear();
         }
         let live_thread =
             self.live.borrow().as_ref().map(|l| (l.thread_id.clone(), l.running, l.view.active_run_id.clone()));
@@ -1899,7 +1947,7 @@ impl App {
                 };
                 let payload = json!({
                     "type": "message.dispatch", "commandId": new_id(), "threadId": thread_id, "messageId": new_id(),
-                    "text": text, "attachments": [], "createdBy": "user", "creationSource": "web",
+                    "text": text, "attachments": attachments, "createdBy": "user", "creationSource": "web",
                     "modelSelection": {"instanceId": provider.instance_id, "model": model},
                     "dispatchMode": dispatch_mode,
                 });
@@ -1920,7 +1968,7 @@ impl App {
                     "modelSelection": {"instanceId": provider.instance_id, "model": model},
                     "runtimeMode": mode, "interactionMode": "default",
                     "workspaceStrategy": {"type": "root"},
-                    "initialMessage": {"messageId": new_id(), "text": text, "attachments": []},
+                    "initialMessage": {"messageId": new_id(), "text": text, "attachments": attachments},
                 });
                 match rpc.call("orchestration.launchThread", payload).await {
                     Ok(v) => {

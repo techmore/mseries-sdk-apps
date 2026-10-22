@@ -1,6 +1,7 @@
 //! The T3 Code server protocol: auth, WebSocket, Effect-RPC envelopes and the slices of the contracts
 //! this client reads. Everything runs on the GLib main loop.
 
+pub mod attach;
 pub mod auth;
 pub mod http;
 pub mod model;

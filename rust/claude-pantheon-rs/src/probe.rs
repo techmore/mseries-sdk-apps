@@ -39,6 +39,35 @@ pub fn call(tag: String, payload: Option<String>) -> glib::ExitCode {
     })
 }
 
+/// `--t3-attach FILE`: uploads a file as a chat attachment and prints the ChatAttachment JSON.
+pub fn attach(path: String) -> glib::ExitCode {
+    glib::MainContext::default().block_on(async move {
+        let Some(cred) = auth::load().await else {
+            eprintln!("no stored credential");
+            return glib::ExitCode::FAILURE;
+        };
+        let rpc = match t3::connect(&cred).await {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("connect failed: {e}");
+                return glib::ExitCode::FAILURE;
+            }
+        };
+        let code = match crate::t3::attach::upload_path(&cred.server, &rpc, std::path::Path::new(&path)).await {
+            Ok(a) => {
+                println!("{}", a.to_json());
+                glib::ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("upload failed: {e}");
+                glib::ExitCode::FAILURE
+            }
+        };
+        rpc.close().await;
+        code
+    })
+}
+
 pub fn dump(dir: Option<String>, pairing: Option<String>) -> glib::ExitCode {
     let dir = PathBuf::from(dir.unwrap_or_else(|| "t3-dump".into()));
     std::fs::create_dir_all(&dir).expect("create dump dir");

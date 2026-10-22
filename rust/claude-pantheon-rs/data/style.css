@@ -92,3 +92,7 @@ levelbar.usage-gauge block.full { background: @error_color; }
 .palette { border-radius: 8px; }
 .palette-list { background: transparent; }
 .palette-row { padding: 7px 8px; }
+
+/* Composer attachments and the @ picker */
+.chips { margin: 0 2px; }
+.chip { padding: 2px 4px 2px 8px; border-radius: 12px; background: alpha(currentColor, 0.08); }
