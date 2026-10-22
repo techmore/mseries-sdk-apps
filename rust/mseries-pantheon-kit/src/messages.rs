@@ -64,6 +64,132 @@ pub fn format_message_timestamp(value: &str) -> String {
     format!("{day} at {hour}:{:02} {meridiem}", local.minute())
 }
 
+/// Visual grouping for one message in a conversation timeline.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum MessagePosition {
+    #[default]
+    Single,
+    First,
+    Middle,
+    Last,
+}
+
+/// Presentation hints for rendering a message without modifying transport data.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct MessageLayout {
+    pub position: MessagePosition,
+    pub date_heading: Option<String>,
+    pub show_sender: bool,
+    pub timestamp_caption: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+struct LocalMessageMoment {
+    year: i32,
+    month: i32,
+    day: i32,
+    unix: i64,
+}
+
+struct PreviousMessage<'a> {
+    moment: LocalMessageMoment,
+    outgoing: bool,
+    sender: &'a str,
+}
+
+/// Group nearby messages by direction and sender, matching the Messages client
+/// timeline behavior. Invalid timestamps remain independent and receive a safe
+/// one-line caption instead of affecting neighboring groups.
+pub fn layout_messages(messages: &[Message], is_group: bool) -> Vec<MessageLayout> {
+    let mut layout = vec![MessageLayout::default(); messages.len()];
+    let mut run = Vec::new();
+    let mut previous: Option<PreviousMessage<'_>> = None;
+
+    for (index, message) in messages.iter().enumerate() {
+        let Some(moment) = local_message_moment(&message.timestamp) else {
+            close_message_run(&mut layout, &mut run);
+            layout[index].show_sender = is_group && !message.outgoing && !message.sender.is_empty();
+            let caption = format_message_timestamp(&message.timestamp);
+            layout[index].timestamp_caption = (!caption.is_empty()).then_some(caption);
+            previous = None;
+            continue;
+        };
+
+        let sender = if is_group && !message.outgoing {
+            message.sender.as_str()
+        } else {
+            ""
+        };
+        let gap = previous
+            .as_ref()
+            .map(|prior| moment.unix - prior.moment.unix);
+        let needs_heading = previous.as_ref().is_none_or(|prior| {
+            (moment.year, moment.month, moment.day)
+                != (prior.moment.year, prior.moment.month, prior.moment.day)
+                || gap.is_some_and(|seconds| seconds >= 30 * 60)
+        });
+
+        if needs_heading {
+            close_message_run(&mut layout, &mut run);
+            let heading = format_message_timestamp(&message.timestamp);
+            if !heading.is_empty() {
+                layout[index].date_heading = Some(heading);
+            }
+        } else if previous.as_ref().is_some_and(|prior| {
+            message.outgoing != prior.outgoing
+                || sender != prior.sender
+                || gap.is_some_and(|seconds| seconds >= 5 * 60)
+        }) {
+            close_message_run(&mut layout, &mut run);
+        }
+
+        if run.is_empty() {
+            layout[index].show_sender = is_group && !message.outgoing && !message.sender.is_empty();
+        }
+        run.push(index);
+        previous = Some(PreviousMessage {
+            moment,
+            outgoing: message.outgoing,
+            sender,
+        });
+    }
+
+    close_message_run(&mut layout, &mut run);
+    layout
+}
+
+fn local_message_moment(value: &str) -> Option<LocalMessageMoment> {
+    let parsed = DateTime::from_iso8601(value.trim(), None).ok()?;
+    let local = parsed.to_timezone(&TimeZone::local()).ok()?;
+    Some(LocalMessageMoment {
+        year: local.year(),
+        month: local.month(),
+        day: local.day_of_month(),
+        unix: local.to_unix(),
+    })
+}
+
+fn close_message_run(layout: &mut [MessageLayout], run: &mut Vec<usize>) {
+    let position = match run.len() {
+        0 => return,
+        1 => MessagePosition::Single,
+        _ => MessagePosition::Last,
+    };
+    if run.len() > 1 {
+        for index in &run[..run.len() - 1] {
+            layout[*index].position = if *index == run[0] {
+                MessagePosition::First
+            } else {
+                MessagePosition::Middle
+            };
+        }
+    }
+    if let Some(index) = run.last() {
+        layout[*index].position = position;
+    }
+    run.clear();
+}
+
 fn safe_timestamp_fallback(raw: &str) -> String {
     raw.chars()
         .map(|character| match character {

@@ -2,8 +2,8 @@ use crate::media::{self, LinkPreview, PreviewKind};
 use granite::prelude::PlaceholderExt;
 use gtk::{gio, glib, prelude::*};
 use mseries_pantheon_kit::{
-    BlueFerryMessagesClient as Backend, BlueFerryStatus, ContactMatch, Message, Thread,
-    format_message_timestamp,
+    BlueFerryMessagesClient as Backend, BlueFerryStatus, ContactMatch, Message, MessagePosition,
+    Thread, format_message_timestamp, layout_messages,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -475,8 +475,7 @@ impl App {
         conversation_header.append(&copy_addresses_button);
         conversation_header.append(&star_button);
 
-        let messages = gtk::Box::new(gtk::Orientation::Vertical, 10);
-        mseries_pantheon_kit::set_box_spacing_text_units(&messages, 0.65);
+        let messages = gtk::Box::new(gtk::Orientation::Vertical, 0);
         mseries_pantheon_kit::set_margins_text_units(&messages, 1.0, 1.0, 1.0, 1.0);
         let message_scroll = gtk::ScrolledWindow::builder()
             .child(&messages)
@@ -1319,18 +1318,48 @@ impl App {
                 empty.add_css_class("dim-label");
                 self.messages.append(&empty);
             }
-            for message in &thread.messages {
+            let message_layout = layout_messages(&thread.messages, thread.is_group);
+            for (message, layout) in thread.messages.iter().zip(message_layout) {
+                if let Some(heading) = layout.date_heading.as_deref() {
+                    let stamp = gtk::Label::builder()
+                        .label(heading)
+                        .halign(gtk::Align::Center)
+                        .build();
+                    stamp.add_css_class("caption");
+                    stamp.add_css_class("dim-label");
+                    stamp.add_css_class("pantheon-message-stamp");
+                    mseries_pantheon_kit::set_accessible_label(&stamp, heading);
+                    self.messages.append(&stamp);
+                }
                 let bubble = gtk::Box::new(gtk::Orientation::Vertical, 4);
                 bubble.add_css_class(if message.outgoing {
                     "pantheon-message-outgoing"
                 } else {
                     "pantheon-message-incoming"
                 });
+                bubble.add_css_class(match layout.position {
+                    MessagePosition::Single => "pantheon-message-run-single",
+                    MessagePosition::First => "pantheon-message-run-first",
+                    MessagePosition::Middle => "pantheon-message-run-middle",
+                    MessagePosition::Last => "pantheon-message-run-last",
+                });
                 bubble.set_halign(if message.outgoing {
                     gtk::Align::End
                 } else {
                     gtk::Align::Start
                 });
+                if layout.show_sender {
+                    let sender = gtk::Label::builder()
+                        .label(&message.sender)
+                        .xalign(0.0)
+                        .ellipsize(gtk::pango::EllipsizeMode::End)
+                        .max_width_chars(32)
+                        .build();
+                    sender.add_css_class("caption");
+                    sender.add_css_class("dim-label");
+                    sender.add_css_class("pantheon-message-sender");
+                    bubble.append(&sender);
+                }
                 let visible_body = message.visible_body();
                 let mut media_cards = Vec::new();
                 if !visible_body.is_empty() {
@@ -1395,10 +1424,9 @@ impl App {
                     shortened.set_xalign(if message.outgoing { 1.0 } else { 0.0 });
                     bubble.append(&shortened);
                 }
-                let timestamp = format_message_timestamp(&message.timestamp);
-                if !timestamp.is_empty() {
+                if let Some(timestamp) = layout.timestamp_caption.as_deref() {
                     let timestamp = gtk::Label::builder()
-                        .label(&timestamp)
+                        .label(timestamp)
                         .xalign(if message.outgoing { 1.0 } else { 0.0 })
                         .build();
                     timestamp.add_css_class("caption");

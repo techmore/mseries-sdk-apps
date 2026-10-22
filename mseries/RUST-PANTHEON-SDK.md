@@ -98,8 +98,10 @@ typed message model and leaves unmatched events visible. The app does not open B
 manage its Bluetooth session. Contact-photo decoding is also shared SDK code;
 it accepts bounded JPEG/PNG headers, scales in memory and leaves the user's
 existing opt-in unchanged. The SDK formats BlueFerry ISO timestamps in the
-local calendar for message bubbles and direct-conversation rows. A Rust import
-of Apple pin snapshots also needs BlueFerry to publish a stable, opaque
+local calendar for message timelines and direct-conversation rows. Its shared
+timeline helper groups nearby messages by direction and group sender and emits
+date/time headings after long gaps. A Rust import of Apple pin snapshots also
+needs BlueFerry to publish a stable, opaque
 per-phone profile identifier through its
 supported status contract so the SDK can scope the Secret Service item. The
 pinned Messages API v2 status omits that identifier. BlueFerry's compatibility

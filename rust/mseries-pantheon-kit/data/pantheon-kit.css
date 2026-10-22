@@ -19,6 +19,36 @@
     margin-start: 4.5em;
 }
 
+.pantheon-message-stamp {
+    margin-top: 0.65em;
+    margin-bottom: 0.25em;
+}
+
+.pantheon-message-run-single {
+    margin-top: 0.4em;
+    margin-bottom: 0.4em;
+}
+
+.pantheon-message-run-first {
+    margin-top: 0.4em;
+    margin-bottom: 0;
+}
+
+.pantheon-message-run-middle {
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.pantheon-message-run-last {
+    margin-top: 0;
+    margin-bottom: 0.4em;
+}
+
+.pantheon-link-preview {
+    margin-top: 0.25em;
+    margin-bottom: 0.4em;
+}
+
 .pantheon-section-gap {
     margin-bottom: 1em;
 }

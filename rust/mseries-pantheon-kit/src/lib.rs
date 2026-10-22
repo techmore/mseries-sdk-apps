@@ -23,6 +23,9 @@ pub use layout::{
     LayoutClass, install_css, set_accessible_label, set_box_spacing_text_units,
     set_margins_text_units, text_unit, watch_responsive_width,
 };
-pub use messages::{ContactMatch, Message, Reaction, Thread, format_message_timestamp};
+pub use messages::{
+    ContactMatch, Message, MessageLayout, MessagePosition, Reaction, Thread,
+    format_message_timestamp, layout_messages,
+};
 pub use polling::Polling;
 pub use system::{CpuUsage, MemoryUsage, SystemSample, SystemSampler, poll_system_metrics};
