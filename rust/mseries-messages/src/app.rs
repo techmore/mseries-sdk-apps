@@ -646,15 +646,7 @@ impl App {
             state: RefCell::new(State::default()),
             media: RefCell::new(MediaState::new()),
         });
-        app.connect_signals(
-            &refresh,
-            &new_message,
-            &menu,
-            &shortcuts_button,
-            &app.copy_addresses_button,
-            &app.pin_import_button,
-            &app.pin_review_button,
-        );
+        app.connect_signals(&refresh, &new_message, &menu, &shortcuts_button);
         app.connect_responsive_layout();
         app.watch_history();
         app.window.present();
@@ -668,9 +660,6 @@ impl App {
         new_message: &gtk::Button,
         menu: &gtk::Popover,
         shortcuts: &gtk::Button,
-        copy_addresses: &gtk::Button,
-        pin_import: &gtk::Button,
-        pin_review: &gtk::Button,
     ) {
         let weak = Rc::downgrade(self);
         self.window.connect_close_request(move |_| {
@@ -705,7 +694,7 @@ impl App {
 
         let weak = Rc::downgrade(self);
         let import_menu = menu.clone();
-        pin_import.connect_clicked(move |_| {
+        self.pin_import_button.connect_clicked(move |_| {
             import_menu.popdown();
             if let Some(app) = weak.upgrade() {
                 app.import_phone_pins();
@@ -714,7 +703,7 @@ impl App {
 
         let weak = Rc::downgrade(self);
         let review_menu = menu.clone();
-        pin_review.connect_clicked(move |_| {
+        self.pin_review_button.connect_clicked(move |_| {
             review_menu.popdown();
             if let Some(app) = weak.upgrade() {
                 app.review_phone_pins();
@@ -722,7 +711,7 @@ impl App {
         });
 
         let weak = Rc::downgrade(self);
-        copy_addresses.connect_clicked(move |button| {
+        self.copy_addresses_button.connect_clicked(move |button| {
             let Some(app) = weak.upgrade() else { return };
             let recipients = {
                 let state = app.state.borrow();
@@ -1481,7 +1470,7 @@ impl App {
             suggested_pin_matches(&snapshot, &threads, Some(&previous))
         };
         let mut candidates = threads.clone();
-        candidates.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+        candidates.sort_by_key(|thread| thread.name.to_lowercase());
         let keys = candidates
             .iter()
             .map(|thread| thread.key.clone())
@@ -1525,7 +1514,7 @@ impl App {
             row.add_css_class("card");
             mseries_pantheon_kit::set_margins_text_units(&row, 0.45, 0.5, 0.45, 0.5);
             let identifier = gtk::Label::builder()
-                .label(&format!("{}. {}", index + 1, pin.apple_identifier))
+                .label(format!("{}. {}", index + 1, pin.apple_identifier))
                 .xalign(0.0)
                 .ellipsize(gtk::pango::EllipsizeMode::Middle)
                 .max_width_chars(48)
