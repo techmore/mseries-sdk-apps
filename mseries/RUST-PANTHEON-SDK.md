@@ -57,7 +57,7 @@ animation, timer, renderer, or font-scale override.
 | Disk Space | Rust, GTK 4, Granite | Existing Rust app; adopt common layout, accessibility, and responsive behavior. |
 | Software Updates | Rust, GTK 4, Granite | Existing Rust app; adopt common layout and accessible controls. |
 | Messages | Python GTK/Granite is qualified; Rust preview is in `rust/mseries-messages` | Continue the Rust app to feature parity through BlueFerry's supported D-Bus API; do not create a second MAP or history owner. |
-| Torrential | Private Rust/Relm4 fork using Transmission | Already Rust. Adopt the SDK as a git dependency and converge on the same scale/accessibility patterns; keep source and packages private until upstream licensing is resolved. |
+| Torrential | Private Rust/Relm4 fork using Transmission | Initial integration on private `mseries-native`: pinned git dependency, shared stylesheet and responsive row spacing. Continue the layout/accessibility pass; keep source and packages private until upstream licensing is resolved. |
 | Orchard / Machine Lab | Unified Vala/GTK 4/Granite app | Port in stages, preserving Incus, Podman, VM and action boundaries. Reuse the existing Rust/GTK apps as toolkit examples; do not rewrite the service clients without parity evidence. |
 | Native Claude Pantheon | Vala/GTK 4/Granite predecessor | T3 is its Rust successor. Keep the Vala app until T3 workflow parity and migration are accepted, then retire the duplicate. |
 | Touch ID Settings | Vala/Granite Switchboard plug and helper | Port the UI after the blocked fingerprint matching/backend work has a supported boundary. A Rust UI alone cannot clear the authentication blocker. |
