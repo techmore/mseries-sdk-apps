@@ -1594,7 +1594,6 @@ impl App {
                     }
                     Err(error) => {
                         app.state.borrow_mut().map_ready = false;
-                        app.state.borrow_mut().map_ready = false;
                         app.backend_available.set(false);
                         app.send_button.set_sensitive(false);
                         app.status.remove_css_class("warning");
@@ -3692,6 +3691,42 @@ fn normalize_recipient(input: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    #[ignore = "requires an isolated Xvfb display, D-Bus session and config directories"]
+    fn offline_gui_disables_sending_and_preserves_drafts_on_back() {
+        use gtk::prelude::*;
+        assert_eq!(
+            std::env::var("MSERIES_MESSAGES_ISOLATED_GUI").as_deref(),
+            Ok("1")
+        );
+        gtk::init().expect("isolated GTK display");
+        granite::init();
+        let application = gtk::Application::builder()
+            .application_id("io.elementary.mseries.MessagesRust.Test")
+            .build();
+        application
+            .register(None::<&gtk::gio::Cancellable>)
+            .unwrap();
+        let app = super::App::build(&application).expect("private session bus");
+        app.backend_available.set(false);
+        app.render_conversation(None);
+        assert_eq!(
+            app.conversation_title.text(),
+            "Connect iPhone to get started"
+        );
+        assert!(!app.send_button.is_sensitive());
+        assert!(!app.editor.is_sensitive());
+        app.state
+            .borrow_mut()
+            .drafts
+            .insert("test-thread".into(), "unsent draft".into());
+        app.state.borrow_mut().selected = Some("test-thread".into());
+        app.go_back_to_conversations();
+        assert!(app.state.borrow().selected.is_none());
+        assert_eq!(app.state.borrow().drafts["test-thread"], "unsent draft");
+        app.window.close();
+    }
+
     #[test]
     fn refresh_rejects_phone_changes_and_disconnects() {
         let before = super::BlueFerryStatus {

@@ -1,3 +1,14 @@
+## Messages isolated GTK recovery regression — 2026-10-22
+
+An opt-in ignored GTK test now constructs the real App, verifies offline compose
+controls are disabled and confirms Back clears selection while retaining a draft.
+It passes under Xvfb/Cairo with a private D-Bus configuration containing no service
+activation directories and temporary config/cache/data paths. This checks widget
+state, not visual rendering, accessibility or a connected phone. An initial run
+using the standard private-session configuration activated host-installed portal
+helpers; the retained validation was rerun with activation disabled. Next: make
+this isolated harness reproducible in CI and add synthetic connected-service cases.
+
 ## SDK phone identity validation — 2026-10-22
 
 The public status parser now rejects malformed supplied phone UUIDs before any
