@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- speech bubble with the asterisk mark; single colour so the panel and the dock can recolour it -->
+  <path d="M3 2h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7l-3 3v-3H3a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" fill="#bebebe"/>
+  <g stroke="#2e2e2e" stroke-width="1.4" stroke-linecap="round">
+    <line x1="8" y1="4.2" x2="8" y2="9.8"/>
+    <line x1="5.6" y1="5.6" x2="10.4" y2="8.4"/>
+    <line x1="5.6" y1="8.4" x2="10.4" y2="5.6"/>
+  </g>
+</svg>

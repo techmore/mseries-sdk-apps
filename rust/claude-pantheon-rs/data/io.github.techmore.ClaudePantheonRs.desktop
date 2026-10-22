@@ -6,7 +6,17 @@ Exec=claude-pantheon-rs
 Icon=io.github.techmore.ClaudePantheonRs
 Terminal=false
 Type=Application
-Categories=Development;Utility;GTK;
+Categories=Development;GTK;
 Keywords=Claude;Codex;AI;agent;chat;T3;
 StartupNotify=true
-X-GNOME-UsesNotifications=false
+DBusActivatable=true
+X-GNOME-UsesNotifications=true
+Actions=new-thread;usage;
+
+[Desktop Action new-thread]
+Name=New Thread
+Exec=claude-pantheon-rs --new-thread
+
+[Desktop Action usage]
+Name=Usage
+Exec=claude-pantheon-rs --usage
