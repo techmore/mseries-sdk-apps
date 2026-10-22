@@ -37,12 +37,13 @@ Section: net
 Priority: optional
 Architecture: $arch
 Installed-Size: $installed_kb
-Depends: libgtk-4-1 (>= 4.12), libgranite-7-7 | libgranite7, libglib2.0-0
+Depends: libgtk-4-1 (>= 4.12), libgranite-7-7 | libgranite7, libglib2.0-0, libsecret-tools
 Suggests: blueferry
 Maintainer: elementaryos-mseries local build
 Homepage: https://github.com/techmore/ElementaryOS_MSeries
 Description: Native Rust Pantheon Messages preview
- GTK 4 and Granite conversation client for the BlueFerry Messages API.
+ GTK 4 and Granite conversation client for the BlueFerry Messages API with
+ phone-scoped imported Apple conversation pins in the desktop keyring.
  This preview installs alongside the current Messages app and does not replace
  its launcher.
 CONTROL

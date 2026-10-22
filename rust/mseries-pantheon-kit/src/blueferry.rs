@@ -23,6 +23,8 @@ pub struct BlueFerryStatus {
     pub connectivity_detail: Option<String>,
     pub contact_photos: bool,
     pub contact_photo_revision: Option<u64>,
+    /// Optional stable UUID supplied by BlueFerry for this paired phone.
+    pub phone_profile_id: Option<String>,
 }
 
 /// A send failure whose transport outcome can be distinguished from an error

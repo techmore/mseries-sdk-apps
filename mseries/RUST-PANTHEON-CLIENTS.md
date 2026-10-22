@@ -90,20 +90,23 @@ refresh cannot open or mark the first conversation read without user action.
 The SDK also sends the aggregate unread-message count to the Pantheon dock badge
 through its shared nonblocking LauncherEntry client.
 
-Imported pin review remains open until BlueFerry exposes a stable opaque
-per-phone profile identifier through its supported status API. The Python
-client currently derives this from BlueFerry's private configuration; the Rust
-app will not copy that access pattern. Once the API is available, the SDK can
-scope pin metadata in Secret Service without storing it in a plaintext file.
+Rust Messages now imports and reviews bounded Apple pin snapshots, and scopes
+the saved order and conversation matches in Secret Service by BlueFerry's
+optional stable phone UUID. The Python GTK client reads the same status field
+and keyring item, migrating its prior custom-schema/MAC-hash item locally when
+it first sees the UUID. BlueFerry PR [#277](https://github.com/erikwb/blueferry/pull/277)
+is open; older BlueFerry versions omit the ID, so both clients keep pin import
+unavailable until the upstream change is released. A direct switch to Rust
+before running the updated Python client leaves the old private keyring item in
+place; the user can re-import the snapshot if needed.
 
-Parity work still includes imported iPhone pins, detailed delivery and retry
-feedback, additional message actions, full accessibility and keyboard review,
-narrow-window qualification, localization, package/launcher handoff, and
-fixture, private GUI and owner-phone qualification. Imported pins need
-BlueFerry to publish a stable opaque per-phone profile identifier; MAP does not
-expose recipient delivery receipts. Those are migration gates, not claims
-about the current prototype. The contact picker and Reply/Copy actions still
-need runtime and phone acceptance.
+Remaining work includes detailed delivery and retry feedback, additional
+message actions, full accessibility and keyboard review, narrow-window
+qualification, localization, package/launcher handoff, and fixture, private
+GUI and owner-phone qualification. Imported pins still need the BlueFerry API
+change to ship and pass live acceptance; MAP does not expose recipient delivery
+receipts. The contact picker and Reply/Copy actions still need runtime and phone
+acceptance.
 
 ## Signal
 

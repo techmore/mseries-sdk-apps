@@ -12,6 +12,7 @@ mod dock_badge;
 mod images;
 mod layout;
 mod messages;
+mod phone_pins;
 mod polling;
 mod system;
 pub mod updates;
@@ -28,6 +29,10 @@ pub use layout::{
 pub use messages::{
     ContactMatch, Message, MessageLayout, MessagePosition, Reaction, Thread,
     format_message_timestamp, layout_messages,
+};
+pub use phone_pins::{
+    APPLE_PINS_SCHEMA, ApplePin, ImportedPinState, PhonePinStore, PinSnapshot,
+    is_valid_phone_profile_id, suggested_pin_matches,
 };
 pub use polling::Polling;
 pub use system::{CpuUsage, MemoryUsage, SystemSample, SystemSampler, poll_system_metrics};

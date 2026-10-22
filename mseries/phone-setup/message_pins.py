@@ -10,6 +10,9 @@ from messages_model import address_key
 MAX_BYTES = 131072
 MAX_PINS = 32
 SCHEMA = 'io.elementary.mseries.apple-message-pins'
+KEYRING_SCHEMA = 'org.freedesktop.Secret.Generic'
+KEYRING_APPLICATION = 'io.elementary.mseries.Messages'
+LEGACY_KEYRING_SCHEMA = 'io.elementary.mseries.Messages.ApplePins'
 
 
 def validate_snapshot(value):
@@ -101,11 +104,24 @@ def ordered_keys(threads, state):
     return sorted(threads, key=lambda key: (ranks.get(key, 0), threads[key].get('last_ts', '')), reverse=True)
 
 
-def profile_key():
-    from blueferry import config
-    phone = config.read_local_env().get('BLUEFERRY_MAC', '')
-    if not config.is_valid_mac(phone):
-        raise ValueError('Connect an iPhone before importing its pins.')
+def profile_key(status):
+    """Return BlueFerry's stable phone identity; never derive a new key from MAC."""
+    profile = status.get('phone_profile_id') if isinstance(status, dict) else None
+    if isinstance(profile, str) and re.fullmatch(
+            r'[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}', profile):
+        return profile
+    raise ValueError('Update BlueFerry to enable phone-scoped imported pins.')
+
+
+def _legacy_profile_key():
+    """Old MAC-derived key, used only to migrate an existing private keyring item."""
+    try:
+        from blueferry import config
+        phone = config.read_local_env().get('BLUEFERRY_MAC', '')
+        if not config.is_valid_mac(phone):
+            return None
+    except (ImportError, OSError, ValueError):
+        return None
     return hashlib.sha256(phone.upper().encode()).hexdigest()
 
 
@@ -115,23 +131,26 @@ class PinStore:
     BlueFerry's star store is an unordered set; modifying it would lose Apple's
     order and could overwrite preferences in other BlueFerry clients.
     """
-    def __init__(self, profile):
+    def __init__(self, profile, legacy_profile=None):
         import gi
         gi.require_version('Secret', '1')
         from gi.repository import Secret
         self.secret = Secret
-        self.schema = Secret.Schema.new('io.elementary.mseries.Messages.ApplePins', Secret.SchemaFlags.NONE,
-                                        {'phone': Secret.SchemaAttributeType.STRING})
-        self.attributes = {'phone': profile}
+        # Match Rust's `secret-tool` records so either Messages client reads
+        # the same phone-scoped preferences.
+        self.schema = Secret.Schema.new(KEYRING_SCHEMA, Secret.SchemaFlags.NONE,
+                                        {'application': Secret.SchemaAttributeType.STRING,
+                                         'phone': Secret.SchemaAttributeType.STRING})
+        self.attributes = {'application': KEYRING_APPLICATION, 'phone': profile}
+        self.legacy_schema = Secret.Schema.new(LEGACY_KEYRING_SCHEMA, Secret.SchemaFlags.NONE,
+                                               {'phone': Secret.SchemaAttributeType.STRING})
+        self.legacy_attributes = {'phone': legacy_profile} if legacy_profile else None
 
-    def load(self):
-        text = self.secret.password_lookup_sync(self.schema, self.attributes, None)
-        if not text:
-            return dict(version=1, snapshot=None, choices=[])
+    def _decode(self, text):
         if len(text.encode()) > MAX_BYTES:
             raise ValueError('The saved pin import is too large.')
         value = json.loads(text)
-        if value.get('version') != 1 or not isinstance(value.get('choices'), list):
+        if not isinstance(value, dict) or value.get('version') != 1 or not isinstance(value.get('choices'), list):
             raise ValueError('The saved pin import is unsupported.')
         value['snapshot'] = validate_snapshot(value['snapshot'])
         choices = value['choices']
@@ -141,6 +160,18 @@ class PinStore:
             raise ValueError('The saved conversation matches contain duplicates.')
         return value
 
+    def load(self):
+        text = self.secret.password_lookup_sync(self.schema, self.attributes, None)
+        if text:
+            return self._decode(text)
+        if self.legacy_attributes:
+            legacy = self.secret.password_lookup_sync(self.legacy_schema, self.legacy_attributes, None)
+            if legacy:
+                state = self._decode(legacy)
+                self.save(state)
+                return state
+        return dict(version=1, snapshot=None, choices=[])
+
     def save(self, state):
         text = json.dumps(state, ensure_ascii=True)
         if len(text.encode()) > MAX_BYTES:
@@ -148,4 +179,11 @@ class PinStore:
         if not self.secret.password_store_sync(self.schema, self.attributes, self.secret.COLLECTION_DEFAULT,
                                                'Messages — imported Apple conversation pins', text, None):
             raise RuntimeError('The desktop keyring did not save the imported pins.')
+        if self.legacy_attributes:
+            try:
+                self.secret.password_clear_sync(self.legacy_schema, self.legacy_attributes, None)
+            except Exception:
+                # The new shared item is already saved; a leftover legacy item
+                # is harmless and can be cleaned up on a later migration.
+                pass
         return deepcopy(state)

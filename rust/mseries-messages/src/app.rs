@@ -2,8 +2,9 @@ use crate::media::{self, LinkPreview, PreviewKind};
 use granite::prelude::PlaceholderExt;
 use gtk::{gio, glib, prelude::*};
 use mseries_pantheon_kit::{
-    BlueFerryMessagesClient as Backend, BlueFerryStatus, ContactMatch, DockBadge, Message,
-    MessagePosition, Thread, format_message_timestamp, layout_messages,
+    BlueFerryMessagesClient as Backend, BlueFerryStatus, ContactMatch, DockBadge, ImportedPinState,
+    Message, MessagePosition, PhonePinStore, PinSnapshot, Thread, format_message_timestamp,
+    is_valid_phone_profile_id, layout_messages, suggested_pin_matches,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -339,6 +340,12 @@ pub struct App {
     window: gtk::ApplicationWindow,
     status: gtk::Label,
     feedback: gtk::Label,
+    pin_note: gtk::Label,
+    pin_import_button: gtk::Button,
+    pin_review_button: gtk::Button,
+    pin_profile_id: RefCell<Option<String>>,
+    pin_state: RefCell<ImportedPinState>,
+    pin_load_generation: Cell<u64>,
     search: gtk::SearchEntry,
     list: gtk::ListBox,
     favorites_section: gtk::Box,
@@ -415,8 +422,20 @@ impl App {
         let shortcuts_button = gtk::Button::with_label("Keyboard Shortcuts");
         shortcuts_button.add_css_class("flat");
         mseries_pantheon_kit::set_accessible_label(&shortcuts_button, "Show keyboard shortcuts");
+        let pin_import_button = gtk::Button::with_label("Import iPhone Pins…");
+        pin_import_button.add_css_class("flat");
+        mseries_pantheon_kit::set_accessible_label(&pin_import_button, "Import iPhone pins");
+        let pin_review_button = gtk::Button::with_label("Review Imported Pins…");
+        pin_review_button.add_css_class("flat");
+        mseries_pantheon_kit::set_accessible_label(&pin_review_button, "Review imported pins");
+        pin_review_button.set_sensitive(false);
+        let menu_actions = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        mseries_pantheon_kit::set_margins_text_units(&menu_actions, 0.35, 0.35, 0.35, 0.35);
+        menu_actions.append(&pin_import_button);
+        menu_actions.append(&pin_review_button);
+        menu_actions.append(&shortcuts_button);
         let menu = gtk::Popover::new();
-        menu.set_child(Some(&shortcuts_button));
+        menu.set_child(Some(&menu_actions));
         let menu_button = gtk::MenuButton::builder()
             .icon_name("open-menu-symbolic")
             .tooltip_text("Menu")
@@ -464,6 +483,18 @@ impl App {
         favorites_section.append(&favorites_title);
         favorites_section.append(&favorites_scroll);
         favorites_section.set_visible(false);
+        let pin_note = gtk::Label::builder()
+            .label("")
+            .xalign(0.0)
+            .wrap(true)
+            .margin_start(12)
+            .margin_end(12)
+            .margin_top(6)
+            .margin_bottom(6)
+            .visible(false)
+            .build();
+        pin_note.add_css_class("caption");
+        pin_note.add_css_class("dim-label");
         let list = gtk::ListBox::builder()
             .selection_mode(gtk::SelectionMode::Single)
             .css_classes(["navigation-sidebar"])
@@ -477,6 +508,7 @@ impl App {
         let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 0);
         sidebar.append(&search);
         sidebar.append(&favorites_section);
+        sidebar.append(&pin_note);
         sidebar.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         sidebar.append(&list_scroll);
 
@@ -583,6 +615,12 @@ impl App {
             window,
             status,
             feedback,
+            pin_note,
+            pin_import_button,
+            pin_review_button,
+            pin_profile_id: RefCell::new(None),
+            pin_state: RefCell::new(ImportedPinState::default()),
+            pin_load_generation: Cell::new(0),
             search,
             list,
             favorites_section,
@@ -614,6 +652,8 @@ impl App {
             &menu,
             &shortcuts_button,
             &app.copy_addresses_button,
+            &app.pin_import_button,
+            &app.pin_review_button,
         );
         app.connect_responsive_layout();
         app.watch_history();
@@ -629,6 +669,8 @@ impl App {
         menu: &gtk::Popover,
         shortcuts: &gtk::Button,
         copy_addresses: &gtk::Button,
+        pin_import: &gtk::Button,
+        pin_review: &gtk::Button,
     ) {
         let weak = Rc::downgrade(self);
         self.window.connect_close_request(move |_| {
@@ -653,11 +695,29 @@ impl App {
         });
 
         let weak = Rc::downgrade(self);
-        let menu = menu.clone();
+        let shortcuts_menu = menu.clone();
         shortcuts.connect_clicked(move |_| {
-            menu.popdown();
+            shortcuts_menu.popdown();
             if let Some(app) = weak.upgrade() {
                 app.show_shortcuts();
+            }
+        });
+
+        let weak = Rc::downgrade(self);
+        let import_menu = menu.clone();
+        pin_import.connect_clicked(move |_| {
+            import_menu.popdown();
+            if let Some(app) = weak.upgrade() {
+                app.import_phone_pins();
+            }
+        });
+
+        let weak = Rc::downgrade(self);
+        let review_menu = menu.clone();
+        pin_review.connect_clicked(move |_| {
+            review_menu.popdown();
+            if let Some(app) = weak.upgrade() {
+                app.review_phone_pins();
             }
         });
 
@@ -994,6 +1054,7 @@ impl App {
                         app.dock_badge.set_count(unread_count);
                         reconcile_outbox(&mut state);
                         drop(state);
+                        app.sync_phone_pin_profile(status.phone_profile_id.clone());
                         app.rebuild_sidebar();
                         app.load_contact_photos();
                     }
@@ -1011,12 +1072,20 @@ impl App {
         let filter = glib::casefold(self.search.text());
         let (threads, selected) = {
             let state = self.state.borrow();
-            let threads = state
+            let pin_order = self.pin_state.borrow().ordered_thread_keys(&state.threads);
+            let rank = pin_order
+                .iter()
+                .enumerate()
+                .map(|(index, key)| (key.as_str(), index))
+                .collect::<HashMap<_, _>>();
+            let mut threads = state
                 .threads
                 .iter()
                 .filter(|thread| filter.is_empty() || thread.search_index.contains(filter.as_str()))
                 .cloned()
                 .collect::<Vec<_>>();
+            threads
+                .sort_by_key(|thread| rank.get(thread.key.as_str()).copied().unwrap_or(usize::MAX));
             (threads, state.selected.clone())
         };
         self.list.remove_all();
@@ -1256,6 +1325,338 @@ impl App {
                 .insert(thread.key.clone(), button);
         }
         self.favorites_section.set_visible(!favorites.is_empty());
+    }
+
+    fn sync_phone_pin_profile(self: &Rc<Self>, reported: Option<String>) {
+        let profile = reported.filter(|value| is_valid_phone_profile_id(value));
+        if self.pin_profile_id.borrow().as_ref() == profile.as_ref() {
+            return;
+        }
+        *self.pin_profile_id.borrow_mut() = profile.clone();
+        *self.pin_state.borrow_mut() = ImportedPinState::default();
+        self.pin_load_generation
+            .set(self.pin_load_generation.get().wrapping_add(1));
+        let generation = self.pin_load_generation.get();
+        self.pin_review_button.set_sensitive(false);
+        self.update_pin_note();
+        let Some(profile) = profile else {
+            return;
+        };
+
+        let weak = Rc::downgrade(self);
+        glib::MainContext::default().spawn_local(async move {
+            let result = PhonePinStore::load(&profile).await;
+            let Some(app) = weak.upgrade() else { return };
+            if app.pin_load_generation.get() != generation
+                || app.pin_profile_id.borrow().as_deref() != Some(profile.as_str())
+            {
+                return;
+            }
+            match result {
+                Ok(state) => {
+                    *app.pin_state.borrow_mut() = state;
+                    app.update_pin_note();
+                    app.rebuild_sidebar();
+                }
+                Err(error) => {
+                    app.pin_note.set_text(&format!(
+                        "Could not open imported pins from the desktop keyring: {error}"
+                    ));
+                    app.pin_note.set_visible(true);
+                }
+            }
+        });
+    }
+
+    fn update_pin_note(&self) {
+        let state = self.pin_state.borrow();
+        let Some(snapshot) = state.snapshot.as_ref() else {
+            self.pin_note.set_text("");
+            self.pin_note.set_tooltip_text(None);
+            self.pin_note.set_visible(false);
+            self.pin_review_button.set_sensitive(false);
+            return;
+        };
+        let current_threads = self.state.borrow();
+        let thread_keys = current_threads
+            .threads
+            .iter()
+            .map(|thread| thread.key.as_str())
+            .collect::<HashSet<_>>();
+        let missing = state
+            .suggested_matches(snapshot, &current_threads.threads)
+            .iter()
+            .filter(|choice| {
+                choice
+                    .as_ref()
+                    .is_none_or(|key| !thread_keys.contains(key.as_str()))
+            })
+            .count();
+        drop(current_threads);
+        let stamp = format_message_timestamp(&snapshot.captured_at);
+        let note = if snapshot.pins.is_empty() {
+            format!("No Apple conversation pins · {stamp}")
+        } else {
+            let mut note = format!("Pins imported from Mac · {stamp}");
+            if missing > 0 {
+                note.push_str(&format!(" · {missing} need matching"));
+            }
+            note
+        };
+        self.pin_note.set_text(&note);
+        let mut tooltip = String::from(
+            "This is an ordered Mac snapshot. Changes on the iPhone require a new export; review unmatched conversations here.",
+        );
+        if let Some(modified) = snapshot.source_modified_at.as_deref() {
+            tooltip.push_str(&format!(
+                "\nApple pin settings last changed: {}",
+                format_message_timestamp(modified)
+            ));
+        }
+        self.pin_note.set_tooltip_text(Some(&tooltip));
+        self.pin_note.set_visible(true);
+        self.pin_review_button.set_sensitive(true);
+    }
+
+    fn import_phone_pins(self: &Rc<Self>) {
+        if self.pin_profile_id.borrow().is_none() {
+            self.status
+                .set_text("Update BlueFerry and connect your iPhone before importing phone pins.");
+            return;
+        }
+        let weak = Rc::downgrade(self);
+        let parent = self.window.clone();
+        glib::MainContext::default().spawn_local(async move {
+            let dialog = gtk::FileDialog::builder()
+                .title("Import iPhone Pins")
+                .modal(true)
+                .build();
+            let file = match dialog.open_future(Some(&parent)).await {
+                Ok(file) => file,
+                Err(_) => return,
+            };
+            let Some(path) = file.path() else {
+                if let Some(app) = weak.upgrade() {
+                    app.status.set_text("Choose a local Apple pin export file.");
+                }
+                return;
+            };
+            match PinSnapshot::read(&path) {
+                Ok(snapshot) => {
+                    if let Some(app) = weak.upgrade() {
+                        app.show_pin_review(snapshot);
+                    }
+                }
+                Err(error) => {
+                    if let Some(app) = weak.upgrade() {
+                        app.status.set_text(&format!(
+                            "Could not read that pin export. Use Export-Message-Pins on your Mac. {error}"
+                        ));
+                    }
+                }
+            }
+        });
+    }
+
+    fn review_phone_pins(self: &Rc<Self>) {
+        let snapshot = self.pin_state.borrow().snapshot.clone();
+        if let Some(snapshot) = snapshot {
+            self.show_pin_review(snapshot);
+        } else {
+            self.import_phone_pins();
+        }
+    }
+
+    fn show_pin_review(self: &Rc<Self>, snapshot: PinSnapshot) {
+        let Some(profile) = self.pin_profile_id.borrow().clone() else {
+            self.status
+                .set_text("Update BlueFerry and connect your iPhone before importing phone pins.");
+            return;
+        };
+        let threads = self.state.borrow().threads.clone();
+        let previous = self.pin_state.borrow().clone();
+        let choices = if previous.snapshot.as_ref() == Some(&snapshot) {
+            previous.choices.clone()
+        } else {
+            suggested_pin_matches(&snapshot, &threads, Some(&previous))
+        };
+        let mut candidates = threads.clone();
+        candidates.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+        let keys = candidates
+            .iter()
+            .map(|thread| thread.key.clone())
+            .collect::<Vec<_>>();
+        let mut labels = vec!["Not matched yet".to_string()];
+        labels.extend(candidates.iter().map(|thread| {
+            if thread.recipients.is_empty() {
+                thread.name.clone()
+            } else {
+                format!("{} · {}", thread.name, thread.recipients.join(", "))
+            }
+        }));
+        let label_refs = labels.iter().map(String::as_str).collect::<Vec<_>>();
+
+        let dialog = gtk::Window::builder()
+            .title("Import iPhone Pins")
+            .transient_for(&self.window)
+            .destroy_with_parent(true)
+            .modal(true)
+            .default_width(500)
+            .default_height(560)
+            .build();
+        let header = gtk::HeaderBar::new();
+        let title = gtk::Label::new(Some("Import iPhone Pins"));
+        title.add_css_class("title");
+        header.set_title_widget(Some(&title));
+        dialog.set_titlebar(Some(&header));
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        mseries_pantheon_kit::set_margins_text_units(&content, 0.8, 0.9, 0.8, 0.9);
+        let explanation = gtk::Label::builder()
+            .label("Match Apple’s ordered pin list with conversations on this computer. Groups need your selection. This saves a local snapshot and does not change your iPhone.")
+            .xalign(0.0)
+            .wrap(true)
+            .build();
+        explanation.add_css_class("dim-label");
+        content.append(&explanation);
+        let rows = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        let mut dropdowns = Vec::with_capacity(snapshot.pins.len());
+        for (index, pin) in snapshot.pins.iter().enumerate() {
+            let row = gtk::Box::new(gtk::Orientation::Vertical, 5);
+            row.add_css_class("card");
+            mseries_pantheon_kit::set_margins_text_units(&row, 0.45, 0.5, 0.45, 0.5);
+            let identifier = gtk::Label::builder()
+                .label(&format!("{}. {}", index + 1, pin.apple_identifier))
+                .xalign(0.0)
+                .ellipsize(gtk::pango::EllipsizeMode::Middle)
+                .max_width_chars(48)
+                .tooltip_text(&pin.apple_identifier)
+                .build();
+            mseries_pantheon_kit::set_accessible_label(
+                &identifier,
+                &format!("Apple pin {}: {}", index + 1, pin.apple_identifier),
+            );
+            row.append(&identifier);
+            let dropdown = gtk::DropDown::from_strings(&label_refs);
+            let selected = choices
+                .get(index)
+                .and_then(Option::as_ref)
+                .and_then(|key| keys.iter().position(|candidate| candidate == key))
+                .map_or(0, |index| index as u32 + 1);
+            dropdown.set_selected(selected);
+            mseries_pantheon_kit::set_accessible_label(
+                &dropdown,
+                &format!("Conversation for pin {}", index + 1),
+            );
+            row.append(&dropdown);
+            rows.append(&row);
+            dropdowns.push(dropdown);
+        }
+        if snapshot.pins.is_empty() {
+            let empty = gtk::Label::builder()
+                .label("Apple Messages exported an empty pin list. Importing it clears this computer’s imported pin order.")
+                .xalign(0.0)
+                .wrap(true)
+                .build();
+            empty.add_css_class("dim-label");
+            rows.append(&empty);
+        }
+        let scroll = gtk::ScrolledWindow::builder()
+            .child(&rows)
+            .vexpand(true)
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .build();
+        content.append(&scroll);
+        let error = gtk::Label::builder()
+            .label("")
+            .xalign(0.0)
+            .wrap(true)
+            .visible(false)
+            .build();
+        error.add_css_class("error");
+        content.append(&error);
+        let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        actions.set_halign(gtk::Align::End);
+        let cancel = gtk::Button::with_label("Cancel");
+        let apply = gtk::Button::with_label("Import Pins");
+        apply.add_css_class("suggested-action");
+        actions.append(&cancel);
+        actions.append(&apply);
+        content.append(&actions);
+        dialog.set_child(Some(&content));
+        dialog.set_default_widget(Some(&apply));
+        let close_dialog = dialog.clone();
+        cancel.connect_clicked(move |_| close_dialog.close());
+
+        let weak = Rc::downgrade(self);
+        let snapshot_for_save = snapshot.clone();
+        let profile_for_save = profile.clone();
+        let dropdowns = Rc::new(dropdowns);
+        let keys = Rc::new(keys);
+        let error_label = error.clone();
+        let apply_button = apply.clone();
+        let dialog_for_save = dialog.clone();
+        apply.connect_clicked(move |_| {
+            let Some(app) = weak.upgrade() else { return };
+            let choices = dropdowns
+                .iter()
+                .map(|dropdown| {
+                    let selected = dropdown.selected();
+                    selected
+                        .checked_sub(1)
+                        .and_then(|index| keys.get(index as usize))
+                        .cloned()
+                })
+                .collect::<Vec<_>>();
+            let state = match ImportedPinState::reviewed(
+                snapshot_for_save.clone(),
+                choices,
+                &threads,
+            ) {
+                Ok(state) => state,
+                Err(message) => {
+                    error_label.set_text(&message);
+                    error_label.set_visible(true);
+                    return;
+                }
+            };
+            apply_button.set_sensitive(false);
+            let backend = app.backend.clone();
+            let weak_app = Rc::downgrade(&app);
+            let profile = profile_for_save.clone();
+            let error_label_async = error_label.clone();
+            let apply_button_async = apply_button.clone();
+            let dialog_async = dialog_for_save.clone();
+            glib::MainContext::default().spawn_local(async move {
+                let result = async {
+                    let current = backend.status().await?;
+                    if current.phone_profile_id.as_deref() != Some(profile.as_str()) {
+                        return Err("The connected phone changed. Refresh and review the pin import again.".to_string());
+                    }
+                    PhonePinStore::save(&profile, &state).await
+                }
+                .await;
+                let Some(app) = weak_app.upgrade() else { return };
+                if app.pin_profile_id.borrow().as_deref() != Some(profile.as_str()) {
+                    return;
+                }
+                match result {
+                    Ok(()) => {
+                        *app.pin_state.borrow_mut() = state;
+                        app.update_pin_note();
+                        app.rebuild_sidebar();
+                        dialog_async.close();
+                    }
+                    Err(message) => {
+                        error_label_async.set_text(&format!(
+                            "Could not save pins in the desktop keyring. Your previous pins are kept. {message}"
+                        ));
+                        error_label_async.set_visible(true);
+                        apply_button_async.set_sensitive(true);
+                    }
+                }
+            });
+        });
+        dialog.present();
     }
 
     fn avatar_for_thread(&self, thread: &Thread, size: i32) -> gtk::Widget {

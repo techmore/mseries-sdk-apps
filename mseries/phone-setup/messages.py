@@ -32,7 +32,8 @@ from messages_style import build_style, missing_accent_names
 from messages_widgets import (AVATAR_PX, avatar, build_composer, build_notice, build_status, clear,
                               conversation_row, empty_state, favorite_tile, icon_for, identity_of,
                               label, photo_frame, render_messages)
-from message_pins import PinStore, profile_key, read_snapshot, suggested_matches, matched_state, ordered_keys, effective_choices
+from message_pins import (PinStore, _legacy_profile_key, profile_key, read_snapshot,
+                          suggested_matches, matched_state, ordered_keys, effective_choices)
 
 _ = gettext.gettext
 ngettext = gettext.ngettext
@@ -99,6 +100,7 @@ class Messages(Gtk.Application):
         self.pin_profile = None
         self.pin_store = None
         self.pin_pending = False
+        self.pin_generation = 0
         self.group_dialog = None
         # Fixtures never read or write the owner's real preferences.
         self.settings = dict(messages_settings.DEFAULTS) if fixture else messages_settings.load()
@@ -374,6 +376,7 @@ class Messages(Gtk.Application):
         if error:
             self.status = dict(map=False)
             self.last_map = False
+            self.load_pins()
             self.set_connection('offline')
             if not self.retrying:
                 self.set_notice(_('Messages are offline. Keep your iPhone nearby with Bluetooth on. Use Connect iPhone if it needs setup.'), retry=True)
@@ -566,24 +569,34 @@ class Messages(Gtk.Application):
         self.pin_note.set_label(text)
         self.pin_note.set_visible(bool(text))
     def load_pins(self):
-        if self.fixture or self.pin_pending:
+        if self.fixture:
             return
         try:
-            profile = profile_key()
+            profile = profile_key(self.status)
         except ValueError:
+            if self.pin_profile is not None or self.pin_pending or self.pin_state.get('snapshot'):
+                self.pin_profile = None
+                self.pin_pending = False
+                self.pin_store = None
+                self.pin_state = dict(version=1, snapshot=None, choices=[])
+                self.pin_generation += 1
+                self.update_pin_note()
+                self.populate()
             return
         if profile == self.pin_profile:
             return
         self.pin_profile = profile
         self.pin_state = dict(version=1, snapshot=None, choices=[])
         self.pin_pending = True
+        self.pin_generation += 1
+        generation = self.pin_generation
         def load():
-            store = PinStore(profile)
+            store = PinStore(profile, _legacy_profile_key())
             return store, store.load()
         def loaded(result, error):
-            self.pin_pending = False
-            if profile != self.pin_profile:
+            if profile != self.pin_profile or generation != self.pin_generation:
                 return
+            self.pin_pending = False
             if error:
                 self.pin_store = None
                 self.pin_notice(_('Could not open saved pins. Import iPhone Pins to try again.'))
@@ -606,6 +619,12 @@ class Messages(Gtk.Application):
             modified = datetime.fromisoformat(snapshot['source_modified_at']).astimezone().strftime('%x %X')
             self.pin_note.set_tooltip_text(self.pin_note.get_tooltip_text() + '\n' + (_('Apple pin settings last changed: %s') % modified))
     def import_pins(self, *_args):
+        if not self.fixture:
+            try:
+                profile_key(self.status)
+            except ValueError as error:
+                self.pin_notice(_(str(error)))
+                return
         chooser = Gtk.FileDialog(title=_('Import iPhone Pins'))
         file_filter = Gtk.FileFilter(name=_('Apple Messages pin export'))
         file_filter.add_pattern('*.json')
@@ -631,6 +650,11 @@ class Messages(Gtk.Application):
         else:
             self.import_pins()
     def show_pin_review(self, snapshot, previous=None):
+        try:
+            profile = 'fixture' if self.fixture else profile_key(self.status)
+        except ValueError as error:
+            self.pin_notice(_(str(error)))
+            return
         dialog = Gtk.Window(title=_('Import iPhone Pins'), transient_for=self.window, destroy_with_parent=True, modal=True, default_width=480, default_height=540)
         header = Gtk.HeaderBar()
         header.set_title_widget(label(_('Import iPhone Pins'), 'title'))
@@ -685,16 +709,16 @@ class Messages(Gtk.Application):
             try:
                 selected = [keys[d.get_selected()-1] if d.get_selected() else None for d in dropdowns]
                 new_state = matched_state(snapshot, selected, self.threads)
-                profile = 'fixture' if self.fixture else profile_key()
             except ValueError as error:
                 error_label.set_label(str(error));error_label.set_visible(True);return
             apply.set_sensitive(False)
             def persist():
                 if self.fixture:
                     return new_state
-                if profile_key() != profile:
+                current = BackendClient().status().to_dict()
+                if profile_key(current) != profile:
                     raise RuntimeError('The connected phone changed')
-                return PinStore(profile).save(new_state)
+                return PinStore(profile, _legacy_profile_key()).save(new_state)
             def saved(result, error):
                 if error:
                     if state['alive']:
