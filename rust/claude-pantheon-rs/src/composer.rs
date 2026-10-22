@@ -48,6 +48,7 @@ fn drafts_path() -> PathBuf {
 impl Composer {
     pub fn new() -> Rc<Composer> {
         let view = gtk::TextView::builder()
+            .accessible_role(gtk::AccessibleRole::TextBox)
             .wrap_mode(gtk::WrapMode::WordChar)
             .accepts_tab(false)
             .top_margin(8)
@@ -80,6 +81,7 @@ impl Composer {
 
         // The @ picker: a popover anchored to the text view.
         let picker_entry = gtk::SearchEntry::builder().placeholder_text("File in this project…").build();
+        picker_entry.update_property(&[gtk::accessible::Property::Label("File to attach")]);
         let picker_list = gtk::ListBox::builder().selection_mode(gtk::SelectionMode::Single).build();
         let picker_scroll = gtk::ScrolledWindow::builder()
             .child(&picker_list)
@@ -332,6 +334,8 @@ impl Composer {
             let text = label(&format!("{} · {}", a.name, crate::look::size_text(a.size)), &["caption"]);
             chip.append(&text);
             let remove = gtk::Button::from_icon_name("window-close-symbolic");
+            remove.update_property(&[gtk::accessible::Property::Label("Remove attachment")]);
+            remove.set_tooltip_text(Some("Remove attachment"));
             remove.add_css_class("flat");
             remove.add_css_class("circular");
             remove.set_tooltip_text(Some("Remove attachment"));

@@ -144,6 +144,12 @@ pub fn thread_row(t: &ThreadShell, title: &str, accent: &str, now: i64) -> gtk::
     let row = gtk::ListBoxRow::new();
     row.set_child(Some(&row_box));
     row.set_tooltip_text(Some(&format!("{title}\n{}", t.id)));
+    row.update_property(&[gtk::accessible::Property::Label(&format!(
+        "{title}, {}{}{}",
+        relative_time(iso_to_unix(&t.updated_at), now),
+        if t.is_running() { ", running" } else { "" },
+        if is_pinned(t) { ", pinned" } else { "" }
+    ))]);
     row
 }
 

@@ -77,10 +77,12 @@ impl PageView {
         show.add_css_class("suggested-action");
         head.append(&show);
         let expand = gtk::Button::from_icon_name("view-fullscreen-symbolic");
+        expand.update_property(&[gtk::accessible::Property::Label("Open full screen")]);
         expand.set_tooltip_text(Some("Open full screen"));
         expand.set_visible(false);
         head.append(&expand);
         let close = gtk::Button::from_icon_name("window-close-symbolic");
+        close.update_property(&[gtk::accessible::Property::Label("Close the page")]);
         close.set_tooltip_text(Some("Close the page (frees its web process)"));
         close.set_visible(false);
         head.append(&close);

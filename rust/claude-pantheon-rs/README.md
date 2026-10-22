@@ -45,6 +45,7 @@ Other entry points:
 | Ctrl+, | Settings (appearance, defaults per project, server, notifications, renderer) |
 | Ctrl+Shift+T | Terminal pane for the open thread (the server's PTY, no local shell) |
 | Ctrl+Shift+S | SnapShot: screenshot through the portal, named after the focused window, attached to the draft |
+| Ctrl+plus / Ctrl+minus / Ctrl+0 | Text zoom (80–200 %, remembered; also in Settings → Appearance) |
 | Ctrl+Q | Quit |
 | Y / N | Allow once / deny the oldest waiting permission prompt (when not typing) |
 
@@ -158,3 +159,12 @@ its items arrive; the Repos page shows a Granite placeholder with an Import Sess
 remote, and the issue list shows skeleton rows while `gh` answers, a placeholder when nothing matches the filters, and a
 placeholder with Retry when GitHub fails. Transient errors (server unreachable, a chat that could not be read, a thread
 stream that ended, usage or GitHub failures) are Granite toasts with a Retry action.
+
+## Window state and accessibility
+
+Size, maximised state and the sidebar width are remembered in `~/.config/claude-pantheon-rs/window.json` (clamped to
+sane values on load). Text zoom scales every font through `gtk-xft-dpi` relative to the system's text scaling, so
+HiDPI and the owner's font DPI are kept; the window was checked at `GDK_SCALE=2`. Every icon-only control, the pickers,
+the search field, the thread list and each chat item carry accessible names (chat items read as "You: …",
+"Assistant: …", "Tool call Bash: …", "Permission request: …"), and keyboard focus is outlined on list rows and flat
+buttons.

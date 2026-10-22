@@ -95,6 +95,7 @@ start-up probe; the table tracks drift per feature.
 | #484 | Protocol version guard and contracts drift check (build-time, no runtime cost) | 69 | 0.0 | 198 – 212 |
 | #479 | Environments switcher (direct, Tailscale, SSH tunnel, T3 Connect), per-environment credentials | 70 | 0.0 | 230 – 567 (machine at load 37–83 from other jobs during the samples) |
 | #480 | Empty states, skeleton loading rows (pulse only while mapped), retry toasts | 68 | 0.0 | 510 – 982 (machine at load 90 from other jobs; an ungated CSS pulse had cost 2.6 % idle, hence the map/unmap gate) |
+| #481 | Window state, text zoom (gtk-xft-dpi), HiDPI check at GDK_SCALE=2, accessible names, focus outlines | 68 | 0.0 | 370 – 611 (machine at load 80 from other jobs) |
 
 ## Reproduce
 

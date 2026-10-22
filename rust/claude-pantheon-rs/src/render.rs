@@ -434,6 +434,10 @@ fn image_widget(url: &str, title: &str) -> gtk::Widget {
     let button = gtk::Button::new();
     button.add_css_class("flat");
     button.add_css_class("md-image");
+    button.update_property(&[gtk::accessible::Property::Label(&format!(
+        "Image: {}",
+        if title.is_empty() { url } else { title }
+    ))]);
     let path = url.strip_prefix("file://").unwrap_or(url);
     let picture = if path.starts_with('/') && std::path::Path::new(path).exists() {
         let p = gtk::Picture::for_filename(path);
