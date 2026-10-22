@@ -44,7 +44,10 @@ owner's live phone acceptance.
 The SDK also folds text-form iPhone Tapbacks onto the earlier message they
 quote, including reaction changes and removals. Unmatched Tapbacks stay visible
 as messages. Rust Messages presents reaction symbols with accessible names and
-hover descriptions; live phone coverage remains part of acceptance.
+hover descriptions. It preserves BlueFerry's uncertain-transfer error so the
+app tells the user to check the iPhone before trying again; a completed MAP
+transfer is not represented as a recipient delivery receipt. Live phone
+coverage remains part of acceptance.
 
 Imported pin review remains open until BlueFerry exposes a stable opaque
 per-phone profile identifier through its supported status API. The Python

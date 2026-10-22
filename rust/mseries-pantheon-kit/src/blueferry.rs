@@ -25,6 +25,25 @@ pub struct BlueFerryStatus {
     pub contact_photo_revision: Option<u64>,
 }
 
+/// A send failure whose transport outcome can be distinguished from an error
+/// that is known to have prevented the send.
+#[derive(Clone, Debug)]
+pub struct BlueFerrySendError {
+    pub message: String,
+    pub outcome_unknown: bool,
+}
+
+impl BlueFerrySendError {
+    fn from_dbus(error: &glib::Error) -> Self {
+        let expected_name = format!("{BUS_NAME}.Error.SendOutcomeUnknown");
+        Self {
+            message: error.message().to_string(),
+            outcome_unknown: gio::DBusError::remote_error(error)
+                .is_some_and(|name| name == expected_name),
+        }
+    }
+}
+
 /// App-facing client for BlueFerry's versioned session D-Bus contract.
 ///
 /// BlueFerry remains the owner of iPhone MAP access, message history, recipient
@@ -61,6 +80,26 @@ impl BlueFerryMessagesClient {
             )
             .await
             .map_err(|error| error.message().to_string())
+    }
+
+    async fn call_send(
+        &self,
+        method: &str,
+        args: &glib::Variant,
+    ) -> Result<glib::Variant, BlueFerrySendError> {
+        self.bus
+            .call_future(
+                Some(BUS_NAME),
+                OBJECT_PATH,
+                MESSAGES_IFACE,
+                method,
+                Some(args),
+                None,
+                gio::DBusCallFlags::NONE,
+                SEND_TIMEOUT_MS,
+            )
+            .await
+            .map_err(|error| BlueFerrySendError::from_dbus(&error))
     }
 
     pub async fn status(&self) -> Result<BlueFerryStatus, String> {
@@ -144,18 +183,20 @@ impl BlueFerryMessagesClient {
         body: &str,
         confirm_group: bool,
         expected_group_token: &str,
-    ) -> Result<(), String> {
+    ) -> Result<(), BlueFerrySendError> {
         let args = (key, body, confirm_group, expected_group_token).to_variant();
-        self.call("SendToThreadChecked", Some(&args), SEND_TIMEOUT_MS)
+        self.call_send("SendToThreadChecked", &args)
             .await
             .map(|_| ())
     }
 
-    pub async fn send_to_recipient(&self, recipient: &str, body: &str) -> Result<(), String> {
+    pub async fn send_to_recipient(
+        &self,
+        recipient: &str,
+        body: &str,
+    ) -> Result<(), BlueFerrySendError> {
         let args = (recipient, body).to_variant();
-        self.call("Send", Some(&args), SEND_TIMEOUT_MS)
-            .await
-            .map(|_| ())
+        self.call_send("Send", &args).await.map(|_| ())
     }
 
     pub fn watch_history(&self, changed: impl Fn() + 'static) -> gio::SignalSubscription {

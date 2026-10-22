@@ -14,7 +14,9 @@ mod messages;
 mod polling;
 mod system;
 
-pub use blueferry::{BLUEFERRY_MESSAGES_API_VERSION, BlueFerryMessagesClient, BlueFerryStatus};
+pub use blueferry::{
+    BLUEFERRY_MESSAGES_API_VERSION, BlueFerryMessagesClient, BlueFerrySendError, BlueFerryStatus,
+};
 pub use images::decode_contact_avatar;
 pub use layout::{
     LayoutClass, install_css, set_accessible_label, set_box_spacing_text_units,

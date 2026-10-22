@@ -1116,7 +1116,7 @@ impl App {
                 .or_insert_with(|| body.clone());
         }
         self.send_button.set_sensitive(false);
-        self.feedback.set_text("Sending through BlueFerry…");
+        self.feedback.set_text("Sending to your iPhone…");
         let backend = self.backend.clone();
         let weak = Rc::downgrade(self);
         glib::MainContext::default().spawn_local(async move {
@@ -1138,7 +1138,8 @@ impl App {
                 }
                 match result {
                     Ok(()) => {
-                        app.feedback.set_text("Message sent through your iPhone.");
+                        app.feedback
+                            .set_text("The message was transferred to your iPhone.");
                         if app.state.borrow().selected.as_deref() == Some(key.as_str()) {
                             let buffer = app.editor.buffer();
                             let current = buffer
@@ -1164,8 +1165,12 @@ impl App {
                             });
                         }
                     }
+                    Err(error) if error.outcome_unknown => app.feedback.set_text(
+                        "Your iPhone's send status is unknown. Your draft is kept. Check Messages on your iPhone before trying again.",
+                    ),
                     Err(error) => app.feedback.set_text(&format!(
-                        "Could not send. Your draft is kept; choose Send to retry. {error}"
+                        "Could not send. Your draft is kept; choose Send to retry. {}",
+                        error.message
                     )),
                 }
                 app.refresh();
