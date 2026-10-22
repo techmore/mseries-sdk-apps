@@ -53,6 +53,9 @@ jobs:
           cargo fmt --manifest-path rust/Cargo.toml -p mseries-messages --check
           cargo clippy --manifest-path rust/Cargo.toml -p mseries-messages --locked -- -D warnings
 
+      - name: Rust Messages unit tests
+        run: cargo test --manifest-path rust/Cargo.toml -p mseries-messages --locked
+
       - name: Build and package
         run: MSERIES_MESSAGES_OUTPUT_DIR="$RUNNER_TEMP/mseries-messages-rs" bash rust/mseries-messages/build-deb.sh
 

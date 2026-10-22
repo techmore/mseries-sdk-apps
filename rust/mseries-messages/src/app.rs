@@ -3007,3 +3007,125 @@ fn normalize_recipient(input: &str) -> Option<String> {
     }
     Some(format!("{local}@{}", domain.to_ascii_lowercase()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_complete_phone_numbers_and_email_domains() {
+        assert_eq!(
+            normalize_recipient(" +1 (415) 555-2671 "),
+            Some("+14155552671".to_string())
+        );
+        assert_eq!(
+            normalize_recipient("415.555.2671"),
+            Some("4155552671".to_string())
+        );
+        assert_eq!(
+            normalize_recipient("Alice+work@EXAMPLE.COM"),
+            Some("Alice+work@example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn rejects_incomplete_or_malformed_recipients() {
+        for invalid in [
+            "",
+            "+",
+            "12",
+            "123abc",
+            "alice@",
+            "@example.com",
+            "alice..work@example.com",
+            "alice@-example.com",
+            "alice@example-.com",
+            "alice@example..com",
+            "alïce@example.com",
+        ] {
+            assert_eq!(normalize_recipient(invalid), None, "accepted {invalid:?}");
+        }
+    }
+
+    #[test]
+    fn outbox_waits_for_a_matching_outgoing_history_echo() {
+        let mut state = State {
+            threads: vec![Thread {
+                key: "phone-thread".into(),
+                messages: vec![Message {
+                    body: "same text".into(),
+                    outgoing: false,
+                    ..Message::default()
+                }],
+                ..Thread::default()
+            }],
+            outbox: vec![OutboxMessage {
+                id: 7,
+                key: "phone-thread".into(),
+                body: "  same text\r\n".into(),
+                timestamp: "2026-10-22T12:00:00Z".into(),
+                baseline: 0,
+                status: OutboxStatus::Transferred,
+            }],
+            ..State::default()
+        };
+
+        reconcile_outbox(&mut state);
+        assert_eq!(
+            state.outbox.len(),
+            1,
+            "incoming text must not acknowledge a send"
+        );
+
+        state.threads[0].messages.push(Message {
+            body: "same text".into(),
+            outgoing: true,
+            ..Message::default()
+        });
+        reconcile_outbox(&mut state);
+        assert!(
+            state.outbox.is_empty(),
+            "normalized outgoing echo should acknowledge it"
+        );
+    }
+
+    #[test]
+    fn outbox_requires_an_echo_after_the_pre_send_baseline() {
+        let prior = Message {
+            body: "repeat".into(),
+            outgoing: true,
+            ..Message::default()
+        };
+        let mut state = State {
+            threads: vec![Thread {
+                key: "phone-thread".into(),
+                messages: vec![prior],
+                ..Thread::default()
+            }],
+            outbox: vec![OutboxMessage {
+                id: 8,
+                key: "phone-thread".into(),
+                body: "repeat".into(),
+                timestamp: "2026-10-22T12:00:00Z".into(),
+                baseline: 1,
+                status: OutboxStatus::OutcomeUnknown,
+            }],
+            ..State::default()
+        };
+
+        reconcile_outbox(&mut state);
+        assert_eq!(
+            state.outbox.len(),
+            1,
+            "an old matching message is not a new receipt"
+        );
+
+        state.threads[0].messages.push(Message {
+            body: "repeat".into(),
+            outgoing: true,
+            ..Message::default()
+        });
+        reconcile_outbox(&mut state);
+        assert!(state.outbox.is_empty());
+    }
+}
