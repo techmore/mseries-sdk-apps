@@ -1,3 +1,13 @@
+## Screenshot region-to-pixel crop mapping — 2026-10-22
+
+Added crop mapping from global logical selection bounds to an upright output
+image, using actual image/logical-size ratios for fractional scales and clipping
+at output boundaries. A compositor regression verifies negative output origins,
+1.5x pixel scale, clipped selections and nonintersecting outputs; all three pixel
+tests pass. This is a prerequisite for +4, not completed input wiring. Selection
+input interception, crosshair/blue overlay, window capture and region end-to-end
+qualification remain open. Nothing installed or restarted.
+
 ## Screenshot orientation regression fixed — 2026-10-22
 
 An asymmetric Wayland fixture exposed vertically inverted nested captures despite
