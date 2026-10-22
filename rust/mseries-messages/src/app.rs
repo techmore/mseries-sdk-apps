@@ -499,6 +499,8 @@ pub struct App {
     syncing_star: Cell<bool>,
     state: RefCell<State>,
     parked_phone_states: RefCell<HashMap<String, State>>,
+    #[cfg(test)]
+    completed_send_callbacks: Cell<u64>,
     backend_available: Cell<bool>,
     refresh_gate: RefreshGate,
     media: RefCell<MediaState>,
@@ -877,6 +879,8 @@ impl App {
             syncing_star: Cell::new(false),
             state: RefCell::new(State::default()),
             parked_phone_states: RefCell::new(HashMap::new()),
+            #[cfg(test)]
+            completed_send_callbacks: Cell::new(0),
             backend_available: Cell::new(true),
             refresh_gate: RefreshGate::default(),
             media: RefCell::new(MediaState::new()),
@@ -3058,6 +3062,8 @@ impl App {
                     .await
             };
             if let Some(app) = weak.upgrade() {
+                #[cfg(test)]
+                app.completed_send_callbacks.set(app.completed_send_callbacks.get() + 1);
                 if app.pin_load_generation.get() != phone_generation {
                     return;
                 }
@@ -3948,13 +3954,18 @@ mod tests {
         wait_for_refresh();
         assert_eq!(app.state.borrow().drafts["shared-key"], "A draft");
         let active_outbox_count = app.state.borrow().outbox.len();
+        let completed_before = app.completed_send_callbacks.get();
         delayed_send
             .borrow_mut()
             .take()
             .unwrap()
             .return_value(Some(&().to_variant()));
-        let drain_until = std::time::Instant::now() + std::time::Duration::from_millis(100);
-        while std::time::Instant::now() < drain_until {
+        let callback_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while app.completed_send_callbacks.get() == completed_before {
+            assert!(
+                std::time::Instant::now() < callback_deadline,
+                "delayed send callback did not execute"
+            );
             gtk::glib::MainContext::default().iteration(false);
             std::thread::sleep(std::time::Duration::from_millis(2));
         }

@@ -31,8 +31,10 @@ Strict combined SDK/Messages Clippy across all targets passes.
 A delayed-send GTK scenario also passes: the fixture holds a response, the app
 switches phones, and the old success response leaves the active phone’s same-key,
 same-body draft/outbox untouched. The parked send remains OutcomeUnknown. The
-post-response check drains the event loop for 100 ms; deterministic callback
-completion instrumentation would strengthen this timing-sensitive assertion. CI execution, visual/accessibility and connected-phone acceptance remain
+post-response check now waits for a test-only completion counter incremented
+inside the real send callback, with a five-second failure deadline. It proves
+the response was processed before asserting isolation; the fixed delay has been
+removed. The GTK scenario and strict all-target Messages Clippy pass. CI execution, visual/accessibility and connected-phone acceptance remain
 unverified. The locally built Debian package remains uninstalled under build/.
 
 ## Messages isolated GTK recovery regression — 2026-10-22
