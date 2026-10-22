@@ -355,7 +355,21 @@ impl App {
                 let placeholder = granite::Placeholder::new("Messages could not start");
                 placeholder.set_description(&error);
                 placeholder.set_icon(&gio::ThemedIcon::new("mail-message-new"));
-                window.set_child(Some(&placeholder));
+                let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                mseries_pantheon_kit::set_box_spacing_text_units(&content, 0.5);
+                content.append(&placeholder);
+                let retry = gtk::Button::with_label("Retry");
+                retry.add_css_class("suggested-action");
+                retry.set_halign(gtk::Align::Center);
+                content.append(&retry);
+                window.set_child(Some(&content));
+                let retry_window = window.clone();
+                let retry_application = application.clone();
+                retry.connect_clicked(move |_| {
+                    retry_window.close();
+                    let application = retry_application.clone();
+                    glib::idle_add_local_once(move || application.activate());
+                });
                 window.present();
                 return None;
             }

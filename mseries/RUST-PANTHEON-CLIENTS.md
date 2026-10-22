@@ -22,6 +22,10 @@ iPhone MAP session, recipient/group validation and encrypted message history.
 The Rust client never opens BlueFerry's private database or starts a competing
 MAP connection.
 
+If BlueFerry's Messages API cannot be reached at startup, the error screen
+offers Retry and reactivates the app after closing the placeholder. The user
+does not have to close and relaunch Messages to try again.
+
 The preview currently supports conversation search, message history, in-memory
 per-thread drafts that remain editable offline, favorites, read state, checked
 replies, history invalidation, a starred-conversation strip, and a
