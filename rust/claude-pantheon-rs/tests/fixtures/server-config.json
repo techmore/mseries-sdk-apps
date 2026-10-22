@@ -1,0 +1,329 @@
+{
+ "cwd": "/home/sdolbec/Projects/claude-pantheon-rs",
+ "providers": [
+  {
+   "auth": {
+    "status": "unknown"
+   },
+   "checkedAt": "2026-10-22T00:12:21.763Z",
+   "continuation": {
+    "groupKey": "codex:home:/home/sdolbec/.codex"
+   },
+   "displayName": "Codex",
+   "driver": "codex",
+   "enabled": true,
+   "installed": false,
+   "instanceId": "codex",
+   "message": "Could not start Codex CLI (`codex`). Check Settings \u2192 Providers \u2192 Codex \u2192 Binary path on the server. Installing ChatGPT or Codex desktop may not add codex to PATH.",
+   "models": [],
+   "reportsContextWindow": true,
+   "setup": {
+    "canAuthenticate": false,
+    "canInstall": false
+   },
+   "showInteractionModeToggle": true,
+   "status": "error",
+   "version": null,
+   "versionAdvisory": {
+    "canInstallVersion": false,
+    "canUpdate": false,
+    "checkedAt": "2026-10-22T00:12:21.763Z",
+    "currentVersion": null,
+    "latestVersion": null,
+    "message": null,
+    "status": "unknown",
+    "updateCommand": null
+   }
+  },
+  {
+   "auth": {
+    "email": "sdolbec1@gmail.com",
+    "label": "Claude Pro Subscription",
+    "status": "authenticated",
+    "type": "Claude Pro",
+    "workspaceId": "1f40a09d-fb08-4e2e-844c-a49bc1f1d426"
+   },
+   "checkedAt": "2026-10-22T00:12:22.429Z",
+   "compatibilityAdvisory": {
+    "latestVersionStatus": "supported",
+    "message": null,
+    "recommendedRange": ">=2.1.280",
+    "recommendedVersion": null,
+    "status": "supported"
+   },
+   "continuation": {
+    "groupKey": "claude:home:/home/sdolbec/.claude"
+   },
+   "displayName": "Claude",
+   "driver": "claudeAgent",
+   "enabled": true,
+   "installed": true,
+   "instanceId": "claudeAgent",
+   "models": [
+    {
+     "aliases": [
+      "opus",
+      "opus-5.5",
+      "claude-opus-5.5"
+     ],
+     "isCustom": false,
+     "name": "Claude Opus 5.5",
+     "slug": "claude-opus-5-5"
+    },
+    {
+     "aliases": [
+      "sonnet",
+      "sonnet-5.5",
+      "claude-sonnet-5.5"
+     ],
+     "isCustom": false,
+     "name": "Claude Sonnet 5.5",
+     "slug": "claude-sonnet-5-5"
+    },
+    {
+     "aliases": [
+      "fable",
+      "fable-5.1",
+      "claude-fable-5.1"
+     ],
+     "isCustom": false,
+     "isDefault": true,
+     "name": "Claude Fable 5.1",
+     "slug": "claude-fable-5-1"
+    }
+   ],
+   "reportsContextWindow": true,
+   "setup": {
+    "canAuthenticate": false,
+    "canInstall": false
+   },
+   "showInteractionModeToggle": true,
+   "status": "ready",
+   "usageLimits": {
+    "checkedAt": "2026-10-22T00:12:22.143Z",
+    "resetCredits": {
+     "availableCount": 0
+    },
+    "windows": [
+     {
+      "id": "five_hour",
+      "kind": "session",
+      "label": "Session",
+      "resetsAt": "2026-10-22T02:00:00.216Z",
+      "usedPercent": 54,
+      "windowDurationMins": 300
+     },
+     {
+      "id": "seven_day",
+      "kind": "weekly",
+      "label": "Weekly",
+      "resetsAt": "2026-10-27T12:00:00.216Z",
+      "usedPercent": 41,
+      "windowDurationMins": 10080
+     },
+     {
+      "id": "seven_day_fable",
+      "kind": "weekly",
+      "label": "Weekly \u00b7 Fable",
+      "resetsAt": "2026-10-27T12:00:00.216Z",
+      "usedPercent": 36,
+      "windowDurationMins": 10080
+     }
+    ]
+   },
+   "version": "2.1.304",
+   "versionAdvisory": {
+    "canInstallVersion": false,
+    "canUpdate": true,
+    "checkedAt": "2026-10-22T00:12:23.266Z",
+    "currentVersion": "2.1.304",
+    "latestVersion": "2.1.307",
+    "message": "Install the update now or review provider settings.",
+    "status": "behind_latest",
+    "updateCommand": "/home/sdolbec/.config/Claude/claude-code/2.1.304/3df0f416c511/claude update"
+   }
+  },
+  {
+   "auth": {
+    "canLogout": true,
+    "status": "unknown"
+   },
+   "checkedAt": "2026-10-22T00:12:21.755Z",
+   "continuation": {
+    "groupKey": "cursor:instance:cursor"
+   },
+   "displayName": "Cursor",
+   "driver": "cursor",
+   "enabled": false,
+   "installed": false,
+   "instanceId": "cursor",
+   "message": "Cursor is disabled in T3 Code settings.",
+   "models": [],
+   "setup": {
+    "canAuthenticate": true,
+    "canInstall": false
+   },
+   "showInteractionModeToggle": true,
+   "status": "disabled",
+   "supportsConversationRollback": false,
+   "version": null
+  },
+  {
+   "auth": {
+    "status": "unknown"
+   },
+   "checkedAt": "2026-10-22T00:12:21.764Z",
+   "continuation": {
+    "groupKey": "grok:instance:grok"
+   },
+   "displayName": "Grok",
+   "driver": "grok",
+   "enabled": false,
+   "installed": false,
+   "instanceId": "grok",
+   "message": "Grok is disabled in T3 Code settings.",
+   "models": [
+    {
+     "isCustom": false,
+     "name": "Grok Build",
+     "slug": "grok-build"
+    }
+   ],
+   "setup": {
+    "canAuthenticate": false,
+    "canInstall": false
+   },
+   "showInteractionModeToggle": false,
+   "status": "disabled",
+   "supportedRuntimeModes": [
+    "approval-required",
+    "auto",
+    "full-access"
+   ],
+   "supportsConversationRollback": false,
+   "version": null
+  },
+  {
+   "auth": {
+    "status": "unknown"
+   },
+   "checkedAt": "2026-10-22T00:12:21.752Z",
+   "continuation": {
+    "groupKey": "opencode:instance:opencode"
+   },
+   "displayName": "OpenCode",
+   "driver": "opencode",
+   "enabled": false,
+   "installed": false,
+   "instanceId": "opencode",
+   "message": "OpenCode is disabled in T3 Code settings.",
+   "models": [],
+   "setup": {
+    "canAuthenticate": false,
+    "canInstall": false
+   },
+   "showInteractionModeToggle": false,
+   "status": "disabled",
+   "usageLimits": {
+    "checkedAt": "2026-10-22T00:12:21.752Z",
+    "unavailable": {
+     "reason": "unsupported"
+    },
+    "windows": []
+   },
+   "version": null
+  },
+  {
+   "auth": {
+    "status": "unknown",
+    "type": "oauth-personal"
+   },
+   "checkedAt": "2026-10-21T23:58:22.362Z",
+   "continuation": {
+    "groupKey": "antigravity:instance:antigravity"
+   },
+   "displayName": "Antigravity",
+   "driver": "antigravity",
+   "enabled": false,
+   "installed": false,
+   "instanceId": "antigravity",
+   "message": "Antigravity is disabled in T3 Code settings.",
+   "models": [],
+   "setup": {
+    "canAuthenticate": true,
+    "canInstall": true
+   },
+   "showInteractionModeToggle": false,
+   "status": "disabled",
+   "supportsConversationRollback": false,
+   "supportsTextGeneration": false,
+   "version": null
+  },
+  {
+   "auth": {
+    "status": "unknown"
+   },
+   "checkedAt": "2026-10-22T00:12:21.991Z",
+   "continuation": {
+    "groupKey": "muse:instance:muse"
+   },
+   "displayName": "Muse Code",
+   "driver": "muse",
+   "enabled": false,
+   "installed": false,
+   "instanceId": "muse",
+   "message": "Muse Code is disabled in T3 Code settings.",
+   "models": [],
+   "reportsContextWindow": true,
+   "setup": {
+    "canAuthenticate": false,
+    "canInstall": false
+   },
+   "showInteractionModeToggle": false,
+   "status": "disabled",
+   "supportedRuntimeModes": [
+    "approval-required",
+    "full-access"
+   ],
+   "version": null
+  },
+  {
+   "auth": {
+    "status": "unknown"
+   },
+   "checkedAt": "2026-10-22T00:12:21.765Z",
+   "continuation": {
+    "groupKey": "pi:instance:pi"
+   },
+   "displayName": "Pi",
+   "driver": "pi",
+   "enabled": false,
+   "installed": false,
+   "instanceId": "pi",
+   "message": "Pi is disabled in T3 Code settings.",
+   "models": [
+    {
+     "isCustom": false,
+     "name": "Pi default",
+     "slug": "default"
+    }
+   ],
+   "reportsContextWindow": true,
+   "requiresNewThreadForModelChange": false,
+   "setup": {
+    "canAuthenticate": false,
+    "canInstall": false
+   },
+   "showInteractionModeToggle": false,
+   "status": "disabled",
+   "supportedRuntimeModes": [
+    "approval-required",
+    "auto-accept-edits",
+    "full-access"
+   ],
+   "version": null
+  }
+ ],
+ "environment": {},
+ "settings": {}
+}

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e8b58b"/>
+      <stop offset="1" stop-color="#c4784a"/>
+    </linearGradient>
+    <linearGradient id="bubble" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f3ede6"/>
+    </linearGradient>
+  </defs>
+  <!-- elementary-style rounded tile with a soft bottom shadow -->
+  <rect x="8" y="10" width="112" height="112" rx="26" fill="#000" opacity="0.12"/>
+  <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#bg)"/>
+  <rect x="8" y="8" width="112" height="112" rx="26" fill="none" stroke="#000" stroke-opacity="0.15"/>
+  <!-- speech bubble -->
+  <path d="M34 34 h60 a10 10 0 0 1 10 10 v30 a10 10 0 0 1 -10 10 h-30 l-16 14 v-14 h-14 a10 10 0 0 1 -10 -10 v-30 a10 10 0 0 1 10 -10 z" fill="url(#bubble)" stroke="#000" stroke-opacity="0.2"/>
+  <!-- asterisk mark: the Claude glyph, simplified -->
+  <g transform="translate(64 59)" stroke="#c4784a" stroke-width="6" stroke-linecap="round">
+    <line x1="0" y1="-16" x2="0" y2="16"/>
+    <line x1="-14" y1="-8" x2="14" y2="8"/>
+    <line x1="-14" y1="8" x2="14" y2="-8"/>
+  </g>
+</svg>

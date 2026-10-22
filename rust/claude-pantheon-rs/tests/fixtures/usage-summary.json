@@ -1,0 +1,932 @@
+{
+  "buckets": [
+    {
+      "cacheSavingsUsd": 47.37269619999999,
+      "categoryCostUsd": {
+        "cacheRead": 2.4933,
+        "cacheWrite": 1.076643,
+        "input": 0.00054,
+        "output": 1.125
+      },
+      "costSource": "modelPriced",
+      "costUsd": 4.695482299999999,
+      "day": "2026-10-14",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude",
+      "records": 135,
+      "sessions": 1,
+      "sourcePath": "/home/sdolbec/.claude/projects",
+      "totals": {
+        "cacheCreationTokens": 430657,
+        "cachedInputTokens": 24932998,
+        "outputTokens": 112500,
+        "reasoningTokens": 0,
+        "uncachedInputTokens": 270
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 0,
+      "costSource": "unpriced",
+      "costUsd": 0,
+      "day": "2026-10-14",
+      "model": "muse-spark-1.3-contributor-free",
+      "provider": "opencode",
+      "records": 79,
+      "sessions": 1,
+      "sourcePath": "/home/sdolbec/.local/share/opencode",
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 6439647,
+        "outputTokens": 44550,
+        "reasoningTokens": 17135,
+        "uncachedInputTokens": 124171
+      },
+      "unpricedRecords": 79
+    },
+    {
+      "cacheSavingsUsd": 202.18307360000009,
+      "categoryCostUsd": {
+        "cacheRead": 10.641214,
+        "cacheWrite": 2.235403,
+        "input": 0.001344,
+        "output": 3.27033
+      },
+      "costSource": "modelPriced",
+      "costUsd": 16.148290899999996,
+      "day": "2026-10-15",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude",
+      "records": 309,
+      "sessions": 3,
+      "sourcePath": "/home/sdolbec/.claude/projects",
+      "totals": {
+        "cacheCreationTokens": 894161,
+        "cachedInputTokens": 106412144,
+        "outputTokens": 327033,
+        "reasoningTokens": 0,
+        "uncachedInputTokens": 672
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 0,
+      "costSource": "unpriced",
+      "costUsd": 0,
+      "day": "2026-10-15",
+      "model": "codex-auto-review",
+      "provider": "codex",
+      "records": 364,
+      "sessions": 14,
+      "sourcePath": "/home/sdolbec/.codex/sessions",
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 34722816,
+        "outputTokens": 39213,
+        "reasoningTokens": 16556,
+        "uncachedInputTokens": 1705615
+      },
+      "unpricedRecords": 364
+    },
+    {
+      "cacheSavingsUsd": 0,
+      "costSource": "unpriced",
+      "costUsd": 0,
+      "day": "2026-10-15",
+      "model": "deepseek-v4.1-flash-free",
+      "provider": "opencode",
+      "records": 726,
+      "sessions": 2,
+      "sourcePath": "/home/sdolbec/.local/share/opencode",
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 80764160,
+        "outputTokens": 879522,
+        "reasoningTokens": 617107,
+        "uncachedInputTokens": 2708183
+      },
+      "unpricedRecords": 726
+    },
+    {
+      "cacheSavingsUsd": 0,
+      "costSource": "unpriced",
+      "costUsd": 0,
+      "day": "2026-10-15",
+      "model": "muse-spark-1.3-contributor-free",
+      "provider": "opencode",
+      "records": 49,
+      "sessions": 1,
+      "sourcePath": "/home/sdolbec/.local/share/opencode",
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 1567792,
+        "outputTokens": 20424,
+        "reasoningTokens": 6643,
+        "uncachedInputTokens": 216811
+      },
+      "unpricedRecords": 49
+    },
+    {
+      "cacheSavingsUsd": 448.4290567,
+      "categoryCostUsd": {
+        "cacheRead": 23.601529,
+        "cacheWrite": 9.904152,
+        "input": 0.005072,
+        "output": 12.54208
+      },
+      "costSource": "modelPriced",
+      "costUsd": 46.052833800000045,
+      "day": "2026-10-16",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude",
+      "records": 1262,
+      "sessions": 16,
+      "sourcePath": "/home/sdolbec/.claude/projects",
+      "totals": {
+        "cacheCreationTokens": 3961661,
+        "cachedInputTokens": 236015293,
+        "outputTokens": 1254208,
+        "reasoningTokens": 0,
+        "uncachedInputTokens": 2536
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 0,
+      "costSource": "unpriced",
+      "costUsd": 0,
+      "day": "2026-10-16",
+      "model": "codex-auto-review",
+      "provider": "codex",
+      "records": 33,
+      "sessions": 1,
+      "sourcePath": "/home/sdolbec/.codex/sessions",
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 3130112,
+        "outputTokens": 3991,
+        "reasoningTokens": 1936,
+        "uncachedInputTokens": 186567
+      },
+      "unpricedRecords": 33
+    },
+    {
+      "cacheSavingsUsd": 0.9936,
+      "categoryCostUsd": {
+        "cacheRead": 0.3312,
+        "cacheWrite": 0,
+        "input": 0.11752,
+        "output": 0.250086
+      },
+      "costSource": "providerReported",
+      "costUsd": 0.698806,
+      "day": "2026-10-16",
+      "model": "grok-4.7",
+      "provider": "grok",
+      "records": 1,
+      "sessions": 1,
+      "sourcePath": "/home/sdolbec/.grok/sessions",
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 662400,
+        "outputTokens": 41681,
+        "reasoningTokens": 31181,
+        "uncachedInputTokens": 58760
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 0,
+      "costSource": "unpriced",
+      "costUsd": 0,
+      "day": "2026-10-16",
+      "model": "big-pickle",
+      "provider": "opencode",
+      "records": 5,
+      "sessions": 2,
+      "sourcePath": "/home/sdolbec/.local/share/opencode",
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 24896,
+        "outputTokens": 21180,
+        "reasoningTokens": 18699,
+        "uncachedInputTokens": 24924
+      },
+      "unpricedRecords": 5
+    },
+    {
+      "cacheSavingsUsd": 0,
+      "costSource": "unpriced",
+      "costUsd": 0,
+      "day": "2026-10-16",
+      "model": "deepseek-v4.1-flash-free",
+      "provider": "opencode",
+      "records": 1466,
+      "sessions": 8,
+      "sourcePath": "/home/sdolbec/.local/share/opencode",
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 152037632,
+        "outputTokens": 2665031,
+        "reasoningTokens": 2071889,
+        "uncachedInputTokens": 8438501
+      },
+      "unpricedRecords": 1466
+    },
+    {
+      "cacheSavingsUsd": 0,
+      "costSource": "unpriced",
+      "costUsd": 0,
+      "day": "2026-10-16",
+      "model": "muse-spark-1.3-contributor-free",
+      "provider": "opencode",
+      "records": 4,
+      "sessions": 1,
+      "sourcePath": "/home/sdolbec/.local/share/opencode",
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 188100,
+        "outputTokens": 2048,
+        "reasoningTokens": 1047,
+        "uncachedInputTokens": 65992
+      },
+      "unpricedRecords": 4
+    },
+    {
+      "cacheSavingsUsd": 0,
+      "costSource": "providerReported",
+      "costUsd": 0.3557267,
+      "day": "2026-10-16",
+      "model": "step-5-preview",
+      "provider": "opencode",
+      "records": 19,
+      "sessions": 2,
+      "sourcePath": "/home/sdolbec/.local/share/opencode",
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 1673536,
+        "outputTokens": 25733,
+        "reasoningTokens": 19973,
+        "uncachedInputTokens": 118894
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 276.36005780000005,
+      "categoryCostUsd": {
+        "cacheRead": 14.545266,
+        "cacheWrite": 5.866928,
+        "input": 0.001992,
+        "output": 5.74908
+      },
+      "costSource": "modelPriced",
+      "costUsd": 26.163265700000004,
+      "day": "2026-10-17",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude",
+      "records": 495,
+      "sessions": 7,
+      "sourcePath": "/home/sdolbec/.claude/projects",
+      "totals": {
+        "cacheCreationTokens": 2346771,
+        "cachedInputTokens": 145452662,
+        "outputTokens": 574908,
+        "reasoningTokens": 0,
+        "uncachedInputTokens": 996
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 0,
+      "costSource": "providerReported",
+      "costUsd": 14.363741499999996,
+      "day": "2026-10-17",
+      "model": "step-5-preview",
+      "provider": "opencode",
+      "records": 546,
+      "sessions": 5,
+      "sourcePath": "/home/sdolbec/.local/share/opencode",
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 117362368,
+        "outputTokens": 585231,
+        "reasoningTokens": 91476,
+        "uncachedInputTokens": 1047381
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 1202.048459600001,
+      "categoryCostUsd": {
+        "cacheRead": 63.265708,
+        "cacheWrite": 23.341125,
+        "input": 0.015768,
+        "output": 19.75538
+      },
+      "costSource": "modelPriced",
+      "costUsd": 106.37798140000002,
+      "day": "2026-10-18",
+      "model": "claude-opus-5-5",
+      "provider": "claude",
+      "records": 1943,
+      "sessions": 12,
+      "sourcePath": "/home/sdolbec/.claude/projects",
+      "totals": {
+        "cacheCreationTokens": 4668225,
+        "cachedInputTokens": 316328542,
+        "outputTokens": 987769,
+        "reasoningTokens": 0,
+        "uncachedInputTokens": 3942
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 1043.5146692999983,
+      "categoryCostUsd": {
+        "cacheRead": 54.921825,
+        "cacheWrite": 18.245297,
+        "input": 0.0102,
+        "output": 18.37286
+      },
+      "costSource": "modelPriced",
+      "costUsd": 91.55018219999997,
+      "day": "2026-10-18",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude",
+      "records": 2535,
+      "sessions": 19,
+      "sourcePath": "/home/sdolbec/.claude/projects",
+      "totals": {
+        "cacheCreationTokens": 7298119,
+        "cachedInputTokens": 549218247,
+        "outputTokens": 1837286,
+        "reasoningTokens": 0,
+        "uncachedInputTokens": 5100
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 0,
+      "costSource": "providerReported",
+      "costUsd": 0.8491633,
+      "day": "2026-10-18",
+      "model": "step-5-preview",
+      "provider": "opencode",
+      "records": 8,
+      "sessions": 1,
+      "sourcePath": "/home/sdolbec/.local/share/opencode",
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 3439552,
+        "outputTokens": 6143,
+        "reasoningTokens": 0,
+        "uncachedInputTokens": 488622
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 320.36465060000006,
+      "categoryCostUsd": {
+        "cacheRead": 16.861297,
+        "cacheWrite": 5.305075,
+        "input": 0.001952,
+        "output": 2.60752
+      },
+      "costSource": "modelPriced",
+      "costUsd": 24.775844399999983,
+      "day": "2026-10-19",
+      "model": "claude-opus-5-5",
+      "provider": "claude",
+      "records": 229,
+      "sessions": 2,
+      "sourcePath": "/home/sdolbec/.claude/projects",
+      "totals": {
+        "cacheCreationTokens": 1061015,
+        "cachedInputTokens": 84306487,
+        "outputTokens": 130376,
+        "reasoningTokens": 0,
+        "uncachedInputTokens": 488
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 881.6760950000008,
+      "categoryCostUsd": {
+        "cacheRead": 46.404005,
+        "cacheWrite": 13.890905,
+        "input": 0.006628,
+        "output": 10.26797
+      },
+      "costSource": "modelPriced",
+      "costUsd": 70.56950800000003,
+      "day": "2026-10-19",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude",
+      "records": 1638,
+      "sessions": 17,
+      "sourcePath": "/home/sdolbec/.claude/projects",
+      "totals": {
+        "cacheCreationTokens": 5556362,
+        "cachedInputTokens": 464040050,
+        "outputTokens": 1026797,
+        "reasoningTokens": 0,
+        "uncachedInputTokens": 3314
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 0,
+      "costSource": "unpriced",
+      "costUsd": 0,
+      "day": "2026-10-19",
+      "model": "deepseek-v4.1-flash-free",
+      "provider": "opencode",
+      "records": 359,
+      "sessions": 2,
+      "sourcePath": "/home/sdolbec/.local/share/opencode",
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 40083328,
+        "outputTokens": 275192,
+        "reasoningTokens": 173252,
+        "uncachedInputTokens": 1652660
+      },
+      "unpricedRecords": 359
+    },
+    {
+      "cacheSavingsUsd": 0,
+      "costSource": "providerReported",
+      "costUsd": 12.213726,
+      "day": "2026-10-19",
+      "model": "step-5-preview",
+      "provider": "opencode",
+      "records": 603,
+      "sessions": 5,
+      "sourcePath": "/home/sdolbec/.local/share/opencode",
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 99960448,
+        "outputTokens": 562226,
+        "reasoningTokens": 0,
+        "uncachedInputTokens": 699671
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 4512.694241249993,
+      "categoryCostUsd": {
+        "cacheRead": 115.710109,
+        "cacheWrite": 149.789362,
+        "input": 0.6798,
+        "output": 60.0865
+      },
+      "costSource": "modelPriced",
+      "costUsd": 326.26577125000017,
+      "day": "2026-10-20",
+      "model": "claude-fable-5-1",
+      "provider": "claude",
+      "records": 2308,
+      "sessions": 12,
+      "sourcePath": "/home/sdolbec/.claude/projects",
+      "totals": {
+        "cacheCreationTokens": 11983149,
+        "cachedInputTokens": 462840435,
+        "outputTokens": 1201730,
+        "reasoningTokens": 0,
+        "uncachedInputTokens": 67980
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 401.0506966000003,
+      "categoryCostUsd": {
+        "cacheRead": 21.107931,
+        "cacheWrite": 8.109285,
+        "input": 0.005072,
+        "output": 7.75672
+      },
+      "costSource": "modelPriced",
+      "costUsd": 36.97900839999999,
+      "day": "2026-10-20",
+      "model": "claude-opus-5-5",
+      "provider": "claude",
+      "records": 619,
+      "sessions": 7,
+      "sourcePath": "/home/sdolbec/.claude/projects",
+      "totals": {
+        "cacheCreationTokens": 1621857,
+        "cachedInputTokens": 105539657,
+        "outputTokens": 387836,
+        "reasoningTokens": 0,
+        "uncachedInputTokens": 1268
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 218.37564500000016,
+      "categoryCostUsd": {
+        "cacheRead": 11.493455,
+        "cacheWrite": 8.88706,
+        "input": 0.001896,
+        "output": 4.06869
+      },
+      "costSource": "modelPriced",
+      "costUsd": 24.451101000000005,
+      "day": "2026-10-20",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude",
+      "records": 466,
+      "sessions": 13,
+      "sourcePath": "/home/sdolbec/.claude/projects",
+      "totals": {
+        "cacheCreationTokens": 3554824,
+        "cachedInputTokens": 114934550,
+        "outputTokens": 406869,
+        "reasoningTokens": 0,
+        "uncachedInputTokens": 948
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 0.08485632,
+      "categoryCostUsd": {
+        "cacheRead": 0.009428,
+        "cacheWrite": 0,
+        "input": 0.010516,
+        "output": 0.009097
+      },
+      "costSource": "modelPriced",
+      "costUsd": 0.02904108,
+      "day": "2026-10-20",
+      "fastCostUsd": 0.029041,
+      "model": "gpt-6-luna",
+      "provider": "codex",
+      "records": 13,
+      "sessions": 1,
+      "sourcePath": "/home/sdolbec/.codex/sessions",
+      "speedPremiumUsd": 0.014521,
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 471424,
+        "outputTokens": 9097,
+        "reasoningTokens": 7330,
+        "uncachedInputTokens": 52578
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 1252.4938624000013,
+      "categoryCostUsd": {
+        "cacheRead": 65.92073,
+        "cacheWrite": 0,
+        "input": 18.499498,
+        "output": 23.59312
+      },
+      "costSource": "modelPriced",
+      "costUsd": 108.0133476,
+      "day": "2026-10-20",
+      "fastCostUsd": 91.377452,
+      "model": "gpt-6.1-sol",
+      "provider": "codex",
+      "records": 2067,
+      "sessions": 5,
+      "sourcePath": "/home/sdolbec/.codex/sessions",
+      "speedPremiumUsd": 45.688726,
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 379847936,
+        "outputTokens": 1364160,
+        "reasoningTokens": 605834,
+        "uncachedInputTokens": 5349114
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 1063.4457209999996,
+      "categoryCostUsd": {
+        "cacheRead": 27.267839,
+        "cacheWrite": 32.01315,
+        "input": 0.16644,
+        "output": 25.3999
+      },
+      "costSource": "modelPriced",
+      "costUsd": 84.84732900000002,
+      "day": "2026-10-21",
+      "model": "claude-fable-5-1",
+      "provider": "claude",
+      "records": 597,
+      "sessions": 9,
+      "sourcePath": "/home/sdolbec/.claude/projects",
+      "totals": {
+        "cacheCreationTokens": 2561052,
+        "cachedInputTokens": 109071356,
+        "outputTokens": 507998,
+        "reasoningTokens": 0,
+        "uncachedInputTokens": 16644
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 0.01518966,
+      "categoryCostUsd": {
+        "cacheRead": 0.001688,
+        "cacheWrite": 0.020476,
+        "input": 3e-6,
+        "output": 0.000212
+      },
+      "costSource": "modelPriced",
+      "costUsd": 0.022378689999999996,
+      "day": "2026-10-21",
+      "model": "claude-haiku-5-5",
+      "provider": "claude",
+      "records": 16,
+      "sessions": 4,
+      "sourcePath": "/home/sdolbec/.claude/projects",
+      "totals": {
+        "cacheCreationTokens": 163810,
+        "cachedInputTokens": 168774,
+        "outputTokens": 423,
+        "reasoningTokens": 0,
+        "uncachedInputTokens": 32
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 1242.3907833999988,
+      "categoryCostUsd": {
+        "cacheRead": 65.388989,
+        "cacheWrite": 41.91427,
+        "input": 0.013952,
+        "output": 19.0725
+      },
+      "costSource": "modelPriced",
+      "costUsd": 126.38971059999987,
+      "day": "2026-10-21",
+      "model": "claude-opus-5-5",
+      "provider": "claude",
+      "records": 1714,
+      "sessions": 10,
+      "sourcePath": "/home/sdolbec/.claude/projects",
+      "totals": {
+        "cacheCreationTokens": 8382854,
+        "cachedInputTokens": 326944943,
+        "outputTokens": 953625,
+        "reasoningTokens": 0,
+        "uncachedInputTokens": 3488
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 3215.654618100001,
+      "categoryCostUsd": {
+        "cacheRead": 169.24498,
+        "cacheWrite": 49.642955,
+        "input": 0.025224,
+        "output": 48.528
+      },
+      "costSource": "modelPriced",
+      "costUsd": 267.44115890000126,
+      "day": "2026-10-21",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude",
+      "records": 6140,
+      "sessions": 48,
+      "sourcePath": "/home/sdolbec/.claude/projects",
+      "totals": {
+        "cacheCreationTokens": 19857182,
+        "cachedInputTokens": 1692449799,
+        "outputTokens": 4852800,
+        "reasoningTokens": 0,
+        "uncachedInputTokens": 12612
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 15.537957119999982,
+      "categoryCostUsd": {
+        "cacheRead": 1.72644,
+        "cacheWrite": 0,
+        "input": 0.925454,
+        "output": 0.561078
+      },
+      "costSource": "modelPriced",
+      "costUsd": 3.212971480000003,
+      "day": "2026-10-21",
+      "fastCostUsd": 3.125126,
+      "model": "gpt-6-luna",
+      "provider": "codex",
+      "records": 913,
+      "sessions": 17,
+      "sourcePath": "/home/sdolbec/.codex/sessions",
+      "speedPremiumUsd": 1.562563,
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 89570432,
+        "outputTokens": 576493,
+        "reasoningTokens": 369633,
+        "uncachedInputTokens": 4664577
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 1125.3391744000012,
+      "categoryCostUsd": {
+        "cacheRead": 59.228378,
+        "cacheWrite": 0,
+        "input": 20.988992,
+        "output": 18.09053
+      },
+      "costSource": "modelPriced",
+      "costUsd": 98.30789960000013,
+      "day": "2026-10-21",
+      "fastCostUsd": 29.723548,
+      "model": "gpt-6.1-sol",
+      "provider": "codex",
+      "records": 3205,
+      "sessions": 22,
+      "sourcePath": "/home/sdolbec/.codex/sessions",
+      "speedPremiumUsd": 14.861774,
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 516390656,
+        "outputTokens": 1482940,
+        "reasoningTokens": 567197,
+        "uncachedInputTokens": 8488830
+      },
+      "unpricedRecords": 0
+    },
+    {
+      "cacheSavingsUsd": 0,
+      "costSource": "unpriced",
+      "costUsd": 0,
+      "day": "2026-10-21",
+      "model": "deepseek-v4.1-flash-free",
+      "provider": "opencode",
+      "records": 1,
+      "sessions": 1,
+      "sourcePath": "/home/sdolbec/.local/share/opencode",
+      "totals": {
+        "cacheCreationTokens": 0,
+        "cachedInputTokens": 5120,
+        "outputTokens": 2,
+        "reasoningTokens": 0,
+        "uncachedInputTokens": 118
+      },
+      "unpricedRecords": 1
+    }
+  ],
+  "contractVersion": 6,
+  "pricing": {
+    "fetchedAt": "2026-10-22T00:10:28.133Z",
+    "knownModels": 4536,
+    "source": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
+    "status": "fresh"
+  },
+  "readAt": "2026-10-22T00:13:05.535Z",
+  "scanDurationMs": 211,
+  "sinceDay": "2026-09-21",
+  "sources": [
+    {
+      "distinctSessions": 139,
+      "fingerprint": {
+        "hostId": "eos",
+        "provider": "claude",
+        "resolvedHomePath": "/home/sdolbec/.claude/projects",
+        "volumeId": "31:125815"
+      },
+      "malformedRecords": 0,
+      "message": null,
+      "scannedFiles": 216,
+      "skippedFiles": 1,
+      "status": "ok"
+    },
+    {
+      "distinctSessions": 58,
+      "fingerprint": {
+        "hostId": "eos",
+        "provider": "codex",
+        "resolvedHomePath": "/home/sdolbec/.codex/sessions",
+        "volumeId": "31:18400"
+      },
+      "malformedRecords": 0,
+      "message": null,
+      "scannedFiles": 58,
+      "skippedFiles": 54,
+      "status": "ok"
+    },
+    {
+      "distinctSessions": 1,
+      "fingerprint": {
+        "hostId": "eos",
+        "provider": "grok",
+        "resolvedHomePath": "/home/sdolbec/.grok/sessions",
+        "volumeId": "31:1502606"
+      },
+      "malformedRecords": 0,
+      "message": null,
+      "scannedFiles": 1,
+      "skippedFiles": 0,
+      "status": "ok"
+    },
+    {
+      "distinctSessions": 0,
+      "fingerprint": {
+        "hostId": "eos",
+        "provider": "pi",
+        "resolvedHomePath": "/home/sdolbec/.pi/agent/sessions",
+        "volumeId": ""
+      },
+      "malformedRecords": 0,
+      "message": "No transcript directory on this environment.",
+      "scannedFiles": 0,
+      "skippedFiles": 0,
+      "status": "missing"
+    },
+    {
+      "distinctSessions": 23,
+      "fingerprint": {
+        "hostId": "eos",
+        "provider": "opencode",
+        "resolvedHomePath": "/home/sdolbec/.local/share/opencode",
+        "volumeId": "31:197800"
+      },
+      "malformedRecords": 0,
+      "message": null,
+      "scannedFiles": 1,
+      "skippedFiles": 0,
+      "status": "ok"
+    },
+    {
+      "distinctSessions": 0,
+      "fingerprint": {
+        "hostId": "eos",
+        "provider": "antigravity",
+        "resolvedHomePath": "/home/sdolbec/.gemini/antigravity",
+        "volumeId": ""
+      },
+      "malformedRecords": 0,
+      "message": "No transcript directory on this environment.",
+      "scannedFiles": 0,
+      "skippedFiles": 0,
+      "status": "missing"
+    },
+    {
+      "distinctSessions": 0,
+      "fingerprint": {
+        "hostId": "eos",
+        "provider": "antigravity",
+        "resolvedHomePath": "/home/sdolbec/.gemini/antigravity-cli",
+        "volumeId": ""
+      },
+      "malformedRecords": 0,
+      "message": "No transcript directory on this environment.",
+      "scannedFiles": 0,
+      "skippedFiles": 0,
+      "status": "missing"
+    },
+    {
+      "distinctSessions": 0,
+      "fingerprint": {
+        "hostId": "eos",
+        "provider": "antigravity",
+        "resolvedHomePath": "/home/sdolbec/.gemini/antigravity-ide",
+        "volumeId": ""
+      },
+      "malformedRecords": 0,
+      "message": "No transcript directory on this environment.",
+      "scannedFiles": 0,
+      "skippedFiles": 0,
+      "status": "missing"
+    },
+    {
+      "distinctSessions": 0,
+      "fingerprint": {
+        "hostId": "eos",
+        "provider": "antigravity",
+        "resolvedHomePath": "/home/sdolbec/.gemini/antigravity-backup",
+        "volumeId": ""
+      },
+      "malformedRecords": 0,
+      "message": "No transcript directory on this environment.",
+      "scannedFiles": 0,
+      "skippedFiles": 0,
+      "status": "missing"
+    },
+    {
+      "distinctSessions": 0,
+      "fingerprint": {
+        "hostId": "eos",
+        "provider": "antigravity",
+        "resolvedHomePath": "/home/sdolbec/.config/antigravity",
+        "volumeId": ""
+      },
+      "malformedRecords": 0,
+      "message": "No transcript directory on this environment.",
+      "scannedFiles": 0,
+      "skippedFiles": 0,
+      "status": "missing"
+    }
+  ],
+  "timeZone": "America/New_York",
+  "untilDay": "2026-10-21"
+}

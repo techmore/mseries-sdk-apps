@@ -1,0 +1,89 @@
+/* Claude for elementary OS. Colours come from the elementary stylesheet; only the bubble is ours. */
+
+/* The default client-side decoration is a blurred box-shadow that the cairo renderer re-blurs over the
+   whole window on every frame (~52 ms a repaint at 2x). A 1 px outline paints in ~6 ms. */
+window.csd decoration,
+window.csd.unified decoration {
+  box-shadow: 0 0 0 1px alpha(black, 0.28);
+  margin: 0;
+}
+window.csd:backdrop decoration { box-shadow: 0 0 0 1px alpha(black, 0.18); }
+
+.sb-row { padding: 4px 2px; }
+.sb-title { font-weight: 500; }
+.sb-header { padding: 6px 0 0 0; }
+
+.chat { }
+
+.user-bubble {
+  background: @accent_color;
+  color: white;
+  border-radius: 16px 16px 4px 16px;
+  padding: 10px 14px;
+}
+.user-bubble label { color: white; }
+.user-bubble label selection { background: rgba(255, 255, 255, 0.3); }
+
+.assistant-text { }
+
+.code-block { padding: 8px 12px; margin: 2px 0; }
+.code-lang { margin-bottom: 4px; }
+.code-text { font-size: 0.95em; }
+
+.tool-row { padding: 2px 0; }
+.tool-row > box > * { }
+.tool-summary { font-size: 0.95em; }
+.tool-details { padding: 6px 0 4px 24px; }
+.tool-input { font-size: 0.9em; opacity: 0.8; }
+.tool-result { font-size: 0.9em; padding: 6px 8px; border-radius: 6px; background: alpha(currentColor, 0.05); }
+.tool-error { background: alpha(@error_color, 0.12); }
+
+.composer { padding: 8px 12px 12px 12px; }
+.composer textview { padding: 8px; border-radius: 6px; }
+.live-cursor { opacity: 0.6; }
+
+/* Sidebar status and badges */
+.sb-status { padding: 6px 12px; border-top: 1px solid alpha(currentColor, 0.1); }
+.sb-status.connected image { color: @success_color; }
+.sb-badge { opacity: 0.6; font-size: 0.8em; }
+
+/* Composer */
+.composer { padding: 8px 12px 12px 12px; border-top: 1px solid alpha(currentColor, 0.1); }
+.composer .frame { border-radius: 6px; }
+.composer-entry { font-size: 1.05em; }
+
+/* Live items */
+.prompt-card { padding: 10px 14px; }
+.diff label { font-size: 0.9em; }
+.diff-add { background: alpha(@success_color, 0.18); }
+.diff-del { background: alpha(@error_color, 0.18); }
+
+/* Usage page */
+.usage-card { padding: 12px 16px; }
+.usage-value { font-size: 1.5em; font-weight: 600; font-feature-settings: "tnum"; }
+.usage-mark { font-weight: 700; font-size: 1.1em; min-width: 26px; min-height: 26px; border-radius: 13px; background: alpha(@accent_color, 0.18); padding: 0 6px; }
+.usage-tokens { font-weight: 600; font-feature-settings: "tnum"; min-width: 110px; }
+.usage-cost { font-feature-settings: "tnum"; min-width: 150px; }
+.usage-models { margin-top: 6px; }
+.usage-model { font-family: monospace; font-size: 0.9em; }
+.usage-num { font-feature-settings: "tnum"; font-size: 0.9em; }
+.usage-decision { font-weight: 600; }
+.usage-provider { font-weight: 600; min-width: 80px; }
+levelbar.usage-gauge trough { min-height: 8px; border-radius: 4px; }
+levelbar.usage-gauge block { min-height: 8px; border-radius: 4px; }
+levelbar.usage-gauge block.low { background: @success_color; }
+levelbar.usage-gauge block.high { background: @warning_color; }
+levelbar.usage-gauge block.full { background: @error_color; }
+
+/* Repos and issues */
+.repo-card { padding: 10px 14px; }
+.issue-row { padding: 4px 0; border-bottom: 1px solid alpha(currentColor, 0.08); }
+.pill { padding: 1px 7px; border-radius: 9px; background: alpha(currentColor, 0.1); }
+.pill.lane-build { background: alpha(@success_color, 0.25); }
+.pill.lane-feature { background: alpha(@accent_color, 0.25); }
+.pill.lane-maintenance { background: alpha(@warning_color, 0.3); }
+.pill.prio-p0 { background: alpha(@error_color, 0.35); }
+.pill.prio-p1 { background: alpha(@error_color, 0.2); }
+.pill.agent { font-weight: 600; }
+.diag-row { padding: 8px 12px; }
+.diag-proc { font-size: 0.85em; }
