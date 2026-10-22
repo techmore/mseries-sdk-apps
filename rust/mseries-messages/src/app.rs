@@ -395,6 +395,7 @@ impl App {
             .margin_top(8)
             .margin_bottom(8)
             .build();
+        mseries_pantheon_kit::set_accessible_label(&search, "Search conversations");
         let favorites_title = gtk::Label::builder().label("Favorites").xalign(0.0).build();
         favorites_title.add_css_class("heading");
         let favorites_strip = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -415,6 +416,7 @@ impl App {
             .selection_mode(gtk::SelectionMode::Single)
             .css_classes(["navigation-sidebar"])
             .build();
+        mseries_pantheon_kit::set_accessible_label(&list, "Conversations");
         let list_scroll = gtk::ScrolledWindow::builder()
             .child(&list)
             .hscrollbar_policy(gtk::PolicyType::Never)
@@ -438,6 +440,7 @@ impl App {
             .tooltip_text("Favorite conversation")
             .sensitive(false)
             .build();
+        mseries_pantheon_kit::set_accessible_label(&star_button, "Favorite conversation");
         let conversation_header = gtk::Box::new(gtk::Orientation::Horizontal, 10);
         mseries_pantheon_kit::set_box_spacing_text_units(&conversation_header, 0.6);
         mseries_pantheon_kit::set_margins_text_units(&conversation_header, 0.65, 0.75, 0.65, 1.0);
@@ -467,6 +470,7 @@ impl App {
             .bottom_margin(8)
             .height_request(72)
             .build();
+        mseries_pantheon_kit::set_accessible_label(&editor, "Message composer");
         let editor_scroll = gtk::ScrolledWindow::builder()
             .child(&editor)
             .hexpand(true)
@@ -570,6 +574,49 @@ impl App {
                 app.show_new_message_dialog();
             }
         });
+
+        let keys = gtk::EventControllerKey::new();
+        let weak = Rc::downgrade(self);
+        keys.connect_key_pressed(move |_, key, _, state| {
+            let Some(app) = weak.upgrade() else {
+                return glib::Propagation::Proceed;
+            };
+            let control = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+            match (control, key) {
+                (true, gtk::gdk::Key::f) => {
+                    if app.window.has_css_class("pantheon-compact")
+                        && app.state.borrow().selected.is_some()
+                    {
+                        app.show_conversation_list();
+                    }
+                    app.search.grab_focus();
+                    glib::Propagation::Stop
+                }
+                (true, gtk::gdk::Key::r) => {
+                    app.refresh();
+                    glib::Propagation::Stop
+                }
+                (true, gtk::gdk::Key::n) => {
+                    app.show_new_message_dialog();
+                    glib::Propagation::Stop
+                }
+                (false, gtk::gdk::Key::Escape)
+                    if app.search.has_focus() && !app.search.text().is_empty() =>
+                {
+                    app.search.set_text("");
+                    glib::Propagation::Stop
+                }
+                (false, gtk::gdk::Key::Escape)
+                    if app.window.has_css_class("pantheon-compact")
+                        && app.state.borrow().selected.is_some() =>
+                {
+                    app.show_conversation_list();
+                    glib::Propagation::Stop
+                }
+                _ => glib::Propagation::Proceed,
+            }
+        });
+        self.window.add_controller(keys);
 
         let weak = Rc::downgrade(self);
         self.search.connect_search_changed(move |_| {

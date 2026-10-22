@@ -41,6 +41,19 @@ Python GTK/Granite Messages app. The Python app remains the qualified client
 until the Rust app reaches feature and accessibility parity and passes the
 owner's live phone acceptance.
 
+Link previews are now implemented for public HTTPS images (including GIF and
+WebP) and YouTube links. Incoming previews require an explicit Load Preview
+action; sent links can load automatically. Requests pin DNS validation to
+public addresses, limit response bytes, dimensions, animation frames and
+in-memory cache, and never save previews to disk or retrieve MAP attachments.
+
+The main window now supports Ctrl+F to focus conversation search, Ctrl+R to
+refresh, Ctrl+N to start a message, and Escape to clear a focused search or
+return from a selected conversation to the compact conversation list. Search,
+conversation list, favorite control and composer expose accessible names
+through the SDK. Sending remains tied to the explicit Send button. Full
+keyboard and assistive-technology review is still required.
+
 The SDK also folds text-form iPhone Tapbacks onto the earlier message they
 quote, including reaction changes and removals. Unmatched Tapbacks stay visible
 as messages. Rust Messages presents reaction symbols with accessible names and
@@ -55,12 +68,14 @@ client currently derives this from BlueFerry's private configuration; the Rust
 app will not copy that access pattern. Once the API is available, the SDK can
 scope pin metadata in Secret Service without storing it in a plaintext file.
 
-Parity work still includes imported iPhone pins, bounded link/image previews,
-detailed delivery and retry feedback, additional message actions, accessibility,
-keyboard and narrow-window behavior, localization, package/launcher handoff,
-and fixture plus private GUI and owner-phone qualification. Those are migration gates, not
-claims about the current prototype. The contact picker and Reply/Copy actions
-still need runtime and phone acceptance.
+Parity work still includes imported iPhone pins, detailed delivery and retry
+feedback, additional message actions, full accessibility and keyboard review,
+narrow-window qualification, localization, package/launcher handoff, and
+fixture, private GUI and owner-phone qualification. Imported pins need
+BlueFerry to publish a stable opaque per-phone profile identifier; MAP does not
+expose recipient delivery receipts. Those are migration gates, not claims
+about the current prototype. The contact picker and Reply/Copy actions still
+need runtime and phone acceptance.
 
 ## Signal
 
