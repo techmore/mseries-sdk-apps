@@ -22,10 +22,11 @@ iPhone MAP session, recipient/group validation and encrypted message history.
 The Rust client never opens BlueFerry's private database or starts a competing
 MAP connection.
 
-If BlueFerry's Messages API cannot be reached at startup, the error screen
-offers Connect iPhone, Advanced BlueFerry and Retry. Retry reactivates the app
-after closing the placeholder. The running app menu also exposes both setup
-tools, preserving the existing client's recovery and group-participant flows.
+If BlueFerry's Messages API cannot be reached, the main pane explains the
+connection state and offers inline Connect iPhone, Advanced BlueFerry and Retry
+actions. Retry checks the service again without leaving the recovery screen. The
+running app menu also exposes both setup tools, preserving the existing client's
+recovery and group-participant flows.
 
 The preview searches conversation names, recipients, latest previews and loaded
 message bodies with Unicode case folding. It shows message history, keeps

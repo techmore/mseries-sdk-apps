@@ -463,6 +463,7 @@ pub struct App {
     star_button: gtk::ToggleButton,
     syncing_star: Cell<bool>,
     state: RefCell<State>,
+    backend_available: Cell<bool>,
     refresh_gate: RefreshGate,
     media: RefCell<MediaState>,
 }
@@ -482,7 +483,7 @@ impl App {
                 window.set_default_size(620, 440);
                 let placeholder = granite::Placeholder::new("Messages could not start");
                 placeholder.set_description(&error);
-                placeholder.set_icon(&gio::ThemedIcon::new("mail-message-new"));
+                placeholder.set_icon(&gio::ThemedIcon::new("mail-message-new-symbolic"));
                 let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
                 mseries_pantheon_kit::set_box_spacing_text_units(&content, 0.5);
                 content.append(&placeholder);
@@ -838,6 +839,7 @@ impl App {
             star_button,
             syncing_star: Cell::new(false),
             state: RefCell::new(State::default()),
+            backend_available: Cell::new(true),
             refresh_gate: RefreshGate::default(),
             media: RefCell::new(MediaState::new()),
         });
@@ -1376,6 +1378,7 @@ impl App {
                 let refresh_again = app.refresh_gate.finish();
                 match outcome {
                     Ok((status, threads, recent)) => {
+                        app.backend_available.set(true);
                         app.update_contact_photo_revision(&status);
                         match recent {
                             Some(Ok(snapshot)) => {
@@ -1515,11 +1518,13 @@ impl App {
                     }
                     Err(error) => {
                         app.state.borrow_mut().map_ready = false;
+                        app.backend_available.set(false);
                         app.send_button.set_sensitive(false);
                         app.status.remove_css_class("warning");
                         app.status.set_text(&backend_error_summary(&error));
                         app.status.set_tooltip_text(Some(&error));
                         app.status.add_css_class("warning");
+                        app.rebuild_sidebar();
                     }
                 }
                 if refresh_again {
@@ -2506,13 +2511,58 @@ impl App {
                 buffer.set_text(&draft);
             }
         } else {
-            self.conversation_title.set_text("Select a conversation");
+            let backend_available = self.backend_available.get();
+            self.conversation_title.set_text(if backend_available {
+                "Select a conversation"
+            } else {
+                "Connect iPhone to get started"
+            });
             self.star_button.set_sensitive(false);
             self.editor.set_sensitive(false);
             self.send_button.set_sensitive(false);
-            let empty = granite::Placeholder::new("Your conversations appear here");
-            empty.set_description("Choose a conversation from the list to read and reply.");
-            empty.set_icon(&gio::ThemedIcon::new("mail-message-new"));
+            let empty = granite::Placeholder::new(if backend_available {
+                "Your conversations appear here"
+            } else {
+                "BlueFerry is unavailable"
+            });
+            empty.set_description(if backend_available {
+                "Choose a conversation from the list to read and reply."
+            } else {
+                "Set up your iPhone connection, open BlueFerry, or retry."
+            });
+            empty.set_icon(&gio::ThemedIcon::new("mail-message-new-symbolic"));
+            if !backend_available {
+                let setup = empty.append_button(
+                    &gio::ThemedIcon::new("phone-symbolic"),
+                    "Connect iPhone…",
+                    "Open Phone Setup",
+                );
+                mseries_pantheon_kit::set_accessible_label(&setup, "Connect iPhone");
+                let feedback = self.feedback.clone();
+                setup.connect_clicked(move |_| launch_phone_setup(&feedback));
+
+                let advanced = empty.append_button(
+                    &gio::ThemedIcon::new("preferences-system-symbolic"),
+                    "Advanced BlueFerry…",
+                    "Open BlueFerry connection settings",
+                );
+                mseries_pantheon_kit::set_accessible_label(&advanced, "Open Advanced BlueFerry");
+                let feedback = self.feedback.clone();
+                advanced.connect_clicked(move |_| launch_advanced_blueferry(&feedback));
+
+                let retry = empty.append_button(
+                    &gio::ThemedIcon::new("view-refresh-symbolic"),
+                    "Retry",
+                    "Check the BlueFerry connection again",
+                );
+                mseries_pantheon_kit::set_accessible_label(&retry, "Retry BlueFerry connection");
+                let weak = Rc::downgrade(self);
+                retry.connect_clicked(move |_| {
+                    if let Some(app) = weak.upgrade() {
+                        app.refresh_recent();
+                    }
+                });
+            }
             self.messages.append(&empty);
         }
     }
