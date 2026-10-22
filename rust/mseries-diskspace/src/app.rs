@@ -135,7 +135,7 @@ impl App {
         let canvas =
             gtk::DrawingArea::builder().hexpand(true).vexpand(true).content_width(420).content_height(240).build();
         canvas.set_has_tooltip(true);
-        canvas.update_property(&[gtk::accessible::Property::Label("Disk usage map of the current folder")]);
+        mseries_pantheon_kit::set_accessible_label(&canvas, "Disk usage map of the current folder");
         let legend = gtk::Box::new(gtk::Orientation::Horizontal, 14);
         legend.add_css_class("ds-legend");
         legend.set_halign(gtk::Align::Center);

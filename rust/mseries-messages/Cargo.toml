@@ -1,0 +1,14 @@
+[package]
+name = "mseries-messages"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+description = "Native Pantheon Messages client for BlueFerry"
+
+[dependencies]
+mseries-pantheon-kit = { path = "../mseries-pantheon-kit" }
+gtk = { package = "gtk4", version = "0.11", features = ["v4_20"] }
+granite = { package = "granite-rs", version = "3.3", features = ["v7_8", "gtk_v4_20"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

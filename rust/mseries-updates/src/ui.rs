@@ -24,10 +24,17 @@ pub struct Confirmation {
 
 pub type Confirmer = Box<dyn Fn(&gtk::Window, Confirmation) -> Pin<Box<dyn Future<Output = bool>>>>;
 
-fn ask_with_dialog(parent: &gtk::Window, question: Confirmation) -> Pin<Box<dyn Future<Output = bool>>> {
+fn ask_with_dialog(
+    parent: &gtk::Window,
+    question: Confirmation,
+) -> Pin<Box<dyn Future<Output = bool>>> {
     let parent = parent.clone();
     Box::pin(async move {
-        let dialog = gtk::AlertDialog::builder().modal(true).message(question.title).detail(question.detail).build();
+        let dialog = gtk::AlertDialog::builder()
+            .modal(true)
+            .message(question.title)
+            .detail(question.detail)
+            .build();
         dialog.set_buttons(&[&tr("Cancel"), &question.accept]);
         dialog.set_cancel_button(0);
         dialog.set_default_button(0);
@@ -73,11 +80,20 @@ pub struct UpdatesWindow {
 }
 
 fn unix_now() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 fn label(text: &str, classes: &[&str]) -> gtk::Label {
-    let l = gtk::Label::builder().label(text).halign(gtk::Align::Fill).hexpand(true).xalign(0.0).wrap(true).build();
+    let l = gtk::Label::builder()
+        .label(text)
+        .halign(gtk::Align::Fill)
+        .hexpand(true)
+        .xalign(0.0)
+        .wrap(true)
+        .build();
     for class in classes {
         l.add_css_class(class);
     }
@@ -110,9 +126,17 @@ impl UpdatesWindow {
             .build();
         window.set_titlebar(Some(&gtk::HeaderBar::new()));
 
-        let icon = gtk::Image::builder().pixel_size(64).valign(gtk::Align::Start).build();
+        let icon = gtk::Image::builder()
+            .pixel_size(64)
+            .valign(gtk::Align::Start)
+            .build();
         icon.set_accessible_role(gtk::AccessibleRole::Presentation);
-        let spinner = gtk::Spinner::builder().visible(false).valign(gtk::Align::Start).width_request(48).height_request(48).build();
+        let spinner = gtk::Spinner::builder()
+            .visible(false)
+            .valign(gtk::Align::Start)
+            .width_request(48)
+            .height_request(48)
+            .build();
         let headline = label("", &["title-2"]);
         headline.set_accessible_role(gtk::AccessibleRole::Heading);
         let subtitle = label("", &["dim-label"]);
@@ -130,7 +154,11 @@ impl UpdatesWindow {
         // Status is carried by the icon and the words, not by text colour alone.
         let banner = label("", &[]);
         banner.set_hexpand(true);
-        let banner_icon = gtk::Image::builder().pixel_size(16).valign(gtk::Align::Start).margin_top(2).build();
+        let banner_icon = gtk::Image::builder()
+            .pixel_size(16)
+            .valign(gtk::Align::Start)
+            .margin_top(2)
+            .build();
         banner_icon.set_accessible_role(gtk::AccessibleRole::Presentation);
         let banner_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         banner_row.append(&banner_icon);
@@ -138,9 +166,11 @@ impl UpdatesWindow {
         banner_row.set_visible(false);
 
         let changes_title = granite::HeaderLabel::new(&tr("Software"));
-        let changes_list = gtk::ListBox::builder().selection_mode(gtk::SelectionMode::None).build();
+        let changes_list = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .build();
         changes_list.add_css_class("boxed-list");
-        changes_list.update_property(&[gtk::accessible::Property::Label(&tr("Packages in this update"))]);
+        mseries_pantheon_kit::set_accessible_label(&changes_list, &tr("Packages in this update"));
         let changes = gtk::Box::new(gtk::Orientation::Vertical, 6);
         changes.append(&changes_title);
         changes.append(&changes_list);
@@ -157,7 +187,10 @@ impl UpdatesWindow {
         rollback.set_valign(gtk::Align::Center);
         let rollback_text = gtk::Box::new(gtk::Orientation::Vertical, 2);
         rollback_text.set_hexpand(true);
-        rollback_text.append(&label(&tr("Go back to the previous versions"), &["heading"]));
+        rollback_text.append(&label(
+            &tr("Go back to the previous versions"),
+            &["heading"],
+        ));
         rollback_text.append(&label(
             &tr("Restores the software from before the last update. It takes effect the next time you log in."),
             &["dim-label"],
@@ -169,9 +202,10 @@ impl UpdatesWindow {
         rollback_section.append(&granite::HeaderLabel::new(&tr("Previous Version")));
         rollback_section.append(&rollback_row);
 
-        let channel = gtk::DropDown::from_strings(&[&tr("Stable (recommended)"), &tr("Development")]);
+        let channel =
+            gtk::DropDown::from_strings(&[&tr("Stable (recommended)"), &tr("Development")]);
         channel.set_valign(gtk::Align::Center);
-        channel.update_property(&[gtk::accessible::Property::Label(&tr("Update channel"))]);
+        mseries_pantheon_kit::set_accessible_label(&channel, &tr("Update channel"));
         let channel_note = label("", &["dim-label"]);
         let channel_text = gtk::Box::new(gtk::Orientation::Vertical, 2);
         channel_text.set_hexpand(true);
@@ -184,22 +218,23 @@ impl UpdatesWindow {
         let channel_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         channel_row.append(&channel_text);
         channel_row.append(&channel);
-        let advanced = gtk::Expander::builder().label(tr("Advanced")).child(&channel_row).build();
+        let advanced = gtk::Expander::builder()
+            .label(tr("Advanced"))
+            .child(&channel_row)
+            .build();
 
         let content = gtk::Box::new(gtk::Orientation::Vertical, 18);
-        for side in [content.clone()] {
-            side.set_margin_top(18);
-            side.set_margin_bottom(18);
-            side.set_margin_start(18);
-            side.set_margin_end(18);
-        }
+        mseries_pantheon_kit::set_margins_text_units(&content, 1.2, 1.2, 1.2, 1.2);
         content.append(&status_row);
         content.append(&banner_row);
         content.append(&changes);
         content.append(&actions);
         content.append(&rollback_section);
         content.append(&advanced);
-        let scroller = gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never).child(&content).build();
+        let scroller = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .child(&content)
+            .build();
 
         let unavailable = granite::Placeholder::new(&tr("Updates aren't available"));
         unavailable.set_description(&tr("Software updates are not set up on this computer."));
@@ -210,7 +245,10 @@ impl UpdatesWindow {
         );
 
         // Measure only the page on show: the placeholder page must not set the window's minimum height.
-        let stack = gtk::Stack::builder().hhomogeneous(false).vhomogeneous(false).build();
+        let stack = gtk::Stack::builder()
+            .hhomogeneous(false)
+            .vhomogeneous(false)
+            .build();
         stack.add_named(&scroller, Some("content"));
         stack.add_named(&unavailable, Some("unavailable"));
 
@@ -272,9 +310,13 @@ impl UpdatesWindow {
 
     fn connect(&self) {
         let this = self.clone();
-        self.inner.check.connect_clicked(move |_| this.run(Command::Check));
+        self.inner
+            .check
+            .connect_clicked(move |_| this.run(Command::Check));
         let this = self.clone();
-        self.inner.install.connect_clicked(move |_| this.run(Command::Stage));
+        self.inner
+            .install
+            .connect_clicked(move |_| this.run(Command::Stage));
         let this = self.clone();
         self.inner.rollback.connect_clicked(move |_| {
             let this = this.clone();
@@ -339,8 +381,14 @@ impl UpdatesWindow {
                     &tr("Updates aren't available"),
                     &tr("Software updates are not set up on this computer."),
                 ),
-                Ok(Err(other)) => this.show_unavailable(&tr("Couldn't read the update status"), &failure_text(&other)),
-                Err(_) => this.show_unavailable(&tr("Couldn't read the update status"), &tr("The status reader stopped unexpectedly.")),
+                Ok(Err(other)) => this.show_unavailable(
+                    &tr("Couldn't read the update status"),
+                    &failure_text(&other),
+                ),
+                Err(_) => this.show_unavailable(
+                    &tr("Couldn't read the update status"),
+                    &tr("The status reader stopped unexpectedly."),
+                ),
             }
             this.render();
         });
@@ -369,14 +417,22 @@ impl UpdatesWindow {
         glib::spawn_future_local(async move {
             let backend = this.inner.backend.clone();
             let result = gio::spawn_blocking(move || backend.run(command)).await;
-            let result = result.unwrap_or_else(|_| Err(Failure::Failed(tr("The update task stopped unexpectedly."))));
+            let result = result.unwrap_or_else(|_| {
+                Err(Failure::Failed(tr("The update task stopped unexpectedly.")))
+            });
             this.inner.busy.set(false);
             match &result {
                 Ok(()) => match command {
                     Command::Check => {}
                     Command::Stage => this.notify(&tr("Updates will install at your next restart")),
-                    Command::Rollback => this.notify(&tr("Previous versions restored. They take effect at your next login")),
-                    Command::SwitchChannel(c) => this.notify(&format!("{} {}", tr("Switched to"), channel_name(c.as_arg()))),
+                    Command::Rollback => this.notify(&tr(
+                        "Previous versions restored. They take effect at your next login",
+                    )),
+                    Command::SwitchChannel(c) => this.notify(&format!(
+                        "{} {}",
+                        tr("Switched to"),
+                        channel_name(c.as_arg())
+                    )),
                 },
                 Err(Failure::Cancelled) => {}
                 Err(failure) => this.show_failure(failure),
@@ -388,7 +444,9 @@ impl UpdatesWindow {
     fn show_failure(&self, failure: &Failure) {
         let text = failure_text(failure);
         self.inner.banner.set_label(&text);
-        self.inner.banner_icon.set_icon_name(Some("dialog-error-symbolic"));
+        self.inner
+            .banner_icon
+            .set_icon_name(Some("dialog-error-symbolic"));
         self.inner.banner_row.set_visible(true);
         self.notify(&text);
     }
@@ -418,8 +476,10 @@ impl UpdatesWindow {
         let recovering = s.is_some_and(|s| s.phase == Phase::Recovering);
         i.check.set_sensitive(!busy && !recovering);
         i.install.set_sensitive(!busy);
-        i.rollback.set_sensitive(!busy && s.is_some_and(|s| s.can_roll_back));
-        i.channel.set_sensitive(!busy && s.is_some_and(|s| s.can_switch_channel));
+        i.rollback
+            .set_sensitive(!busy && s.is_some_and(|s| s.can_roll_back));
+        i.channel
+            .set_sensitive(!busy && s.is_some_and(|s| s.can_switch_channel));
     }
 
     /// Show the current summary; safe to call at any time.
@@ -433,14 +493,24 @@ impl UpdatesWindow {
             self.update_sensitivity();
             return;
         };
-        let Described { icon, headline, subtitle, meta, changes, install: show_install } = describe_phase(&summary, i.now.get()());
+        let Described {
+            icon,
+            headline,
+            subtitle,
+            meta,
+            changes,
+            install: show_install,
+        } = describe_phase(&summary, i.now.get()());
         i.icon.set_icon_name(Some(icon));
         i.headline.set_label(&headline);
         i.subtitle.set_label(&subtitle);
         i.subtitle.set_visible(!subtitle.is_empty());
         i.meta.set_label(&meta);
         i.install.set_visible(show_install);
-        i.check.set_label(&if show_install || summary.phase == Phase::NeverChecked || matches!(summary.phase, Phase::UpToDate) {
+        i.check.set_label(&if show_install
+            || summary.phase == Phase::NeverChecked
+            || matches!(summary.phase, Phase::UpToDate)
+        {
             tr("Check for Updates")
         } else {
             tr("Check Again")
@@ -456,11 +526,14 @@ impl UpdatesWindow {
             i.changes_list.remove(&row);
         }
         i.changes.set_visible(!changes.is_empty());
-        i.changes_title.set_property("label", match summary.phase {
-            Phase::AwaitingConfirmation(_) => tr("Installed"),
-            Phase::Staged(_) => tr("Ready to install"),
-            _ => tr("Available"),
-        });
+        i.changes_title.set_property(
+            "label",
+            match summary.phase {
+                Phase::AwaitingConfirmation(_) => tr("Installed"),
+                Phase::Staged(_) => tr("Ready to install"),
+                _ => tr("Available"),
+            },
+        );
         for change in &changes {
             i.changes_list.append(&change_row(change));
         }
@@ -474,13 +547,20 @@ impl UpdatesWindow {
                 }));
                 i.banner_row.set_visible(true);
             }
-            None if i.banner_icon.icon_name().is_some_and(|n| n == "dialog-information-symbolic") => i.banner_row.set_visible(false),
+            None if i
+                .banner_icon
+                .icon_name()
+                .is_some_and(|n| n == "dialog-information-symbolic") =>
+            {
+                i.banner_row.set_visible(false)
+            }
             _ => {}
         }
 
         i.rollback_section.set_visible(summary.can_roll_back);
         i.syncing_channel.set(true);
-        i.channel.set_selected(if summary.channel == "dev" { 1 } else { 0 });
+        i.channel
+            .set_selected(if summary.channel == "dev" { 1 } else { 0 });
         i.syncing_channel.set(false);
         i.channel_note.set_label(&if summary.can_switch_channel {
             String::new()
@@ -498,19 +578,33 @@ fn failure_text(failure: &Failure) -> String {
         Failure::Cancelled => tr("Cancelled."),
         Failure::NotAuthorized => tr("You don't have permission to change updates."),
         Failure::Busy => tr("Another update task is running. Try again in a minute."),
-        Failure::RollbackFailed(detail) => format!("{} {detail}", tr("Restoring the previous versions failed. The software needs attention:")),
+        Failure::RollbackFailed(detail) => format!(
+            "{} {detail}",
+            tr("Restoring the previous versions failed. The software needs attention:")
+        ),
         Failure::Failed(detail) => detail.clone(),
     }
 }
 
 fn notice_text(notice: &Notice) -> String {
     match notice {
-        Notice::RolledBack { requested: true, .. } => tr("You rolled back the last update."),
-        Notice::RolledBack { requested: false, detail } => {
-            format!("{} {detail}", tr("The last update was rolled back automatically and won't be offered again:"))
+        Notice::RolledBack {
+            requested: true, ..
+        } => tr("You rolled back the last update."),
+        Notice::RolledBack {
+            requested: false,
+            detail,
+        } => {
+            format!(
+                "{} {detail}",
+                tr("The last update was rolled back automatically and won't be offered again:")
+            )
         }
         Notice::RollbackFailed { detail } => {
-            format!("{} {detail}", tr("Restoring the previous versions failed. The software needs attention:"))
+            format!(
+                "{} {detail}",
+                tr("Restoring the previous versions failed. The software needs attention:")
+            )
         }
     }
 }
@@ -527,9 +621,16 @@ struct Described {
 }
 
 fn describe_phase(summary: &Summary, now: i64) -> Described {
-    let mut meta: Vec<String> =
-        summary.last_checked.map(|t| format!("{} {}", tr("Last checked"), describe_age(age(t, now)))).into_iter().collect();
-    meta.push(format!("{}: {}", tr("Channel"), channel_name(&summary.channel)));
+    let mut meta: Vec<String> = summary
+        .last_checked
+        .map(|t| format!("{} {}", tr("Last checked"), describe_age(age(t, now))))
+        .into_iter()
+        .collect();
+    meta.push(format!(
+        "{}: {}",
+        tr("Channel"),
+        channel_name(&summary.channel)
+    ));
     let meta = meta.join(" · ");
     let (icon, headline, subtitle, changes, install) = match &summary.phase {
         Phase::NeverChecked => (
@@ -539,10 +640,20 @@ fn describe_phase(summary: &Summary, now: i64) -> Described {
             vec![],
             false,
         ),
-        Phase::UpToDate => ("process-completed", tr("The M-series software is up to date"), String::new(), vec![], false),
+        Phase::UpToDate => (
+            "process-completed",
+            tr("The M-series software is up to date"),
+            String::new(),
+            vec![],
+            false,
+        ),
         Phase::Available(changes) => (
             "software-update-available",
-            trn("{n} update available", "{n} updates available", changes.len()),
+            trn(
+                "{n} update available",
+                "{n} updates available",
+                changes.len(),
+            ),
             tr("Updates install the next time you restart. Your desktop is not interrupted."),
             changes.clone(),
             true,
@@ -550,30 +661,47 @@ fn describe_phase(summary: &Summary, now: i64) -> Described {
         Phase::Staged(changes) => (
             "software-update-available",
             tr("Ready to install at your next restart"),
-            tr("The updates are downloaded and verified. If anything goes wrong, your previous versions are restored automatically."),
+            tr(
+                "The updates are downloaded and verified. If anything goes wrong, your previous versions are restored automatically.",
+            ),
             changes.clone(),
             false,
         ),
         Phase::AwaitingConfirmation(changes) => (
             "process-completed",
             tr("Updates installed"),
-            tr("They are marked as working once the desktop has run normally for a few minutes. You can go back to the previous versions."),
+            tr(
+                "They are marked as working once the desktop has run normally for a few minutes. You can go back to the previous versions.",
+            ),
             changes.clone(),
             false,
         ),
         Phase::Recovering => (
             "dialog-warning",
             tr("Restoring the previous versions"),
-            tr("An update was interrupted. The previous versions are restored at the next restart."),
+            tr(
+                "An update was interrupted. The previous versions are restored at the next restart.",
+            ),
             vec![],
             false,
         ),
     };
-    Described { icon, headline, subtitle, meta, changes, install }
+    Described {
+        icon,
+        headline,
+        subtitle,
+        meta,
+        changes,
+        install,
+    }
 }
 
 fn change_row(change: &Change) -> gtk::ListBoxRow {
-    let name = change.name.strip_prefix("mseries-").unwrap_or(&change.name).replace('-', " ");
+    let name = change
+        .name
+        .strip_prefix("mseries-")
+        .unwrap_or(&change.name)
+        .replace('-', " ");
     let versions = match &change.from {
         Some(from) if from != &change.to => format!("{from} → {}", change.to),
         _ => change.to.clone(),
@@ -587,7 +715,10 @@ fn change_row(change: &Change) -> gtk::ListBoxRow {
     let versions = label(&versions, &["dim-label", "monospace"]);
     versions.set_selectable(true);
     text.append(&versions);
-    let row = gtk::ListBoxRow::builder().child(&text).activatable(false).build();
-    row.update_property(&[gtk::accessible::Property::Label(&format!("{name}"))]);
+    let row = gtk::ListBoxRow::builder()
+        .child(&text)
+        .activatable(false)
+        .build();
+    mseries_pantheon_kit::set_accessible_label(&row, &name);
     row
 }

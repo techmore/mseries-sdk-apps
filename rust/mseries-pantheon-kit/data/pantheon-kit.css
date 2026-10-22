@@ -1,0 +1,28 @@
+/* Shared geometry classes: GTK and Granite continue to provide colors and controls. */
+.pantheon-surface {
+    border-radius: 12px;
+}
+
+.pantheon-inset {
+    padding: 1em;
+}
+
+.pantheon-row {
+    padding: 0.5em 0.75em;
+}
+
+.pantheon-message-incoming {
+    margin-end: 4.5em;
+}
+
+.pantheon-message-outgoing {
+    margin-start: 4.5em;
+}
+
+.pantheon-section-gap {
+    margin-bottom: 1em;
+}
+
+.pantheon-caption {
+    font-size: 0.9em;
+}

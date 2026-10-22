@@ -1,0 +1,68 @@
+name: Rust Pantheon Messages preview
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - "rust/mseries-messages/**"
+      - "rust/mseries-pantheon-kit/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - ".github/workflows/mseries-messages-rs.yml"
+  pull_request:
+    paths:
+      - "rust/mseries-messages/**"
+      - "rust/mseries-pantheon-kit/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - ".github/workflows/mseries-messages-rs.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mseries-messages-rs-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Rust Messages build and package (arm64)
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config cargo rustc libgtk-4-dev \
+            libgranite-7-dev desktop-file-utils appstream
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: messages-rs-${{ runner.arch }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: messages-rs-${{ runner.arch }}-
+
+      - name: Rust formatting and lint
+        run: |
+          cargo fmt --manifest-path rust/Cargo.toml -p mseries-messages --check
+          cargo clippy --manifest-path rust/Cargo.toml -p mseries-messages --locked -- -D warnings
+
+      - name: Build and package
+        run: MSERIES_MESSAGES_OUTPUT_DIR="$RUNNER_TEMP/mseries-messages-rs" bash rust/mseries-messages/build-deb.sh
+
+      - name: Validate desktop metadata
+        run: |
+          desktop-file-validate rust/mseries-messages/data/io.elementary.mseries.MessagesRust.desktop
+          appstreamcli validate --no-net rust/mseries-messages/data/io.elementary.mseries.MessagesRust.metainfo.xml
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mseries-messages-rs-deb-${{ github.run_id }}
+          path: ${{ runner.temp }}/mseries-messages-rs/*.deb
+          if-no-files-found: error

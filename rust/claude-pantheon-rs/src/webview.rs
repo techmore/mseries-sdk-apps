@@ -67,6 +67,7 @@ impl PageView {
     pub fn new(render: &HtmlRender, resolve: Resolve) -> Rc<PageView> {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
         root.add_css_class("card");
+        root.add_css_class("pantheon-surface");
         root.add_css_class("page-card");
         let head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         head.append(&gtk::Image::from_icon_name("web-browser-symbolic"));

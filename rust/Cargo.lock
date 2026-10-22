@@ -379,6 +379,7 @@ dependencies = [
  "futures-util",
  "granite-rs",
  "gtk4",
+ "mseries-pantheon-kit",
  "pulldown-cmark",
  "rayon",
  "serde",
@@ -1599,8 +1600,28 @@ dependencies = [
  "granite-rs",
  "gtk4",
  "libc",
+ "mseries-pantheon-kit",
  "pangocairo",
  "rayon",
+]
+
+[[package]]
+name = "mseries-messages"
+version = "0.1.0"
+dependencies = [
+ "granite-rs",
+ "gtk4",
+ "mseries-pantheon-kit",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mseries-pantheon-kit"
+version = "0.1.0"
+dependencies = [
+ "granite-rs",
+ "gtk4",
 ]
 
 [[package]]
@@ -1621,6 +1642,7 @@ version = "0.1.0"
 dependencies = [
  "granite-rs",
  "gtk4",
+ "mseries-pantheon-kit",
  "mseries-update-core",
 ]
 

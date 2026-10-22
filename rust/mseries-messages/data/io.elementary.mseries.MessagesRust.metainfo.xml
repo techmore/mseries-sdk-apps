@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.elementary.mseries.MessagesRust</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <name>Messages (Rust Preview)</name>
+  <summary>Native Pantheon conversation client for BlueFerry</summary>
+  <description>
+    <p>A Rust, GTK 4 and Granite client for the existing BlueFerry Messages API. BlueFerry remains responsible for the iPhone MAP session, recipient validation and encrypted history.</p>
+    <p>This preview includes conversation search, message history, local drafts, favorites, read state, checked replies and explicit group participant confirmation. It is not yet a feature-parity replacement for the current Messages app.</p>
+  </description>
+  <developer id="io.elementary.mseries">
+    <name>elementary OS M-Series</name>
+  </developer>
+  <launchable type="desktop-id">io.elementary.mseries.MessagesRust.desktop</launchable>
+  <url type="homepage">https://github.com/techmore/ElementaryOS_MSeries</url>
+  <url type="bugtracker">https://github.com/techmore/ElementaryOS_MSeries/issues</url>
+  <provides>
+    <binary>mseries-messages-rs</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-22">
+      <description>
+        <p>Initial native Rust preview; parity and owner phone qualification remain open.</p>
+      </description>
+    </release>
+  </releases>
+</component>

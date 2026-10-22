@@ -49,8 +49,11 @@ sent and received; an explicitly authorized contact test was sent, followed by
 two incoming replies. Contacts remain available. ANCS app notifications remain
 unavailable and are not required for these ordinary texts.
 
-Launch **Messages** (`mseries-messages`) for the native GTK 4 / Granite 7
-conversation sidebar, contact picker, message bubbles and composer. Sidebar
+Launch **Messages** (`mseries-messages`) for the qualified GTK 4 / Granite 7
+conversation sidebar, contact picker, message bubbles and composer. A separate
+Rust GTK 4 / Granite preview is available as `mseries-messages-rs` from
+`rust/mseries-messages/build-deb.sh`; it does not replace the current launcher
+and is not yet at feature parity. Sidebar
 names are larger; avatars use BlueFerry’s opt-in contact-photo cache with an
 initials fallback. The owner requested this opt-in; 34 real photos were synced.
 Images are bounded/validated upstream and decoded to small thumbnails in memory. All sending,
