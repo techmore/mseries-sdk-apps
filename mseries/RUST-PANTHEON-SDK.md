@@ -46,6 +46,12 @@ on-demand Linux CPU and memory snapshots, and `poll_system_metrics` combines
 it with that controllable timer. These are small host metrics, not a process
 manager or a replacement for the compositor's own counters.
 
+Disk Space now uses the SDK's text-relative spacing and margin helpers for
+persistent layout groups, GTK font-relative CSS padding for repeated rows, and
+SDK accessible names for icon-only actions and its main content lists. Its
+three-pane navigation still needs a compact-window layout pass; fixed pane
+minimums remain until that interaction is redesigned and visually qualified.
+
 Current Rust GTK consumers are T3, Messages, Disk Space, and Software Updates;
 Torrential consumes the SDK from its private fork. The System Monitor preview
 uses the SDK's sampler and polling control. Software Updates is part of this
@@ -130,7 +136,7 @@ animation, timer, renderer, or font-scale override.
 | Surface | Current implementation | SDK path |
 | --- | --- | --- |
 | T3 Code client | Rust, GTK 4, Granite | Reference app and first SDK consumer; retain its T3 server boundary. |
-| Disk Space | Rust, GTK 4, Granite | Existing Rust app; adopt common layout, accessibility, and responsive behavior. |
+| Disk Space | Rust, GTK 4, Granite | Existing Rust app; initial SDK adoption covers text-relative spacing, row padding, and accessible names. Add and qualify compact-window pane navigation before calling its responsive pass complete. |
 | Software Updates | Rust, GTK 4, Granite; `mseries-update-core` contract and OS helper | Included in the SDK rollout: shared responsive/scaling/accessibility helpers and a typed OS update contract; keep privileged transaction logic in the OS. |
 | Messages | Python GTK/Granite is qualified; Rust preview is in `rust/mseries-messages` | Continue the Rust app to feature parity through BlueFerry's supported D-Bus API; do not create a second MAP or history owner. |
 | Torrential | Private Rust/Relm4 fork using Transmission | Initial integration on private `mseries-native`: pinned git dependency, shared stylesheet and responsive row spacing. Continue the layout/accessibility pass; keep source and packages private until upstream licensing is resolved. |

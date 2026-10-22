@@ -8,6 +8,7 @@ use crate::scan::{self, Progress, ScanMsg};
 use crate::{ops, sys};
 use granite::prelude::{PlaceholderExt, ToastExt};
 use gtk::{gdk, gio, glib, pango, prelude::*};
+use mseries_pantheon_kit::{set_accessible_label, set_box_spacing_text_units, set_margins_text_units};
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -84,8 +85,10 @@ impl App {
         let header = gtk::HeaderBar::new();
         let up = gtk::Button::from_icon_name("go-up-symbolic");
         up.set_tooltip_text(Some("Up one folder (Backspace)"));
+        set_accessible_label(&up, "Up one folder");
         let rescan = gtk::Button::from_icon_name("view-refresh-symbolic");
         rescan.set_tooltip_text(Some("Scan again (Ctrl+R)"));
+        set_accessible_label(&rescan, "Scan again");
         header.pack_start(&up);
         header.pack_start(&rescan);
         let cards_btn = gtk::ToggleButton::with_label("Cards");
@@ -102,11 +105,9 @@ impl App {
             label("Mounted drives and Btrfs subvolumes inside the folder are counted too.", &["dim-label", "caption"]);
         cross_note.set_wrap(true);
         cross_note.set_max_width_chars(34);
-        let menu_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        menu_box.set_margin_top(10);
-        menu_box.set_margin_bottom(10);
-        menu_box.set_margin_start(12);
-        menu_box.set_margin_end(12);
+        let menu_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        set_box_spacing_text_units(&menu_box, 0.35);
+        set_margins_text_units(&menu_box, 0.55, 0.65, 0.55, 0.65);
         menu_box.append(&cross);
         menu_box.append(&cross_note);
         let popover = gtk::Popover::new();
@@ -116,6 +117,7 @@ impl App {
 
         // Sidebar.
         let sidebar = gtk::ListBox::builder().css_classes(["navigation-sidebar"]).build();
+        set_accessible_label(&sidebar, "Filesystems and folders");
         let sidebar_scroll = gtk::ScrolledWindow::builder()
             .child(&sidebar)
             .hscrollbar_policy(gtk::PolicyType::Never)
@@ -136,11 +138,13 @@ impl App {
             gtk::DrawingArea::builder().hexpand(true).vexpand(true).content_width(420).content_height(240).build();
         canvas.set_has_tooltip(true);
         mseries_pantheon_kit::set_accessible_label(&canvas, "Disk usage map of the current folder");
-        let legend = gtk::Box::new(gtk::Orientation::Horizontal, 14);
+        let legend = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        set_box_spacing_text_units(&legend, 0.75);
         legend.add_css_class("ds-legend");
         legend.set_halign(gtk::Align::Center);
         for cat in crate::look::Category::LEGEND {
-            let chip = gtk::Box::new(gtk::Orientation::Horizontal, 5);
+            let chip = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+            set_box_spacing_text_units(&chip, 0.28);
             let swatch =
                 gtk::DrawingArea::builder().content_width(10).content_height(10).valign(gtk::Align::Center).build();
             swatch.set_draw_func(move |_, cr, w, h| {
@@ -158,6 +162,7 @@ impl App {
             legend.append(&chip);
         }
         let view_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        set_box_spacing_text_units(&view_page, 0.25);
         view_page.append(&canvas);
         view_page.append(&legend);
 
@@ -171,7 +176,8 @@ impl App {
         let scan_path = label("", &["caption", "dim-label"]);
         let cancel = gtk::Button::with_label("Cancel");
         cancel.set_halign(gtk::Align::Center);
-        let scan_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        let scan_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        set_box_spacing_text_units(&scan_box, 0.45);
         scan_box.set_valign(gtk::Align::Center);
         scan_box.set_halign(gtk::Align::Center);
         scan_box.set_width_request(360);
@@ -194,7 +200,9 @@ impl App {
             .icon_name("view-sort-descending-symbolic")
             .tooltip_text("Reverse order")
             .build();
-        let sort_bar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        set_accessible_label(&sort_icon, "Reverse sort order");
+        let sort_bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        set_box_spacing_text_units(&sort_bar, 0.35);
         sort_bar.add_css_class("ds-sortbar");
         let sort_label = label("Sort by", &["dim-label"]);
         sort_label.set_hexpand(true);
@@ -204,6 +212,7 @@ impl App {
 
         let list =
             gtk::ListBox::builder().selection_mode(gtk::SelectionMode::Multiple).css_classes(["ds-list"]).build();
+        set_accessible_label(&list, "Contents of the current folder");
         let list_scroll =
             gtk::ScrolledWindow::builder().child(&list).vexpand(true).hscrollbar_policy(gtk::PolicyType::Never).build();
 
@@ -211,22 +220,26 @@ impl App {
         selection.set_hexpand(true);
         let btn_copy = gtk::Button::from_icon_name("edit-copy-symbolic");
         btn_copy.set_tooltip_text(Some("Copy path"));
+        set_accessible_label(&btn_copy, "Copy selected path");
         let btn_show = gtk::Button::with_label("Show in Files");
         let btn_trash = gtk::Button::with_label("Move to Trash");
         let btn_delete = gtk::Button::with_label("Delete…");
         btn_delete.add_css_class("destructive-action");
         btn_delete.set_tooltip_text(Some("Delete permanently and free the space now"));
-        let selection_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let selection_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        set_box_spacing_text_units(&selection_row, 0.35);
         selection_row.append(&selection);
         selection_row.append(&btn_copy);
-        let button_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let button_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        set_box_spacing_text_units(&button_row, 0.35);
         let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         spacer.set_hexpand(true);
         button_row.append(&btn_show);
         button_row.append(&spacer);
         button_row.append(&btn_trash);
         button_row.append(&btn_delete);
-        let actions = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        let actions = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        set_box_spacing_text_units(&actions, 0.45);
         actions.add_css_class("ds-actions");
         actions.append(&selection_row);
         actions.append(&button_row);
@@ -256,7 +269,8 @@ impl App {
         let status = label("", &["caption", "dim-label"]);
         status.set_hexpand(true);
         let free = label("", &["caption", "dim-label"]);
-        let status_bar = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        let status_bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        set_box_spacing_text_units(&status_bar, 0.65);
         status_bar.add_css_class("ds-status");
         status_bar.append(&status);
         status_bar.append(&free);
