@@ -44,7 +44,12 @@ manual refresh, and a binding to GTK mapped state; pollers start disabled so
 apps do not acquire background timers by accident. `SystemSampler` provides
 on-demand Linux CPU and memory snapshots, and `poll_system_metrics` combines
 it with that controllable timer. These are small host metrics, not a process
-manager or a replacement for the compositor's own counters.
+manager or a replacement for the compositor's own counters. `DockBadge`
+provides a best-effort session-bus client for Pantheon's LauncherEntry count
+badge and optional progress bar. It connects asynchronously, coalesces updates
+while connecting, hides a zero count, and has no polling timer. Messages uses
+its unread-message total; T3 uses the shared API for its running-thread count
+and progress indicator.
 
 Disk Space now uses the SDK's text-relative spacing and margin helpers for
 persistent layout groups, GTK font-relative CSS padding for repeated rows, and

@@ -87,6 +87,8 @@ conversation list, Ctrl+Enter sends, and Escape clears search or returns from a
 compact conversation. Returning to the list clears the selected conversation
 and retains its draft. The list starts without an automatic selection, so a
 refresh cannot open or mark the first conversation read without user action.
+The SDK also sends the aggregate unread-message count to the Pantheon dock badge
+through its shared nonblocking LauncherEntry client.
 
 Imported pin review remains open until BlueFerry exposes a stable opaque
 per-phone profile identifier through its supported status API. The Python

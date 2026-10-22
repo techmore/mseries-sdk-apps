@@ -72,6 +72,7 @@ struct Draft {
 
 pub struct App {
     window: gtk::ApplicationWindow,
+    dock_badge: mseries_pantheon_kit::DockBadge,
     // sidebar
     paned: gtk::Paned,
     list: gtk::ListBox,
@@ -443,6 +444,7 @@ impl App {
 
         let app = Rc::new(App {
             window,
+            dock_badge: mseries_pantheon_kit::DockBadge::new(crate::APP_ID),
             paned,
             list,
             side_placeholder,
@@ -1797,12 +1799,12 @@ impl App {
     /// no fraction, so it sits at the half mark as a "working" indicator).
     fn refresh_launcher(&self) {
         if !self.settings.borrow().dock_badge {
-            notify::launcher_entry(0, None);
+            self.dock_badge.clear();
             return;
         }
         let running =
             self.conn.borrow().as_ref().map(|c| c.shell.threads.iter().filter(|t| t.is_running()).count()).unwrap_or(0);
-        notify::launcher_entry(running as i64, (running > 0).then_some(0.5));
+        self.dock_badge.update(running as u64, (running > 0).then_some(0.5));
     }
 
     /// Notifies about a thread only while the window is not the active one.

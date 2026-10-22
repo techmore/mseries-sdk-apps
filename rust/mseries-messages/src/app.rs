@@ -2,8 +2,8 @@ use crate::media::{self, LinkPreview, PreviewKind};
 use granite::prelude::PlaceholderExt;
 use gtk::{gio, glib, prelude::*};
 use mseries_pantheon_kit::{
-    BlueFerryMessagesClient as Backend, BlueFerryStatus, ContactMatch, Message, MessagePosition,
-    Thread, format_message_timestamp, layout_messages,
+    BlueFerryMessagesClient as Backend, BlueFerryStatus, ContactMatch, DockBadge, Message,
+    MessagePosition, Thread, format_message_timestamp, layout_messages,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -334,6 +334,7 @@ impl MediaState {
 
 pub struct App {
     backend: Backend,
+    dock_badge: DockBadge,
     history_subscription: RefCell<Option<gio::SignalSubscription>>,
     window: gtk::ApplicationWindow,
     status: gtk::Label,
@@ -366,6 +367,7 @@ pub struct App {
 
 impl App {
     pub fn build(application: &gtk::Application) -> Option<Rc<Self>> {
+        let dock_badge = DockBadge::new("io.elementary.mseries.MessagesRust");
         let backend = Backend::connect();
         let backend = match backend {
             Ok(backend) => backend,
@@ -576,6 +578,7 @@ impl App {
 
         let app = Rc::new(Self {
             backend,
+            dock_badge,
             history_subscription: RefCell::new(None),
             window,
             status,
@@ -985,6 +988,10 @@ impl App {
                         }
                         server_threads.extend(keep_local);
                         state.threads = server_threads;
+                        let unread_count = state.threads.iter().fold(0_u64, |total, thread| {
+                            total.saturating_add(thread.unread() as u64)
+                        });
+                        app.dock_badge.set_count(unread_count);
                         reconcile_outbox(&mut state);
                         drop(state);
                         app.rebuild_sidebar();
