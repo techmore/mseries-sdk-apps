@@ -197,6 +197,28 @@ fn main() {
         println!("window state, zoom and a11y ok");
     }
 
+    // ---- voice input: never sends; a transcript lands in the draft it was recorded for ----------
+    {
+        let avail = claude_pantheon_rs::voice::Availability::probe(None);
+        println!("voice: recorder {:?}, whisper {:?}, model {:?}", avail.recorder, avail.whisper, avail.model);
+        app.composer().set_text("note:");
+        app.insert_transcript("hello from the mic", app.composer().draft_key());
+        assert_eq!(app.composer().text(), "note: hello from the mic");
+        assert!(!app.is_recording());
+        app.insert_transcript("late words", Some("another-thread".into()));
+        assert_eq!(app.composer().text(), "note: hello from the mic", "a transcript for another draft is dropped");
+        app.composer().set_text("");
+        // The shortcut with nothing installed (or no PipeWire under Xvfb) reports instead of crashing.
+        app.toggle_voice();
+        pump(1200);
+        if app.is_recording() {
+            app.toggle_voice();
+            pump(1500);
+        }
+        assert!(!app.is_recording());
+        println!("voice ok");
+    }
+
     // ---- a transient error toast carries Retry ------------------------------------------------
     {
         let hit = std::rc::Rc::new(std::cell::Cell::new(false));

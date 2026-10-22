@@ -20,6 +20,9 @@ pub type AttachHook = Rc<dyn Fn(Vec<u8>, String)>;
 pub type SearchReply = Rc<dyn Fn(Vec<String>)>;
 pub type SearchHook = Rc<dyn Fn(String, SearchReply)>;
 
+/// Called with true when a recording starts from the mic button and false when it stops.
+pub type VoiceHook = Rc<dyn Fn(bool)>;
+
 pub struct Composer {
     pub root: gtk::Box,
     pub view: gtk::TextView,
@@ -34,6 +37,8 @@ pub struct Composer {
     on_send: RefCell<Option<Rc<dyn Fn()>>>,
     on_attach: RefCell<Option<AttachHook>>,
     on_search: RefCell<Option<SearchHook>>,
+    on_voice: RefCell<Option<VoiceHook>>,
+    pub voice_btn: gtk::ToggleButton,
     draft_key: RefCell<Option<String>>,
     draft_timer: RefCell<Option<glib::SourceId>>,
     drafts: RefCell<HashMap<String, String>>,
@@ -74,10 +79,23 @@ impl Composer {
         chips.set_visible(false);
         let status = label("", &["caption", "dim-label"]);
         status.set_visible(false);
+        status.set_hexpand(true);
+        // Push-to-talk: press to record, press again to stop; the transcript lands at the cursor.
+        let voice_btn = gtk::ToggleButton::new();
+        voice_btn.set_icon_name("audio-input-microphone-symbolic");
+        voice_btn.add_css_class("flat");
+        voice_btn.add_css_class("circular");
+        voice_btn.add_css_class("voice-btn");
+        voice_btn.set_tooltip_text(Some("Voice input: press to record, press again to stop (Ctrl+Shift+V). The words go into the draft; nothing is sent."));
+        voice_btn.update_property(&[gtk::accessible::Property::Label("Voice input")]);
+        voice_btn.set_valign(gtk::Align::Center);
+        let tools = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        tools.append(&voice_btn);
+        tools.append(&status);
         let root = gtk::Box::new(gtk::Orientation::Vertical, 4);
         root.append(&chips);
         root.append(&scroll);
-        root.append(&status);
+        root.append(&tools);
 
         // The @ picker: a popover anchored to the text view.
         let picker_entry = gtk::SearchEntry::builder().placeholder_text("File in this project…").build();
@@ -116,6 +134,8 @@ impl Composer {
             on_send: RefCell::new(None),
             on_attach: RefCell::new(None),
             on_search: RefCell::new(None),
+            on_voice: RefCell::new(None),
+            voice_btn,
             draft_key: RefCell::new(None),
             draft_timer: RefCell::new(None),
             drafts: RefCell::new(
@@ -126,6 +146,13 @@ impl Composer {
         });
         *c.me.borrow_mut() = Rc::downgrade(&c);
         c.grow_to_lines();
+        let me = c.clone();
+        c.voice_btn.connect_toggled(move |b| {
+            let cb = me.on_voice.borrow().clone();
+            if let Some(cb) = cb {
+                cb(b.is_active());
+            }
+        });
 
         // Enter sends, Shift+Enter breaks the line, @ opens the picker, Escape closes it.
         let keys = gtk::EventControllerKey::new();
@@ -282,6 +309,49 @@ impl Composer {
 
     pub fn attachment_count(&self) -> usize {
         self.attachments.borrow().len()
+    }
+
+    /// Called with true when the mic button starts a recording and false when it stops.
+    pub fn on_voice(&self, f: VoiceHook) {
+        *self.on_voice.borrow_mut() = Some(f);
+    }
+
+    /// Reflects a recording that started or stopped elsewhere (the shortcut) without re-firing the hook.
+    pub fn set_voice_active(&self, active: bool) {
+        if self.voice_btn.is_active() != active {
+            let hook = self.on_voice.borrow_mut().take();
+            self.voice_btn.set_active(active);
+            *self.on_voice.borrow_mut() = hook;
+        }
+        if active {
+            self.voice_btn.add_css_class("recording");
+        } else {
+            self.voice_btn.remove_css_class("recording");
+        }
+    }
+
+    /// The draft the composer is editing (a thread id, or None for a new thread).
+    pub fn draft_key(&self) -> Option<String> {
+        self.draft_key.borrow().clone()
+    }
+
+    /// Inserts text at the cursor with a space on either side where needed; never sends.
+    pub fn insert_at_cursor(&self, text: &str) {
+        let buffer = self.view.buffer();
+        let mut iter = buffer.iter_at_mark(&buffer.get_insert());
+        let before = buffer.text(&buffer.start_iter(), &iter, false).to_string();
+        let after = buffer.text(&iter, &buffer.end_iter(), false).to_string();
+        let mut piece = String::new();
+        if !before.is_empty() && !before.ends_with(char::is_whitespace) {
+            piece.push(' ');
+        }
+        piece.push_str(text);
+        if !after.is_empty() && !after.starts_with(char::is_whitespace) {
+            piece.push(' ');
+        }
+        buffer.insert(&mut iter, &piece);
+        self.view.grab_focus();
+        self.grow_to_lines();
     }
 
     pub fn set_status(&self, text: &str) {

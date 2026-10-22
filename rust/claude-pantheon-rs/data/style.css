@@ -135,6 +135,9 @@ levelbar.usage-gauge block.full { background: @error_color; }
 /* Settings window */
 .settings-row { padding: 8px 0; border-bottom: 1px solid alpha(currentColor, 0.08); }
 
+/* Voice input */
+.voice-btn.recording { color: @error_color; }
+
 /* Visual replies */
 .page-card { padding: 8px 12px; margin-right: 48px; }
 
