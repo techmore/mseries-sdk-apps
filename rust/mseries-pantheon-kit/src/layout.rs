@@ -94,8 +94,22 @@ where
         on_change(class);
     });
 
-    let update_width = update.clone();
-    widget.connect_notify_local(Some("width"), move |_, _| update_width());
+    let update_map = update.clone();
+    widget.connect_map(move |_| {
+        let update = update_map.clone();
+        gtk::glib::idle_add_local_once(move || update());
+    });
+    let update_realize = update.clone();
+    widget.connect_realize(move |widget| {
+        let Some(surface) = widget.native().and_then(|native| native.surface()) else {
+            return;
+        };
+        let update_surface_layout = update_realize.clone();
+        surface.connect_layout(move |_, _, _| {
+            let update = update_surface_layout.clone();
+            gtk::glib::idle_add_local_once(move || update());
+        });
+    });
     watch_font_changes(update);
 }
 

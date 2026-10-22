@@ -11,12 +11,20 @@
     padding: 0.5em 0.75em;
 }
 
-.pantheon-message-incoming {
-    margin-end: 4.5em;
+:dir(ltr) .pantheon-message-incoming {
+    margin-right: 4.5em;
 }
 
-.pantheon-message-outgoing {
-    margin-start: 4.5em;
+:dir(ltr) .pantheon-message-outgoing {
+    margin-left: 4.5em;
+}
+
+:dir(rtl) .pantheon-message-incoming {
+    margin-left: 4.5em;
+}
+
+:dir(rtl) .pantheon-message-outgoing {
+    margin-right: 4.5em;
 }
 
 .pantheon-message-stamp {
@@ -59,5 +67,4 @@
 
 .pantheon-avatar {
     border-radius: 50%;
-    overflow: hidden;
 }

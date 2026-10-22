@@ -1066,6 +1066,8 @@ impl App {
         if !self.refresh_gate.request() {
             return;
         }
+        self.status.remove_css_class("warning");
+        self.status.set_tooltip_text(None);
         self.status.set_text("Refreshing conversations…");
         let weak = Rc::downgrade(self);
         let backend = self.backend.clone();
@@ -1081,6 +1083,8 @@ impl App {
                 match outcome {
                     Ok((status, threads)) => {
                         app.update_contact_photo_revision(&status);
+                        app.status.remove_css_class("warning");
+                        app.status.set_tooltip_text(None);
                         let ready = status.map;
                         let detail = status.connectivity_detail.as_deref().unwrap_or("");
                         app.status.set_text(if ready {
@@ -1147,7 +1151,9 @@ impl App {
                     Err(error) => {
                         app.state.borrow_mut().map_ready = false;
                         app.send_button.set_sensitive(false);
-                        app.status.set_text(&error);
+                        app.status.set_text(&backend_error_summary(&error));
+                        app.status.set_tooltip_text(Some(&error));
+                        app.status.add_css_class("warning");
                     }
                 }
                 if refresh_again {
@@ -1783,10 +1789,12 @@ impl App {
             });
             icon.set_pixel_size(size);
             icon.set_size_request(size, size);
+            icon.set_overflow(gtk::Overflow::Hidden);
             icon.add_css_class("pantheon-avatar");
             return icon.upcast();
         };
         picture.set_size_request(size, size);
+        picture.set_overflow(gtk::Overflow::Hidden);
         picture.add_css_class("pantheon-avatar");
         picture.upcast()
     }
@@ -2956,6 +2964,17 @@ fn now_iso8601() -> String {
         .unwrap_or_default()
 }
 
+fn backend_error_summary(error: &str) -> String {
+    if error.contains("org.freedesktop.DBus.Error.ServiceUnknown")
+        || error.contains("org.freedesktop.DBus.Error.NameHasNoOwner")
+    {
+        "BlueFerry could not be reached. Check its connection in Phone Setup, then retry."
+            .to_owned()
+    } else {
+        error.to_owned()
+    }
+}
+
 fn normalize_message_body(body: &str) -> String {
     body.replace("\r\n", "\n").trim().to_string()
 }
@@ -3111,6 +3130,21 @@ fn normalize_recipient(input: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn backend_unavailable_errors_get_actionable_summary() {
+        let error = "GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: no service";
+        assert_eq!(
+            backend_error_summary(error),
+            "BlueFerry could not be reached. Check its connection in Phone Setup, then retry."
+        );
+    }
+
+    #[test]
+    fn other_backend_errors_remain_available_for_diagnosis() {
+        let error = "The iPhone connection was lost";
+        assert_eq!(backend_error_summary(error), error);
+    }
 
     #[test]
     fn refresh_gate_coalesces_concurrent_refresh_requests() {
