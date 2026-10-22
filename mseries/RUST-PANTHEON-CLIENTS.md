@@ -1,3 +1,15 @@
+## Command+Shift+3 source wiring — 2026-10-22
+
+The full-screen shortcut now queues a compositor-owned capture request. Native
+and nested render paths compose active outputs offscreen, perform bounded readback,
+and save PNGs on a single guarded worker to ~/Downloads/Screenshots; successful
+saves request the camera-shutter sound. Locked sessions reject capture, and busy
+requests are dropped rather than spawning concurrent encoding work. The native-drm
+build check passes, including concrete multi-GPU renderer trait instantiation.
+This is source wiring only: no nested end-to-end render/capture test, GPU orientation
+qualification, sound or shelf observation has passed yet. No live binary installed
+or compositor restart. Command+Shift+4 input/selection overlays remain unwired.
+
 ## Screenshot PNG publication — 2026-10-22
 
 Added bounded PNG saving for the capture worker: private 0600 files, completed
