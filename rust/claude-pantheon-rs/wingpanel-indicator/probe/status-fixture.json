@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "writtenAt": "2026-10-22T00:35:10Z",
+  "connected": true,
+  "server": "eos",
+  "running": [
+    {"id": "thread:project:e89a5bd5:1", "title": "Release pipeline: sign the .deb", "provider": "claudeAgent"}
+  ],
+  "pendingPrompts": [
+    {"id": "thread:project:e89a5bd5:2", "title": "Fix flaky render test", "count": 2}
+  ],
+  "windows": [
+    {"provider": "Codex", "kind": "weekly", "label": "Weekly", "usedPercent": 45, "resetsAt": "2026-10-27T21:43:00Z"},
+    {"provider": "Claude", "kind": "session", "label": "Session", "usedPercent": 59, "resetsAt": "2026-10-22T02:00:00Z"},
+    {"provider": "Claude", "kind": "weekly", "label": "Weekly", "usedPercent": 42, "resetsAt": "2026-10-27T12:00:00Z"},
+    {"provider": "Grok", "kind": "weekly", "label": "Weekly", "usedPercent": 0, "resetsAt": "2026-10-29T00:00:00Z"}
+  ],
+  "nextTask": {"provider": "Grok", "reason": "next task → Grok (0% session); Claude at 59% until 22:00"}
+}

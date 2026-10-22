@@ -44,7 +44,7 @@ Each step: commit, screenshot in `docs/`, PERFORMANCE.md re-run so idle RSS is t
 | 4b terminal (vte4) | Not built: the `vte4` crate is not in the offline cargo cache; the server side (`terminal.attach`/`terminal.write`, 512 KiB client buffer) is understood. |
 | 4c changes | Partial: Changes page from `orchestration.getFullThreadDiff`, one collapsed diff per file. Branch comparison and PR actions (`pullRequests.*`) not built. |
 | 4d environments | Not built; one direct environment (loopback) only. |
-| 4e Wingpanel indicator | Source in `wingpanel-indicator/` (Vala, Wingpanel 8 API, reads the client's `status.json` feed with a FileMonitor: running threads, pending prompts, plan windows nearest exhaustion). Not compiled: `libwingpanel-dev` is not installed on the development machine. |
+| 4e Wingpanel indicator | Done: `wingpanel-indicator/` (Vala, Wingpanel 9 API) builds and installs into the system indicator dir; reads the client's `status.json` feed with a FileMonitor (pending prompts as the badge, nearest window with reset countdown, every window as a gauge, rotation line, clickable threads that open the app). Headless probe with a fixture renders `docs/screenshot-indicator.png`. |
 | 4f visual replies (WebKitGTK 6) | Not built: `webkit6` crate not in the offline cache. |
 | 4g diagnostics | Done: `src/diagnostics.rs`, `subscribeResourceTelemetry` only while the page is open. |
 | 5 workflow | Done except the webhook task (needs a reachable webhook endpoint through T3 Connect or Tailscale) and automatic per-run rotation (the server has no per-run hook; the client re-picks the provider when the runner is re-installed). |

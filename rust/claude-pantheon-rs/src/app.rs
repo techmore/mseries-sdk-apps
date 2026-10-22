@@ -1092,6 +1092,26 @@ impl App {
         }
     }
 
+    /// Opens a thread or session by id from outside (the Wingpanel indicator's `open-thread` action);
+    /// a thread that is not in the list yet is retried once the shell arrives.
+    pub fn open_by_id(self: &Rc<Self>, id: &str) {
+        self.window.present();
+        if self.select_id(id) {
+            return;
+        }
+        if self.conn.borrow().is_none() {
+            self.toast("Not connected to the server yet.");
+            return;
+        }
+        let app = self.clone();
+        let id = id.to_string();
+        glib::timeout_add_local_once(std::time::Duration::from_secs(2), move || {
+            if !app.select_id(&id) {
+                app.toast("That thread is not in the list.");
+            }
+        });
+    }
+
     /// Selects a thread or session row by id (tests, and the offline/online twins).
     pub fn select_id(&self, id: &str) -> bool {
         let at = {

@@ -75,6 +75,17 @@ fn main() -> gtk::glib::ExitCode {
         });
         application.add_action(&action);
     }
+    // app.open-thread '<id>': the Wingpanel indicator opens a thread (or an offline session) by id.
+    let open = gtk::gio::SimpleAction::new("open-thread", Some(gtk::glib::VariantTy::STRING));
+    let slot = current.clone();
+    open.connect_activate(move |_, param| {
+        if let Some(id) = param.and_then(|p| p.get::<String>())
+            && let Some(a) = slot.borrow().as_ref()
+        {
+            a.open_by_id(&id);
+        }
+    });
+    application.add_action(&open);
     application.connect_command_line(move |application, cmdline| {
         application.activate();
         for arg in cmdline.arguments() {
