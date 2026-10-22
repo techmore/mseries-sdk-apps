@@ -93,6 +93,7 @@ start-up probe; the table tracks drift per feature.
 | #477 | SnapShot: portal screenshot + AT-SPI window title, attached to the draft (Ctrl+Shift+S) | 66 | 0.0 | 206 – 235 (load 5; the #476 figures were load, not the branch) |
 | #478 | Visual replies: WebKitGTK page cards, view and web process created only on Show page | 69 | 0.0 | 197 – 264 (+3 MB is libwebkitgtk linked in; no WebKit process while no page is shown) |
 | #484 | Protocol version guard and contracts drift check (build-time, no runtime cost) | 69 | 0.0 | 198 – 212 |
+| #479 | Environments switcher (direct, Tailscale, SSH tunnel, T3 Connect), per-environment credentials | 70 | 0.0 | 230 – 567 (machine at load 37–83 from other jobs during the samples) |
 
 ## Reproduce
 

@@ -138,6 +138,30 @@ fn credentials_file() -> PathBuf {
     config_dir().join("credentials.json")
 }
 
+/// The default server keeps the original keyring item and file; every other environment's
+/// credential is keyed by its server URL (`server=<url>` in the keyring, `credentials-<slug>.json`).
+fn credentials_file_for(server: &str) -> PathBuf {
+    if server.trim_end_matches('/') == crate::app::DEFAULT_SERVER {
+        return credentials_file();
+    }
+    config_dir().join(format!("credentials-{}.json", server_slug(server)))
+}
+
+pub fn server_slug(server: &str) -> String {
+    let s: String =
+        server.trim_end_matches('/').chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
+    s.trim_matches('-').to_string()
+}
+
+fn secret_attrs(server: &str) -> Vec<String> {
+    let mut v: Vec<String> = SECRET_ATTRS.iter().map(|s| s.to_string()).collect();
+    if server.trim_end_matches('/') != crate::app::DEFAULT_SERVER {
+        v.push("server".into());
+        v.push(server.trim_end_matches('/').to_string());
+    }
+    v
+}
+
 const SECRET_ATTRS: [&str; 2] = ["application", "claude-pantheon-rs"];
 
 async fn run(argv: &[&str], stdin: Option<&str>) -> Option<(i32, String)> {
@@ -156,43 +180,57 @@ async fn run(argv: &[&str], stdin: Option<&str>) -> Option<(i32, String)> {
     Some((status, out.map(|s| s.to_string()).unwrap_or_default()))
 }
 
-/// Loads the stored credential: keyring first, then the config file.
+/// Loads the default server's credential: keyring first, then the config file.
 pub async fn load() -> Option<Credential> {
-    if let Some((0, out)) = run(&["secret-tool", "lookup", SECRET_ATTRS[0], SECRET_ATTRS[1]], None).await
+    load_for(crate::app::DEFAULT_SERVER).await
+}
+
+/// Loads the credential stored for one server (an environment's URL).
+pub async fn load_for(server: &str) -> Option<Credential> {
+    let attrs = secret_attrs(server);
+    let mut argv: Vec<&str> = vec!["secret-tool", "lookup"];
+    argv.extend(attrs.iter().map(String::as_str));
+    if let Some((0, out)) = run(&argv, None).await
         && let Ok(c) = serde_json::from_str::<Credential>(out.trim())
     {
         return Some(c);
     }
-    let bytes = std::fs::read(credentials_file()).ok()?;
+    let bytes = std::fs::read(credentials_file_for(server)).ok()?;
     serde_json::from_slice(&bytes).ok()
 }
 
-/// Stores the credential, preferring the keyring. Returns where it went.
+/// Stores the credential under its server, preferring the keyring. Returns where it went.
 pub async fn store(cred: &Credential) -> &'static str {
     let json = serde_json::to_string(cred).unwrap_or_default();
-    if let Some((0, _)) = run(
-        &["secret-tool", "store", "--label=Claude for elementary OS (T3 session)", SECRET_ATTRS[0], SECRET_ATTRS[1]],
-        Some(&json),
-    )
-    .await
-    {
-        let _ = std::fs::remove_file(credentials_file());
+    let attrs = secret_attrs(&cred.server);
+    let label = format!("--label=Claude for elementary OS (T3 session, {})", cred.server);
+    let mut argv: Vec<&str> = vec!["secret-tool", "store", &label];
+    argv.extend(attrs.iter().map(String::as_str));
+    let file = credentials_file_for(&cred.server);
+    if let Some((0, _)) = run(&argv, Some(&json)).await {
+        let _ = std::fs::remove_file(file);
         return "keyring";
     }
     let dir = config_dir();
     let _ = std::fs::create_dir_all(&dir);
     use std::os::unix::fs::PermissionsExt;
     let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
-    let path = credentials_file();
-    if std::fs::write(&path, json).is_ok() {
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    if std::fs::write(&file, json).is_ok() {
+        let _ = std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600));
     }
     "config file"
 }
 
 pub async fn forget() {
-    let _ = run(&["secret-tool", "clear", SECRET_ATTRS[0], SECRET_ATTRS[1]], None).await;
-    let _ = std::fs::remove_file(credentials_file());
+    forget_for(crate::app::DEFAULT_SERVER).await
+}
+
+pub async fn forget_for(server: &str) {
+    let attrs = secret_attrs(server);
+    let mut argv: Vec<&str> = vec!["secret-tool", "clear"];
+    argv.extend(attrs.iter().map(String::as_str));
+    let _ = run(&argv, None).await;
+    let _ = std::fs::remove_file(credentials_file_for(server));
 }
 
 #[cfg(test)]

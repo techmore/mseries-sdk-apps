@@ -139,3 +139,13 @@ window.
 ## Visual replies
 
 When an agent answers with a page (the `html_render` tool), the turn shows a card with the page title and a **Show page** button. The WebKitGTK view (and its web process) is created only when that button is pressed and freed with the card's close button, so an idle window has no web process. Links open in the browser; a Granite palette style sheet makes unstyled pages follow light and dark; full screen opens the page in its own window (Escape closes it). Signed asset URLs come from `assets.createUrl` on each open.
+
+## Environments
+
+The sidebar footer switches between saved environments (`~/.config/claude-pantheon-rs/environments.json`), each with its
+own credential (keyed by server URL in the keyring or `credentials-<server>.json`) and its own connection state:
+**Direct** (a URL), **Tailscale** (a peer from `tailscale status --json`; the server there listens on its tailnet address),
+**SSH** (`ssh -N -L` kept open while the environment is current; the client talks to the local port) and **T3 Connect**
+(the relay environment a pairing URL names; the relay sign-in happens in the browser). Pasting a pairing URL for another
+server on the pairing page creates its environment. Switching drops the current connection and tunnel and reconnects;
+a dropped connection reconnects with the usual back-off.

@@ -12,7 +12,8 @@ use crate::t3::{self, Rpc, auth, ws::WsError};
 use crate::transcript::{self, Transcript};
 use crate::workflow::{self, Issue, PinnedRepo};
 use crate::{
-    changes, composer, diagnostics, handoff, notify, palette, repos, settings, sidebar, snapshot, terminal, usage,
+    changes, composer, diagnostics, environments, handoff, notify, palette, repos, settings, sidebar, snapshot,
+    terminal, usage,
 };
 use futures_util::StreamExt;
 use granite::prelude::{PlaceholderExt, ToastExt};
@@ -119,6 +120,13 @@ pub struct App {
     list_dirty: Cell<bool>,
     reconnect_attempt: Cell<u32>,
     auto_opened: Cell<bool>,
+    // environments (sidebar footer switcher)
+    env_button: gtk::MenuButton,
+    env_label: gtk::Label,
+    env_icon: gtk::Image,
+    environments: RefCell<environments::Environments>,
+    env_states: RefCell<HashMap<String, environments::State>>,
+    tunnel: RefCell<Option<environments::Tunnel>>,
     palette: RefCell<Option<Rc<palette::Palette>>>,
     sidebar_cfg: RefCell<sidebar::SidebarConfig>,
     settings: Rc<RefCell<settings::Settings>>,
@@ -160,6 +168,20 @@ impl App {
         status_icon.add_css_class("dim-label");
         let status_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         status_box.add_css_class("sb-status");
+        // The environment switcher: a flat menu button with the current environment's state and name.
+        let env_icon = gtk::Image::from_icon_name("network-server-symbolic");
+        let env_label = label("This computer", &["caption"]);
+        env_label.set_ellipsize(pango::EllipsizeMode::End);
+        env_label.set_max_width_chars(18);
+        let env_child = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        env_child.append(&env_icon);
+        env_child.append(&env_label);
+        env_child.append(&gtk::Image::from_icon_name("pan-down-symbolic"));
+        let env_button =
+            gtk::MenuButton::builder().child(&env_child).has_frame(false).tooltip_text("Environment").build();
+        env_button.add_css_class("env-switch");
+        env_button.update_property(&[gtk::accessible::Property::Label("Environment")]);
+        status_box.append(&env_button);
         status_box.append(&status_icon);
         status_box.append(&status);
         let side = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -428,6 +450,12 @@ impl App {
             list_dirty: Cell::new(false),
             reconnect_attempt: Cell::new(0),
             auto_opened: Cell::new(false),
+            env_button,
+            env_label,
+            env_icon,
+            environments: RefCell::new(environments::Environments::load()),
+            env_states: RefCell::new(HashMap::new()),
+            tunnel: RefCell::new(None),
             palette: RefCell::new(None),
             sidebar_cfg: RefCell::new(sidebar::SidebarConfig::load()),
             settings: Rc::new(RefCell::new(settings::Settings::load())),
@@ -452,6 +480,7 @@ impl App {
         app.wire(&new_chat);
         app.wire_composer();
         app.install_page_resolver();
+        app.refresh_environments();
         app.settings.borrow().apply_appearance();
         app.window.present();
         app.reindex();
@@ -998,7 +1027,11 @@ impl App {
                 return;
             }
             let reopen = app.live.borrow().as_ref().map(|l| l.thread_id.clone());
-            let Some(cred) = auth::load().await else { return };
+            if app.ensure_route().await.is_err() {
+                app.schedule_reconnect();
+                return;
+            }
+            let Some(cred) = auth::load_for(&app.current_server()).await else { return };
             if app.connecting.replace(true) {
                 return;
             }
@@ -1031,15 +1064,251 @@ impl App {
         }
         let app = self.clone();
         glib::spawn_future_local(async move {
-            match auth::load().await {
+            let server = app.current_server();
+            app.set_env_state(environments::State::Connecting);
+            if let Err(e) = app.ensure_route().await {
+                app.connecting.set(false);
+                app.set_status(&format!("Route failed: {e}"), false);
+                app.set_env_state(environments::State::Offline);
+                app.pair_status.set_text(&e);
+                app.show_page("pair");
+                return;
+            }
+            app.pair_server.set_text(&app.current_server());
+            match auth::load_for(&server).await {
                 Some(cred) => app.connect_with(cred).await,
                 None => {
                     app.connecting.set(false);
                     app.set_status("Not paired", false);
+                    app.set_env_state(environments::State::Idle);
                     app.show_page("pair");
                 }
             }
         });
+    }
+
+    // ---- environments ----------------------------------------------------------------------
+
+    /// The server URL of the current environment (the local default when none is saved).
+    pub fn current_server(&self) -> String {
+        let envs = self.environments.borrow();
+        match envs.current().map(|e| &e.route) {
+            Some(environments::Route::Ssh { local_port, .. }) => {
+                let port = self.tunnel.borrow().as_ref().map(|t| t.local_port).unwrap_or(*local_port);
+                format!("http://127.0.0.1:{port}")
+            }
+            Some(route) => route.url(),
+            None => DEFAULT_SERVER.to_string(),
+        }
+    }
+
+    pub fn environments(&self) -> Vec<environments::Environment> {
+        self.environments.borrow().list.clone()
+    }
+
+    pub fn current_environment_id(&self) -> Option<String> {
+        self.environments.borrow().current.clone()
+    }
+
+    pub fn environment_state(&self, id: &str) -> environments::State {
+        self.env_states.borrow().get(id).copied().unwrap_or(environments::State::Idle)
+    }
+
+    fn set_env_state(&self, state: environments::State) {
+        if let Some(id) = self.environments.borrow().current.clone() {
+            self.env_states.borrow_mut().insert(id, state);
+        }
+        self.refresh_env_button();
+    }
+
+    fn refresh_env_button(&self) {
+        let envs = self.environments.borrow();
+        let (name, id) = envs
+            .current()
+            .map(|e| (e.name.clone(), e.id.clone()))
+            .unwrap_or_else(|| ("This computer".into(), String::new()));
+        let state = self.env_states.borrow().get(&id).copied().unwrap_or(environments::State::Idle);
+        self.env_label.set_text(&name);
+        self.env_icon.set_icon_name(Some(state.icon()));
+        self.env_button.set_tooltip_text(Some(&format!("Environment: {name} ({})", state.label())));
+    }
+
+    /// Rebuilds the switcher popover from the saved list.
+    pub fn refresh_environments(self: &Rc<Self>) {
+        self.refresh_env_button();
+        let menu = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        menu.set_margin_top(6);
+        menu.set_margin_bottom(6);
+        menu.set_margin_start(6);
+        menu.set_margin_end(6);
+        let list = gtk::ListBox::new();
+        list.add_css_class("env-list");
+        list.set_selection_mode(gtk::SelectionMode::None);
+        let envs = self.environments.borrow().clone();
+        for e in &envs.list {
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            row.add_css_class("env-row");
+            let state = self.environment_state(&e.id);
+            row.append(&gtk::Image::from_icon_name(state.icon()));
+            let text = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            let name = label(&e.name, &[]);
+            name.set_xalign(0.0);
+            let detail = label(
+                &format!("{} · {} · {}", e.route.kind_label(), e.route.url(), state.label()),
+                &["caption", "dim-label"],
+            );
+            detail.set_xalign(0.0);
+            detail.set_ellipsize(pango::EllipsizeMode::Middle);
+            text.append(&name);
+            text.append(&detail);
+            text.set_hexpand(true);
+            row.append(&text);
+            if envs.current.as_deref() == Some(e.id.as_str()) {
+                row.append(&gtk::Image::from_icon_name("object-select-symbolic"));
+            }
+            let lrow = gtk::ListBoxRow::new();
+            lrow.set_child(Some(&row));
+            lrow.update_property(&[gtk::accessible::Property::Label(&format!("{} environment", e.name))]);
+            list.append(&lrow);
+        }
+        let app = self.clone();
+        let ids: Vec<String> = envs.list.iter().map(|e| e.id.clone()).collect();
+        let button = self.env_button.clone();
+        list.connect_row_activated(move |_, row| {
+            if let Some(id) = ids.get(row.index() as usize) {
+                button.popdown();
+                app.switch_environment(id);
+            }
+        });
+        menu.append(&list);
+        let actions = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let add = gtk::Button::with_label("Add…");
+        let edit = gtk::Button::with_label("Edit…");
+        let remove = gtk::Button::with_label("Remove");
+        remove.add_css_class("destructive-action");
+        let is_local = envs.current.as_deref() == Some("local");
+        remove.set_sensitive(!is_local && envs.list.len() > 1);
+        for b in [&add, &edit, &remove] {
+            b.add_css_class("flat");
+            actions.append(b);
+        }
+        menu.append(&actions);
+        let app = self.clone();
+        let button = self.env_button.clone();
+        add.connect_clicked(move |_| {
+            button.popdown();
+            let a = app.clone();
+            environments::open_dialog(&app.window, None, Rc::new(move |e| a.save_environment(e, true)));
+        });
+        let app = self.clone();
+        let button = self.env_button.clone();
+        edit.connect_clicked(move |_| {
+            button.popdown();
+            let current = app.environments.borrow().current().cloned();
+            if let Some(cur) = current {
+                let a = app.clone();
+                environments::open_dialog(&app.window, Some(cur), Rc::new(move |e| a.save_environment(e, false)));
+            }
+        });
+        let app = self.clone();
+        let button = self.env_button.clone();
+        remove.connect_clicked(move |_| {
+            button.popdown();
+            let id = app.environments.borrow().current.clone();
+            if let Some(id) = id {
+                app.remove_environment(&id);
+            }
+        });
+        let popover = gtk::Popover::new();
+        popover.set_child(Some(&menu));
+        self.env_button.set_popover(Some(&popover));
+    }
+
+    /// Saves (and with `switch` makes current) an environment from the dialog or a test.
+    pub fn save_environment(self: &Rc<Self>, env: environments::Environment, switch: bool) {
+        let id = env.id.clone();
+        let route_changed = {
+            let mut envs = self.environments.borrow_mut();
+            let before = envs.list.iter().find(|e| e.id == id).map(|e| e.route.clone());
+            let changed = before.as_ref() != Some(&env.route);
+            envs.upsert(env);
+            envs.save();
+            changed
+        };
+        self.refresh_environments();
+        let is_current = self.environments.borrow().current.as_deref() == Some(id.as_str());
+        if switch && !is_current {
+            self.switch_environment(&id);
+        } else if is_current && route_changed {
+            self.reconnect_current();
+        }
+    }
+
+    pub fn remove_environment(self: &Rc<Self>, id: &str) {
+        let was_current = {
+            let mut envs = self.environments.borrow_mut();
+            let was = envs.current.as_deref() == Some(id);
+            envs.remove(id);
+            envs.save();
+            was
+        };
+        self.env_states.borrow_mut().remove(id);
+        self.refresh_environments();
+        if was_current {
+            self.reconnect_current();
+        }
+    }
+
+    /// Makes another saved environment current: the connection and tunnel of the old one are
+    /// dropped, the new one's credential is loaded (or its pairing page shown).
+    pub fn switch_environment(self: &Rc<Self>, id: &str) {
+        {
+            let mut envs = self.environments.borrow_mut();
+            if envs.current.as_deref() == Some(id) || !envs.list.iter().any(|e| e.id == id) {
+                return;
+            }
+            envs.current = Some(id.to_string());
+            envs.save();
+        }
+        self.reconnect_current();
+    }
+
+    fn reconnect_current(self: &Rc<Self>) {
+        let app = self.clone();
+        glib::spawn_future_local(async move {
+            let taken = app.conn.borrow_mut().take();
+            if let Some(c) = taken {
+                c.rpc.close().await;
+            }
+            app.tunnel.borrow_mut().take();
+            *app.live.borrow_mut() = None;
+            app.providers.borrow_mut().clear();
+            app.reconnect_attempt.set(0);
+            app.connecting.set(false);
+            app.refresh_environments();
+            app.rebuild_list();
+            app.connect_stored();
+        });
+    }
+
+    /// Opens the route the current environment needs (an SSH tunnel) before the first request.
+    async fn ensure_route(&self) -> Result<(), String> {
+        let route = self.environments.borrow().current().map(|e| e.route.clone());
+        if let Some(environments::Route::Ssh { target, remote_port, local_port }) = route {
+            let alive = self.tunnel.borrow().as_ref().is_some_and(|t| t.is_alive() && t.local_port == local_port);
+            if alive {
+                return Ok(());
+            }
+            self.set_status(&format!("Opening the SSH tunnel to {target}…"), false);
+            let tunnel = environments::Tunnel::open(&target, remote_port, local_port)?;
+            if !tunnel.wait_ready().await {
+                return Err(format!(
+                    "The SSH tunnel to {target} did not come up (ssh -N -L {local_port}:127.0.0.1:{remote_port}); check the key and host."
+                ));
+            }
+            *self.tunnel.borrow_mut() = Some(tunnel);
+        }
+        Ok(())
     }
 
     fn pair(self: &Rc<Self>) {
@@ -1049,6 +1318,23 @@ impl App {
             return;
         }
         let (server, token) = auth::parse_pairing(&input, &self.pair_server.text());
+        if server.trim_end_matches('/') != self.current_server().trim_end_matches('/') {
+            // A pairing URL for another server: give it an environment of its own and make it current.
+            let name = server.trim_start_matches("http://").trim_start_matches("https://").to_string();
+            let id = format!("direct-{}", auth::server_slug(&server));
+            let kind = if server.contains("t3.codes") {
+                environments::Route::T3Connect { url: server.clone() }
+            } else {
+                environments::Route::Direct { url: server.clone() }
+            };
+            {
+                let mut envs = self.environments.borrow_mut();
+                envs.upsert(environments::Environment { id: id.clone(), name, route: kind });
+                envs.current = Some(id);
+                envs.save();
+            }
+            self.refresh_environments();
+        }
         self.pair_status.set_text("Pairing…");
         self.pair_button.set_sensitive(false);
         let app = self.clone();
@@ -1085,6 +1371,7 @@ impl App {
                     other => format!("Could not connect: {other}"),
                 };
                 self.set_status("Not connected", false);
+                self.set_env_state(environments::State::Offline);
                 self.pair_status.set_text(&text);
                 self.show_page("pair");
                 self.rebuild_list();
@@ -1102,6 +1389,7 @@ impl App {
         let app = self.clone();
         rpc.on_close(move |reason| {
             *app.conn.borrow_mut() = None;
+            app.set_env_state(environments::State::Offline);
             app.set_status(&format!("Disconnected: {reason}"), false);
             app.rebuild_list();
             app.write_status_feed();
@@ -1112,6 +1400,7 @@ impl App {
         *self.conn.borrow_mut() =
             Some(Conn { rpc: rpc.clone(), cred: cred.clone(), config, shell: Shell::default(), shell_sub: None });
         self.connecting.set(false);
+        self.set_env_state(environments::State::Connected);
         self.refresh_status();
         self.fill_providers();
         if self.page() == "pair" {
@@ -1331,8 +1620,9 @@ impl App {
             if let Some(c) = taken {
                 c.rpc.close().await;
             }
-            auth::forget().await;
+            auth::forget_for(&app.current_server()).await;
             app.set_status("Not paired", false);
+            app.set_env_state(environments::State::Idle);
             app.show_page("pair");
             app.rebuild_list();
         });
