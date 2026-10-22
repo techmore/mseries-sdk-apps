@@ -1439,6 +1439,9 @@ impl App {
                         let phone_changed = app.pin_profile_id.borrow().as_ref()
                             != status.phone_profile_id.as_ref();
                         if phone_changed {
+                            // Revisions are scoped to a phone, not globally unique.
+                            // Force the existing cache/generation invalidation below.
+                            app.contact_photo_revision.replace(None);
                             app.recent_inbox_snapshot.replace(None);
                             app.recent_inbox_last_success.set(None);
                             app.recent_inbox_warning.replace(None);

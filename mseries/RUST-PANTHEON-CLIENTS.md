@@ -1,3 +1,11 @@
+## Messages avatar cache isolation — 2026-10-22
+
+A reported phone change invalidates the stored photo revision before the normal
+revision update clears cached avatars/requested addresses and increments the
+photo generation. Matching revision numbers on different phones can no longer
+retain old photos or accept old-generation results. Strict Messages Clippy,
+formatting and diff checks pass; delayed-photo GUI acceptance remains open.
+
 ## Messages contact-picker phone guard — 2026-10-22
 
 New-message dialogs capture the phone generation. Activating a contact, starting
