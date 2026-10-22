@@ -16,7 +16,10 @@ and an empty inbox. The passing GTK test selects that conversation, checks
 composer readiness and message-widget creation, edits the actual text buffer,
 and verifies its draft survives Back and re-selection.
 The same passing GTK/private-D-Bus test now switches valid phone UUIDs A → B → A
-and verifies drafts with identical thread keys stay separate and restore correctly. CI execution, visual/accessibility and connected-phone acceptance remain
+and verifies drafts with identical thread keys stay separate and restore correctly.
+It also switches identity inside ListRecent: the mixed refresh is rejected, send
+readiness is cleared, the old draft/profile remain intact, and a clean retry
+loads the new profile and its draft. This private-service GTK regression passes. CI execution, visual/accessibility and connected-phone acceptance remain
 unverified. The locally built Debian package remains uninstalled under build/.
 
 ## Messages isolated GTK recovery regression — 2026-10-22

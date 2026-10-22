@@ -3763,6 +3763,8 @@ mod tests {
         </interface></node>"#).unwrap();
         let fixture_profile = std::rc::Rc::new(std::cell::RefCell::new(None::<String>));
         let reported_profile = fixture_profile.clone();
+        let switch_during_inbox = std::rc::Rc::new(std::cell::Cell::new(false));
+        let switch_request = switch_during_inbox.clone();
         let registration = bus
             .register_object("/io/weirdware/BlueFerry", &node.interfaces()[0])
             .method_call(move |_, _, _, _, method, _, invocation| {
@@ -3773,7 +3775,12 @@ mod tests {
                         "recipients":["+12025550123"], "reply_ready":true,
                         "messages":[{"handle":"fixture-1", "body":"Synthetic history message", "read":true}]
                     }]).to_string(),
-                    "ListRecent" => "[]".to_string(),
+                    "ListRecent" => {
+                        if switch_request.replace(false) {
+                            *reported_profile.borrow_mut() = Some("87654321-1234-4234-8234-123456789abc".into());
+                        }
+                        "[]".to_string()
+                    },
                     _ => panic!("unexpected fixture method: {method}"),
                 };
                 invocation.return_value(Some(&(json,).to_variant()));
@@ -3829,6 +3836,21 @@ mod tests {
             app.parked_phone_states.borrow()[phone_b].drafts["shared-key"],
             "B draft"
         );
+        app.select_thread("shared-key");
+        assert!(app.send_button.is_sensitive());
+        switch_during_inbox.set(true);
+        app.refresh_recent();
+        wait_for_refresh();
+        assert!(!app.backend_available.get());
+        assert!(!app.state.borrow().map_ready);
+        assert!(!app.send_button.is_sensitive());
+        assert_eq!(app.pin_profile_id.borrow().as_deref(), Some(phone_a));
+        assert_eq!(app.state.borrow().drafts["shared-key"], "A draft");
+        app.refresh_recent();
+        wait_for_refresh();
+        assert!(app.backend_available.get());
+        assert_eq!(app.pin_profile_id.borrow().as_deref(), Some(phone_b));
+        assert_eq!(app.state.borrow().drafts["shared-key"], "B draft");
         bus.unregister_object(registration).unwrap();
         app.window.close();
     }
