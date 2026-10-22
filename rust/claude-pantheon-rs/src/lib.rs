@@ -20,6 +20,7 @@ pub mod render;
 pub mod repos;
 pub mod settings;
 pub mod sidebar;
+pub mod skeleton;
 pub mod snapshot;
 pub mod status;
 pub mod t3;

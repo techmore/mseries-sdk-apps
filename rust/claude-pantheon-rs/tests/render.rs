@@ -139,9 +139,29 @@ fn main() {
     }
     assert!(has_type(app.window().upcast_ref(), "GtkSourceView"), "a code block became a GtkSourceView");
     app.set_search("zzzz-nothing-matches");
-    pump(100);
+    // GtkSearchEntry delays search-changed by 150 ms.
+    assert!(
+        pump_until("the search to apply", 3, || shown(&app).iter().any(|x| x == "Nothing matches")),
+        "the sidebar placeholder names the situation"
+    );
+    assert_eq!(app.side_placeholder_name(), "empty", "an empty search result shows the hint, not a blank list");
     app.set_search("");
     pump(100);
+    assert!(!has_type(app.window().upcast_ref(), "GtkSpinner"), "loading states are skeletons, not spinners");
+
+    // ---- a transient error toast carries Retry ------------------------------------------------
+    {
+        let hit = std::rc::Rc::new(std::cell::Cell::new(false));
+        let h = hit.clone();
+        app.toast_retry("probe failed", std::rc::Rc::new(move |_| h.set(true)));
+        app.toast_widget().emit_by_name::<()>("default-action", &[]);
+        pump(50);
+        assert!(hit.get(), "the toast's Retry runs the retry closure");
+        app.toast("plain");
+        app.toast_widget().emit_by_name::<()>("default-action", &[]);
+        pump(50);
+        println!("retry toast ok");
+    }
     if let Some(path) = &shot {
         save_png(app.window(), path);
     }

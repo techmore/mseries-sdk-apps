@@ -149,3 +149,12 @@ own credential (keyed by server URL in the keyring or `credentials-<server>.json
 (the relay environment a pairing URL names; the relay sign-in happens in the browser). Pasting a pairing URL for another
 server on the pairing page creates its environment. Switching drops the current connection and tunnel and reconnects;
 a dropped connection reconnects with the usual back-off.
+
+## Empty, loading and error states
+
+No pane is ever blank: the thread list shows skeleton rows while sessions are indexed or the server connects and a
+hint afterwards (no threads yet, nothing matches the search); a transcript or thread opens onto skeleton bubbles until
+its items arrive; the Repos page shows a Granite placeholder with an Import Sessions button when no project has a GitHub
+remote, and the issue list shows skeleton rows while `gh` answers, a placeholder when nothing matches the filters, and a
+placeholder with Retry when GitHub fails. Transient errors (server unreachable, a chat that could not be read, a thread
+stream that ended, usage or GitHub failures) are Granite toasts with a Retry action.

@@ -260,6 +260,9 @@ impl UsagePage {
     pub fn load(&self, app: Rc<App>, rpc: Rpc) {
         self.render_windows(&app.providers());
         self.status.set_text("Reading usage…");
+        if self.content.first_child().is_none() {
+            self.content.append(&crate::skeleton::rows(4));
+        }
         let today = glib::DateTime::now_local().unwrap();
         let since = today.add_days(-30).unwrap();
         let fmt = |d: &glib::DateTime| d.format("%Y-%m-%d").unwrap().to_string();
@@ -271,7 +274,14 @@ impl UsagePage {
                     Ok(summary) => app.usage_page().render(&summary, &last7),
                     Err(e) => app.usage_page().status.set_text(&format!("Unexpected usage shape: {e}")),
                 },
-                Err(e) => app.usage_page().status.set_text(&format!("Usage failed: {}", e.message())),
+                Err(e) => {
+                    app.usage_page().status.set_text(&format!("Usage failed: {}", e.message()));
+                    let r = rpc.clone();
+                    app.toast_retry(
+                        &format!("Usage failed: {}", e.message()),
+                        Rc::new(move |a| a.usage_page().load(a.clone(), r.clone())),
+                    );
+                }
             }
         });
     }

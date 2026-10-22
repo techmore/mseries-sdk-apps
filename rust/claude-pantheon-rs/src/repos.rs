@@ -4,8 +4,10 @@
 use crate::app::{App, new_id};
 use crate::chat::label;
 use crate::look::{iso_to_unix, now_unix, relative_time};
+use crate::skeleton;
 use crate::workflow::{self, Config, Issue, PinnedRepo};
-use gtk::{glib, pango, prelude::*};
+use granite::prelude::PlaceholderExt;
+use gtk::{gio, glib, pango, prelude::*};
 use serde_json::{Value, json};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -151,8 +153,17 @@ impl ReposPage {
             }
         }
         if all.is_empty() {
-            self.status
-                .set_text("No GitHub checkouts among the server's projects. Import sessions or add a project first.");
+            self.status.set_text("");
+            let ph = granite::Placeholder::new("No GitHub repos yet");
+            ph.set_description("None of the server's projects has a GitHub remote. Import your sessions or add a project with a checkout.");
+            ph.set_icon(&gio::ThemedIcon::new("folder-remote-symbolic"));
+            let import = ph.append_button(
+                &gio::ThemedIcon::new("document-import-symbolic"),
+                "Import Sessions",
+                "Scan Claude Code and Codex sessions on the server",
+            );
+            import.set_action_name(Some("win.import"));
+            self.repo_list.append(&ph);
             return;
         }
         self.status.set_text(&format!("{} pinned of {} GitHub repos known to the server", pinned.len(), all.len()));
@@ -231,7 +242,7 @@ impl ReposPage {
         while let Some(c) = self.issues_box.first_child() {
             self.issues_box.remove(&c);
         }
-        self.issues_box.append(&label("Loading…", &["dim-label"]));
+        self.issues_box.append(&skeleton::rows(5));
         let app = app.clone();
         glib::spawn_future_local(async move {
             workflow::ensure_labels(&repo.repo).await;
@@ -245,7 +256,20 @@ impl ReposPage {
                     while let Some(c) = page.issues_box.first_child() {
                         page.issues_box.remove(&c);
                     }
-                    page.issues_box.append(&label(&format!("GitHub: {e}"), &["dim-label"]));
+                    let ph = granite::Placeholder::new("GitHub did not answer");
+                    ph.set_description(&format!("GitHub: {e}"));
+                    ph.set_icon(&gio::ThemedIcon::new("network-error-symbolic"));
+                    let r = repo.clone();
+                    let a = app.clone();
+                    let retry =
+                        ph.append_button(&gio::ThemedIcon::new("view-refresh-symbolic"), "Retry", "Ask GitHub again");
+                    retry.connect_clicked(move |_| a.repos_page().show_issues(&a, r.clone()));
+                    page.issues_box.append(&ph);
+                    let r = repo.clone();
+                    app.toast_retry(
+                        &format!("GitHub: {e}"),
+                        Rc::new(move |a| a.repos_page().show_issues(a, r.clone())),
+                    );
                 }
             }
         });
@@ -279,9 +303,10 @@ impl ReposPage {
             })
             .collect();
         if shown.is_empty() {
-            self.issues_box.append(&label(
-                "No issues match. Label issues lane:*, p0–p3 and agent:ready to feed the runner.",
-                &["dim-label"],
+            self.issues_box.append(&skeleton::empty(
+                "edit-find-symbolic",
+                "No issues match",
+                "Label issues lane:*, p0–p3 and agent:ready to feed the runner, or widen the filters.",
             ));
             return;
         }
