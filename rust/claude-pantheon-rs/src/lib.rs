@@ -16,6 +16,7 @@ pub mod palette;
 pub mod probe;
 pub mod render;
 pub mod repos;
+pub mod sidebar;
 pub mod status;
 pub mod t3;
 pub mod transcript;

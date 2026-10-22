@@ -183,6 +183,24 @@ fn main() {
         if let Some(path) = &shot_m2 {
             save_png(app.window(), path);
         }
+        // ---- sidebar: collapsible sections, context-menu actions -----------------------------------------
+        let (rows_before, headers_before) = app.row_count();
+        app.set_section_collapsed("offline", true);
+        pump(100);
+        let (rows_after, headers_after) = app.row_count();
+        assert!(
+            rows_after < rows_before,
+            "collapsing the offline section hides its rows ({rows_before} -> {rows_after})"
+        );
+        assert!(headers_after < headers_before, "collapsed sections hide their sub-headers");
+        app.set_section_collapsed("offline", false);
+        pump(100);
+        assert_eq!(app.row_count().0, rows_before, "expanding brings the rows back");
+        for action in ["thread-pin", "thread-rename", "thread-handoff", "thread-copy-link", "thread-archive"] {
+            assert!(app.window().lookup_action(action).is_some(), "window action {action} exists");
+        }
+        println!("sidebar ok");
+
         // ---- composer: drafts per thread, attachment chips ---------------------------------------------
         let first = pick.id.clone();
         app.set_entry("half-written thought");

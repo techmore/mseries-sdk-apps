@@ -106,3 +106,9 @@ levelbar.usage-gauge block.full { background: @error_color; }
 .code-bar { padding: 2px 4px 0 12px; }
 .code-block { padding: 0; }
 .code-view { font-size: 0.95em; }
+
+/* Sidebar polish */
+.sb-unread { min-width: 8px; min-height: 8px; border-radius: 4px; background: @accent_color; margin: 0 2px; }
+.sb-unread.sb-ask { min-width: 14px; border-radius: 7px; background: @warning_color; color: white; font-weight: 700; font-size: 0.75em; padding: 0 3px; }
+.sb-spinner { min-width: 12px; min-height: 12px; }
+.sb-header { padding: 4px 0 0 0; }
