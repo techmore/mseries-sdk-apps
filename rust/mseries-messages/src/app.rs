@@ -3757,17 +3757,28 @@ mod tests {
         )
         .unwrap();
         let node = gtk::gio::DBusNodeInfo::for_xml(r#"<node><interface name="io.weirdware.BlueFerry.Messages1">
+          <method name="SendToThreadChecked"><arg type="s" direction="in"/><arg type="s" direction="in"/><arg type="b" direction="in"/><arg type="s" direction="in"/></method>
           <method name="GetStatus"><arg type="s" direction="out"/></method>
           <method name="ListThreads"><arg type="u" direction="in"/><arg type="s" direction="out"/></method>
           <method name="ListRecent"><arg type="s" direction="in"/><arg type="u" direction="in"/><arg type="s" direction="out"/></method>
         </interface></node>"#).unwrap();
         let fixture_profile = std::rc::Rc::new(std::cell::RefCell::new(None::<String>));
         let reported_profile = fixture_profile.clone();
+        let send_mode = std::rc::Rc::new(std::cell::Cell::new(0_u8));
+        let fixture_send_mode = send_mode.clone();
         let switch_during_inbox = std::rc::Rc::new(std::cell::Cell::new(false));
         let switch_request = switch_during_inbox.clone();
         let registration = bus
             .register_object("/io/weirdware/BlueFerry", &node.interfaces()[0])
             .method_call(move |_, _, _, _, method, _, invocation| {
+                if method == "SendToThreadChecked" {
+                    match fixture_send_mode.get() {
+                        0 => invocation.return_value(Some(&().to_variant())),
+                        1 => invocation.return_dbus_error("io.weirdware.BlueFerry.Error.Failed", "Synthetic known failure"),
+                        _ => invocation.return_dbus_error("io.weirdware.BlueFerry.Error.SendOutcomeUnknown", "Synthetic uncertain transfer"),
+                    }
+                    return;
+                }
                 let json = match method {
                     "GetStatus" => serde_json::json!({"api_version":2,"map":true,"phone_profile_id":*reported_profile.borrow()}).to_string(),
                     "ListThreads" => serde_json::json!([{
@@ -3851,6 +3862,46 @@ mod tests {
         assert!(app.backend_available.get());
         assert_eq!(app.pin_profile_id.borrow().as_deref(), Some(phone_b));
         assert_eq!(app.state.borrow().drafts["shared-key"], "B draft");
+        app.select_thread("shared-key");
+        let wait_for_send = || {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while !app.state.borrow().pending.is_empty() || app.refresh_gate.in_flight.get() {
+                assert!(std::time::Instant::now() < deadline, "send timed out");
+                gtk::glib::MainContext::default().iteration(false);
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        };
+        app.editor.buffer().set_text("Synthetic transfer");
+        app.send_current();
+        wait_for_send();
+        assert_eq!(app.state.borrow().outbox.len(), 1);
+        assert_eq!(
+            app.state.borrow().outbox[0].status,
+            super::OutboxStatus::Transferred
+        );
+        assert!(!app.state.borrow().drafts.contains_key("shared-key"));
+        send_mode.set(1);
+        app.editor.buffer().set_text("Synthetic failed draft");
+        app.send_current();
+        wait_for_send();
+        assert_eq!(app.state.borrow().outbox.len(), 1);
+        assert_eq!(
+            app.state.borrow().drafts["shared-key"],
+            "Synthetic failed draft"
+        );
+        send_mode.set(2);
+        app.editor.buffer().set_text("Synthetic uncertain draft");
+        app.send_current();
+        wait_for_send();
+        assert_eq!(app.state.borrow().outbox.len(), 2);
+        assert_eq!(
+            app.state.borrow().outbox[1].status,
+            super::OutboxStatus::OutcomeUnknown
+        );
+        assert_eq!(
+            app.state.borrow().drafts["shared-key"],
+            "Synthetic uncertain draft"
+        );
         bus.unregister_object(registration).unwrap();
         app.window.close();
     }

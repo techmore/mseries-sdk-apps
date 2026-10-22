@@ -8,10 +8,10 @@ The GTK test now awaits the actual failed startup refresh and Retry completion,
 asserts the warning/recovery state and disabled sending, and verifies the draft
 survives retry. No offline flags are forced by the test. This extended test passes
 locally. Expected missing-portal/software-display warnings do not affect this
-widget-state check. The same passing test now publishes a read-only synthetic
+widget-state check. The same passing test now publishes a synthetic
 Messages1 service on the private bus and verifies Retry transitions to connected,
 clears the warning, retains the draft and keeps Send disabled without a selection.
-The fixture exposes no send methods and uses one synthetic read conversation
+The fixture uses one synthetic read conversation
 and an empty inbox. The passing GTK test selects that conversation, checks
 composer readiness and message-widget creation, edits the actual text buffer,
 and verifies its draft survives Back and re-selection.
@@ -19,7 +19,12 @@ The same passing GTK/private-D-Bus test now switches valid phone UUIDs A → B �
 and verifies drafts with identical thread keys stay separate and restore correctly.
 It also switches identity inside ListRecent: the mixed refresh is rejected, send
 readiness is cleared, the old draft/profile remain intact, and a clean retry
-loads the new profile and its draft. This private-service GTK regression passes. CI execution, visual/accessibility and connected-phone acceptance remain
+loads the new profile and its draft. This private-service GTK regression passes.
+The fixture now handles checked sends locally with success, known-failure and
+unknown-outcome responses. The passing test verifies Transferred outbox state
+and cleared draft on success, removal of the failed bubble with draft retention,
+and retention of the uncertain bubble and draft. No real phone or recipient is
+reachable through this private-bus fixture. CI execution, visual/accessibility and connected-phone acceptance remain
 unverified. The locally built Debian package remains uninstalled under build/.
 
 ## Messages isolated GTK recovery regression — 2026-10-22
