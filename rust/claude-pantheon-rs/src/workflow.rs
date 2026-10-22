@@ -54,6 +54,18 @@ pub struct Config {
     /// repo → scheduled task id of its runner.
     #[serde(default)]
     pub runners: HashMap<String, String>,
+    /// repo → the webhook task and the GitHub hook that feeds it.
+    #[serde(default)]
+    pub webhooks: HashMap<String, WebhookInstall>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+pub struct WebhookInstall {
+    pub task_id: String,
+    /// The task's webhook URL as the server reported it (None until an endpoint is reachable).
+    pub url: Option<String>,
+    /// GitHub's hook id once created on the repo.
+    pub hook_id: Option<u64>,
 }
 
 fn config_path() -> PathBuf {
@@ -147,13 +159,22 @@ pub fn repo_from_remote(url: &str) -> Option<String> {
 }
 
 async fn run(argv: &[&str], cwd: Option<&Path>) -> Result<String, String> {
-    let launcher = gio::SubprocessLauncher::new(gio::SubprocessFlags::STDOUT_PIPE | gio::SubprocessFlags::STDERR_PIPE);
+    run_with_input(argv, cwd, None).await
+}
+
+/// Runs a command, optionally feeding `input` on stdin (a JSON body for `gh api --input -`).
+async fn run_with_input(argv: &[&str], cwd: Option<&Path>, input: Option<&str>) -> Result<String, String> {
+    let mut flags = gio::SubprocessFlags::STDOUT_PIPE | gio::SubprocessFlags::STDERR_PIPE;
+    if input.is_some() {
+        flags |= gio::SubprocessFlags::STDIN_PIPE;
+    }
+    let launcher = gio::SubprocessLauncher::new(flags);
     if let Some(d) = cwd {
         launcher.set_cwd(d);
     }
     let argv: Vec<&std::ffi::OsStr> = argv.iter().map(std::ffi::OsStr::new).collect();
     let proc = launcher.spawn(&argv).map_err(|e| e.to_string())?;
-    let (out, err) = proc.communicate_utf8_future(None).await.map_err(|e| e.to_string())?;
+    let (out, err) = proc.communicate_utf8_future(input.map(str::to_string)).await.map_err(|e| e.to_string())?;
     if proc.has_exited() && proc.exit_status() == 0 {
         Ok(out.map(|s| s.to_string()).unwrap_or_default())
     } else {
@@ -168,9 +189,14 @@ pub async fn remote_repo(path: &str) -> Option<String> {
 }
 
 pub async fn gh(args: &[&str]) -> Result<Value, String> {
+    gh_with_input(args, None).await
+}
+
+/// `gh api …` with an optional JSON body on stdin (`--input -`).
+pub async fn gh_with_input(args: &[&str], input: Option<&str>) -> Result<Value, String> {
     let mut argv = vec!["gh", "api"];
     argv.extend_from_slice(args);
-    let out = run(&argv, None).await?;
+    let out = run_with_input(&argv, None, input).await?;
     if out.trim().is_empty() {
         return Ok(Value::Null);
     }
@@ -290,6 +316,121 @@ pub fn runner_task(repo: &str, project_id: &str, provider: &Provider, model: &st
     v
 }
 
+/// The prompt of the webhook task: GitHub's `issues.labeled` payload names the issue.
+pub fn webhook_prompt(repo: &str) -> String {
+    format!(
+        "Issue #{{{{body.issue.number}}}} \"{{{{body.issue.title}}}}\" in {repo} was just labeled agent:ready. If it is not \
+labeled agent:running and no other agent is running in that repo (unless it is labeled parallel-ok), label it \
+agent:running, work it to a PR that closes it, run the repo's checks, then label it agent:done. If it fails twice, \
+label it agent:blocked and comment with the error. Never push to main."
+    )
+}
+
+/// Whether a task's webhook URL can be reached by GitHub: an absolute URL that is not loopback.
+pub fn endpoint_reachable(url: Option<&str>) -> bool {
+    let Some(u) = url else { return false };
+    let host = u.split("://").nth(1).unwrap_or("").split('/').next().unwrap_or("").split(':').next().unwrap_or("");
+    (u.starts_with("https://") || u.starts_with("http://"))
+        && !host.is_empty()
+        && !matches!(host, "127.0.0.1" | "localhost" | "::1" | "[::1]" | "0.0.0.0")
+}
+
+/// The webhook-triggered task for a repo: GitHub's `issues` event, `labeled` action, label
+/// `agent:ready`, signed with the shared secret in `X-Hub-Signature-256`. `secret` None keeps the
+/// stored one on an update.
+pub fn webhook_task(
+    repo: &str,
+    project_id: &str,
+    provider: &Provider,
+    model: &str,
+    existing_id: Option<&str>,
+    secret: Option<&str>,
+) -> Value {
+    let mut signature = json!({"header": "x-hub-signature-256", "encoding": "hex", "prefix": "sha256="});
+    if let Some(s) = secret {
+        signature["secret"] = json!(s);
+    }
+    let mut v = json!({
+        "title": format!("Webhook: {repo}"),
+        "prompt": webhook_prompt(repo),
+        "enabled": true,
+        "schedule": {
+            "type": "webhook",
+            "signature": signature,
+            "filters": [
+                {"path": "headers.x-github-event", "op": "equals", "value": "issues"},
+                {"path": "body.action", "op": "equals", "value": "labeled"},
+                {"path": "body.label.name", "op": "equals", "value": "agent:ready"}
+            ]
+        },
+        "projectId": project_id,
+        "workspaceStrategy": {"type": "root"},
+        "modelSelection": {"instanceId": provider.instance_id, "model": model},
+        "runtimeMode": "auto",
+        "interactionMode": "default",
+        "createdBy": "user",
+        "creationSource": "web",
+    });
+    if let Some(id) = existing_id {
+        v["id"] = json!(id);
+    }
+    v
+}
+
+/// A fresh signing secret for a GitHub hook (32 hex characters from GLib's RNG).
+pub fn new_secret() -> String {
+    (0..8).map(|_| format!("{:08x}", glib::random_int())).collect()
+}
+
+/// The GitHub hook body for `POST /repos/{repo}/hooks`: the `issues` event to the task's URL, JSON,
+/// signed with `secret`.
+pub fn github_hook_body(url: &str, secret: &str) -> Value {
+    json!({
+        "name": "web",
+        "active": true,
+        "events": ["issues"],
+        "config": {"url": url, "content_type": "json", "secret": secret, "insecure_ssl": "0"}
+    })
+}
+
+/// Per-run provider rotation: for every runner and webhook task this client installed (titles
+/// "Runner: …" / "Webhook: …"), the upsert that moves it to the provider with the most capacity now,
+/// when that differs from the one it has. The read model's fields are passed back; the webhook
+/// schedule without a secret keeps the stored one.
+pub fn rotate_tasks(tasks: &[Value], providers: &[Provider]) -> Vec<(String, Value, String)> {
+    let Some((provider, model, reason)) = runner_selection(providers) else { return Vec::new() };
+    let mut out = Vec::new();
+    for t in tasks {
+        let title = t.get("title").and_then(Value::as_str).unwrap_or("");
+        if !(title.starts_with("Runner: ") || title.starts_with("Webhook: ")) {
+            continue;
+        }
+        let current = t.get("modelSelection").and_then(|m| m.get("instanceId")).and_then(Value::as_str).unwrap_or("");
+        if current == provider.instance_id {
+            continue;
+        }
+        let Some(id) = t.get("id").and_then(Value::as_str) else { continue };
+        let mut v = json!({
+            "id": id,
+            "requireExisting": true,
+            "title": title,
+            "prompt": t.get("prompt").cloned().unwrap_or(Value::Null),
+            "enabled": t.get("enabled").cloned().unwrap_or(json!(true)),
+            "schedule": t.get("schedule").cloned().unwrap_or(Value::Null),
+            "projectId": t.get("projectId").cloned().unwrap_or(Value::Null),
+            "workspaceStrategy": t.get("workspaceStrategy").cloned().unwrap_or(json!({"type": "root"})),
+            "modelSelection": {"instanceId": provider.instance_id, "model": model},
+            "runtimeMode": t.get("runtimeMode").cloned().unwrap_or(json!("auto")),
+            "interactionMode": t.get("interactionMode").cloned().unwrap_or(json!("default")),
+        });
+        if let Some(thread) = t.get("threadId") {
+            v["threadId"] = thread.clone();
+        }
+        out.push((title.to_string(), v, format!("{} ({reason})", provider.name())));
+    }
+    out
+}
+
 pub fn now_iso() -> String {
     glib::DateTime::now_utc().and_then(|d| d.format_iso8601()).map(|s| s.to_string()).unwrap_or_default()
 }
@@ -321,6 +462,55 @@ mod tests {
         assert_eq!(issues.iter().map(|i| i.number).collect::<Vec<_>>(), vec![4, 2, 1, 5]);
         assert_eq!(issues[0].agent(), Some("ready"));
         assert_eq!(issues[1].lane(), Some("build"));
+    }
+
+    #[test]
+    fn webhook_task_filters_and_rotation() {
+        let ready = |driver: &str| Provider {
+            instance_id: driver.into(),
+            driver: driver.into(),
+            enabled: true,
+            installed: true,
+            auth: json!({"status": "authenticated"}),
+            models: vec![crate::t3::model::ProviderModel {
+                slug: "m".into(),
+                is_default: Some(true),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let claude = ready("claudeAgent");
+        let t = webhook_task("o/r", "pid", &claude, "m", None, Some("s3cret"));
+        assert_eq!(t["schedule"]["type"], "webhook");
+        assert_eq!(t["schedule"]["signature"]["header"], "x-hub-signature-256");
+        assert_eq!(t["schedule"]["signature"]["secret"], "s3cret");
+        let filters = t["schedule"]["filters"].as_array().unwrap();
+        assert!(filters.iter().any(|f| f["path"] == "body.label.name" && f["value"] == "agent:ready"));
+        assert!(filters.iter().any(|f| f["path"] == "headers.x-github-event" && f["value"] == "issues"));
+        assert!(t["prompt"].as_str().unwrap().contains("{{body.issue.number}}"));
+        assert!(
+            webhook_task("o/r", "pid", &claude, "m", Some("t1"), None)["schedule"]["signature"].get("secret").is_none()
+        );
+        assert!(endpoint_reachable(Some("https://ser8.tail1234.ts.net:3773/api/webhooks/abc")));
+        assert!(!endpoint_reachable(Some("http://127.0.0.1:3773/api/webhooks/abc")));
+        assert!(!endpoint_reachable(None));
+        assert_eq!(new_secret().len(), 64);
+        assert_eq!(github_hook_body("https://x/y", "k")["config"]["secret"], "k");
+
+        // Rotation: only our tasks move, and only when the best provider differs.
+        let codex = ready("codex");
+        let tasks = vec![
+            json!({"id": "t1", "title": "Runner: o/r", "prompt": "p", "enabled": true, "schedule": {"type": "interval", "everyMs": 300000}, "projectId": "pid", "workspaceStrategy": {"type": "root"}, "modelSelection": {"instanceId": "codex", "model": "x"}, "runtimeMode": "auto", "interactionMode": "default", "threadId": null}),
+            json!({"id": "t2", "title": "Webhook: o/r", "prompt": "p", "enabled": true, "schedule": {"type": "webhook", "signature": {"header": "x-hub-signature-256", "encoding": "hex", "prefix": "sha256="}, "filters": []}, "projectId": "pid", "workspaceStrategy": {"type": "root"}, "modelSelection": {"instanceId": "claudeAgent", "model": "m"}, "runtimeMode": "auto", "interactionMode": "default"}),
+            json!({"id": "t3", "title": "Nightly notes", "modelSelection": {"instanceId": "codex", "model": "x"}}),
+        ];
+        let moves = rotate_tasks(&tasks, &[claude.clone(), codex.clone()]);
+        assert_eq!(moves.len(), 1, "{moves:?}");
+        assert_eq!(moves[0].1["id"], "t1");
+        assert_eq!(moves[0].1["modelSelection"]["instanceId"], "claudeAgent");
+        assert_eq!(moves[0].1["requireExisting"], true);
+        assert_eq!(moves[0].1["schedule"]["everyMs"], 300000);
+        assert!(rotate_tasks(&tasks, &[]).is_empty());
     }
 
     #[test]

@@ -183,7 +183,28 @@ impl ReposPage {
             let runner = gtk::Button::with_label("Install runner");
             runner.set_tooltip_text(Some("A T3 scheduled task every 5 minutes that takes the next agent:ready issue"));
             head.append(&runner);
+            let webhook = gtk::Button::with_label("Webhook");
+            webhook.set_tooltip_text(Some(
+                "A webhook task that starts on GitHub's issues.labeled agent:ready within seconds; the GitHub hook is created when the server's endpoint is reachable (Tailscale or T3 Connect)",
+            ));
+            head.append(&webhook);
             card.append(&head);
+            let automation = {
+                let runner_state = if self.runner_id(&r.repo).is_some() { "installed" } else { "not installed" };
+                let hook_state = match self.webhook_install(&r.repo) {
+                    Some(w) if w.hook_id.is_some() => "installed, GitHub hook created".to_string(),
+                    Some(w) if w.url.is_some() => "task installed, GitHub hook pending".to_string(),
+                    Some(_) => "task installed, endpoint not reachable yet".to_string(),
+                    None => "not installed".to_string(),
+                };
+                label(
+                    &format!(
+                        "runner {runner_state} · webhook {hook_state} · provider re-picked by capacity every 5 min"
+                    ),
+                    &["caption", "dim-label"],
+                )
+            };
+            card.append(&automation);
             let summary = label(&crate::look::tilde(&r.path), &["caption", "dim-label"]);
             card.append(&summary);
             let counts = label("", &["caption"]);
@@ -208,6 +229,9 @@ impl ReposPage {
             let a = app.clone();
             let rr = r.clone();
             runner.connect_clicked(move |_| a.install_runner(rr.clone()));
+            let a = app.clone();
+            let rr = r.clone();
+            webhook.connect_clicked(move |_| a.install_webhook(rr.clone()));
 
             if pinned.iter().any(|p| p.repo == r.repo) {
                 match workflow::issues(&r.repo).await {
@@ -374,6 +398,17 @@ impl ReposPage {
 
     pub fn runner_id(&self, repo: &str) -> Option<String> {
         self.config.borrow().runners.get(repo).cloned()
+    }
+
+    pub fn webhook_install(&self, repo: &str) -> Option<workflow::WebhookInstall> {
+        self.config.borrow().webhooks.get(repo).cloned()
+    }
+
+    pub fn remember_webhook(&self, repo: &str, install: workflow::WebhookInstall) {
+        let repo = repo.to_string();
+        self.save(move |c| {
+            c.webhooks.insert(repo, install);
+        });
     }
 }
 

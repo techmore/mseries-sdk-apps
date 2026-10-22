@@ -33,6 +33,16 @@ agent:running, work it to a PR that closes it, run the repo's checks, then label
 Plus a webhook task per repo on GitHub `issues.labeled` (filter `body.label.name == "agent:ready"`)
 so a newly readied issue starts within seconds instead of at the next tick.
 
+### Webhook tasks in the client
+The Repos page's **Webhook** button installs the `issues.labeled` task for a pinned repo
+(`workflow::webhook_task`: filters `headers.x-github-event == issues`, `body.action == labeled`,
+`body.label.name == agent:ready`; HMAC-SHA256 over `X-Hub-Signature-256` with a fresh secret). The
+server reports the task's `webhook.url`; when it is reachable from GitHub (not loopback: the
+Tailscale or T3 Connect environment) the client creates the repo hook with `gh api
+repos/<repo>/hooks` (`events: [issues]`, JSON, the same secret) and remembers the hook id. Until
+then the task exists and the card says "endpoint not reachable yet"; pressing Webhook again after
+switching environments creates the hook.
+
 ## Provider rotation by capacity
 Before each task run the client (or a small scheduler thread in the server, if we add one)
 picks the provider instance with the lowest `session.usedPercent` whose window is not exhausted,
@@ -41,6 +51,14 @@ Codex, Grok, OpenCode. When a provider's session window passes ~90 %, new tasks 
 its running threads finish. When every window is full, the runner idles until the earliest
 `resetsAt`. This is what "endless usage to the 5-hour limits" means in practice: the windows are
 staggered, so there is always one open.
+
+### Per-run rotation in the client
+`App::rotate_runners` runs with every five-minute provider refresh: it lists the server's scheduled
+tasks, and every task this client installed (titles `Runner: …` / `Webhook: …`) whose
+`modelSelection.instanceId` is not the provider `pick_provider` would choose now is upserted onto
+that provider (`workflow::rotate_tasks`, `requireExisting`, the read model's schedule passed back so
+a webhook keeps its stored secret). The next run, not only the install, therefore uses the provider
+with the most capacity.
 
 ## What the native client shows
 - **Repos** page: pinned repos, each with lane counts and the next issue up.

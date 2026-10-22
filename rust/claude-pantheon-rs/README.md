@@ -141,6 +141,13 @@ window.
 
 When an agent answers with a page (the `html_render` tool), the turn shows a card with the page title and a **Show page** button. The WebKitGTK view (and its web process) is created only when that button is pressed and freed with the card's close button, so an idle window has no web process. Links open in the browser; a Granite palette style sheet makes unstyled pages follow light and dark; full screen opens the page in its own window (Escape closes it). Signed asset URLs come from `assets.createUrl` on each open.
 
+## Runner, webhook and rotation
+
+The Repos page installs, per pinned repo, the five-minute runner task and (with **Webhook**) the task GitHub's
+`issues.labeled` → `agent:ready` event triggers; the GitHub hook itself is created once the server reports a webhook
+URL GitHub can reach (the Tailscale or T3 Connect environment). Every five minutes the client re-points both tasks at
+the provider with the lowest session usage, so the next run uses it (details in `docs/WORKFLOW.md`).
+
 ## Environments
 
 The sidebar footer switches between saved environments (`~/.config/claude-pantheon-rs/environments.json`), each with its

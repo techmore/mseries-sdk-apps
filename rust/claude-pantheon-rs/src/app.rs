@@ -1608,6 +1608,7 @@ impl App {
             }
             self.fill_providers();
             self.refresh_status();
+            self.rotate_runners().await;
         }
     }
 
@@ -3081,6 +3082,118 @@ impl App {
                 Err(e) => app.toast(&format!("Could not install the runner: {}", e.message())),
             }
         });
+    }
+
+    /// The webhook task for a repo (GitHub `issues.labeled` → agent:ready), and the GitHub hook that
+    /// feeds it once the server reports a reachable URL for the task.
+    pub fn install_webhook(self: &Rc<Self>, repo: PinnedRepo) {
+        let rpc = match self.conn.borrow().as_ref() {
+            Some(c) => c.rpc.clone(),
+            None => {
+                self.toast("Not connected.");
+                return;
+            }
+        };
+        let Some((provider, model, reason)) = workflow::runner_selection(&self.providers()) else {
+            self.toast("Every provider's window is full; try again after the earliest reset.");
+            return;
+        };
+        let app = self.clone();
+        glib::spawn_future_local(async move {
+            let name = repo.repo.rsplit('/').next().unwrap_or(&repo.repo).to_string();
+            let Some(project_id) = app.project_for_path(&repo.path, &name).await else {
+                app.toast("Could not create the project on the server.");
+                return;
+            };
+            workflow::ensure_labels(&repo.repo).await;
+            let existing = app.repos_page.webhook_install(&repo.repo);
+            // A new task gets a fresh secret; an update keeps the stored one unless the hook is still to be made.
+            let secret = match &existing {
+                Some(w) if w.hook_id.is_some() => None,
+                _ => Some(workflow::new_secret()),
+            };
+            let payload = workflow::webhook_task(
+                &repo.repo,
+                &project_id,
+                &provider,
+                &model,
+                existing.as_ref().map(|w| w.task_id.as_str()),
+                secret.as_deref(),
+            );
+            let task = match rpc.call("scheduledTasks.upsert", payload).await {
+                Ok(v) => v.get("task").cloned().unwrap_or(v),
+                Err(e) => {
+                    app.toast(&format!("Could not install the webhook task: {}", e.message()));
+                    return;
+                }
+            };
+            let task_id = task.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+            let url = task.get("webhook").and_then(|w| w.get("url")).and_then(Value::as_str).map(str::to_string);
+            let mut install = workflow::WebhookInstall {
+                task_id: task_id.clone(),
+                url: url.clone(),
+                hook_id: existing.as_ref().and_then(|w| w.hook_id),
+            };
+            if !workflow::endpoint_reachable(url.as_deref()) {
+                app.repos_page.remember_webhook(&repo.repo, install);
+                app.repos_page.load(app.clone());
+                app.toast(&format!(
+                    "Webhook task for {} installed on {} ({reason}); GitHub cannot reach this server yet. Switch to a Tailscale or T3 Connect environment and press Webhook again to create the GitHub hook.",
+                    repo.repo,
+                    provider.name()
+                ));
+                return;
+            }
+            if install.hook_id.is_none()
+                && let (Some(url), Some(secret)) = (url.as_deref(), secret.as_deref())
+            {
+                let body = workflow::github_hook_body(url, secret).to_string();
+                let hooks = format!("repos/{}/hooks", repo.repo);
+                match workflow::gh_with_input(&[&hooks, "-X", "POST", "--input", "-"], Some(&body)).await {
+                    Ok(v) => {
+                        install.hook_id = v.get("id").and_then(Value::as_u64);
+                        app.toast(&format!(
+                            "GitHub hook created for {}; webhook task on {} ({reason})",
+                            repo.repo,
+                            provider.name()
+                        ));
+                    }
+                    Err(e) => app.toast_retry(&format!("The task is installed but GitHub refused the hook: {e}"), {
+                        let r = repo.clone();
+                        Rc::new(move |a| a.install_webhook(r.clone()))
+                    }),
+                }
+            } else {
+                app.toast(&format!("Webhook task for {} updated on {} ({reason})", repo.repo, provider.name()));
+            }
+            app.repos_page.remember_webhook(&repo.repo, install);
+            app.repos_page.load(app.clone());
+        });
+    }
+
+    /// The rotation pass on demand (the render test and the palette).
+    pub fn rotate_runners_now(self: &Rc<Self>) {
+        let app = self.clone();
+        glib::spawn_future_local(async move { app.rotate_runners().await });
+    }
+
+    /// Per-run provider rotation: every five minutes (with the config reload) the runner and
+    /// webhook tasks are re-pointed at the provider with the most capacity, so the next run, not
+    /// only the install, uses it.
+    pub async fn rotate_runners(&self) {
+        let rpc = match self.conn.borrow().as_ref() {
+            Some(c) => c.rpc.clone(),
+            None => return,
+        };
+        let Ok(list) = rpc.call("scheduledTasks.list", json!({})).await else { return };
+        let tasks: Vec<Value> = list.get("tasks").and_then(Value::as_array).cloned().unwrap_or_default();
+        let moves = workflow::rotate_tasks(&tasks, &self.providers());
+        for (title, payload, to) in moves {
+            match rpc.call("scheduledTasks.upsert", payload).await {
+                Ok(_) => self.toast(&format!("{title} now runs on {to}")),
+                Err(e) => eprintln!("rotation of {title} failed: {}", e.message()),
+            }
+        }
     }
 
     /// Comments of the issue a thread was started from, as a collapsed row at the top of the chat.

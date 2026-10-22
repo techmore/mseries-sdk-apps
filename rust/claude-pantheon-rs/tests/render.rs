@@ -441,6 +441,11 @@ fn main() {
         if let Some(path) = env("CLAUDE_PANTHEON_SHOT_REPOS") {
             save_png(app.window(), &path);
         }
+        // Rotation pass against the live task list (moves nothing unless a runner task sits on a
+        // provider with less capacity than the best one).
+        app.rotate_runners_now();
+        pump(1500);
+        println!("rotation pass ok");
     } else {
         println!("not connected to a T3 server; live checks skipped");
     }
