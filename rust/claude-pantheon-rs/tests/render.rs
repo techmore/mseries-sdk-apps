@@ -187,6 +187,24 @@ fn main() {
         println!("permission card ok");
     }
 
+    // ---- visual reply card (no WebKit view until the owner asks) ------------------------------------
+    {
+        use claude_pantheon_rs::t3::model::TurnItem;
+        let item: TurnItem = serde_json::from_value(serde_json::json!({
+            "id": "item-2", "type": "tool_call", "status": "completed", "toolName": "mcp__t3__html_render",
+            "output": "{\"htmlRender\": {\"attachmentId\": \"att-does-not-exist\", \"title\": \"Burn-down chart\", \"height\": 320}}"
+        }))
+        .unwrap();
+        let widget = claude_pantheon_rs::chat::item_widget(&item, None).expect("a page card");
+        let mut t = Vec::new();
+        texts(&widget, &mut t);
+        for expect in ["Burn-down chart", "Show page"] {
+            assert!(t.iter().any(|x| x.contains(expect)), "page card shows '{expect}': {t:?}");
+        }
+        assert!(!has_type(&widget, "WebKitWebView"), "no web view before Show page");
+        println!("page card ok");
+    }
+
     // ---- milestone 2: live threads ------------------------------------------------------------
     if app.is_connected() {
         assert!(pump_until("the thread list", 30, || !app.threads().is_empty()), "the server sent threads");

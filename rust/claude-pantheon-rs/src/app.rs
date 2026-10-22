@@ -451,6 +451,7 @@ impl App {
 
         app.wire(&new_chat);
         app.wire_composer();
+        app.install_page_resolver();
         app.settings.borrow().apply_appearance();
         app.window.present();
         app.reindex();
@@ -1727,6 +1728,28 @@ impl App {
                 Err(e) => app.entry.set_status(&format!("Screenshot failed: {e}")),
             }
         });
+    }
+
+    /// Signed URLs for visual replies: `assets.createUrl` for the render's attachment.
+    fn install_page_resolver(self: &Rc<Self>) {
+        let app = self.clone();
+        chat::set_page_resolver(Some(Rc::new(move |attachment_id: String, done: Rc<dyn Fn(Option<String>)>| {
+            let (rpc, server) = match app.conn.borrow().as_ref() {
+                Some(c) => (c.rpc.clone(), c.cred.server.clone()),
+                None => {
+                    done(None);
+                    return;
+                }
+            };
+            glib::spawn_future_local(async move {
+                let payload =
+                    json!({"resource": {"_tag": "attachment", "attachmentId": attachment_id, "disposition": "inline"}});
+                let url = rpc.call("assets.createUrl", payload).await.ok().and_then(|v| {
+                    v.get("relativeUrl").and_then(Value::as_str).map(|r| format!("{}{r}", server.trim_end_matches('/')))
+                });
+                done(url);
+            });
+        })));
     }
 
     pub fn terminal_pane(&self) -> &Rc<terminal::TerminalPane> {

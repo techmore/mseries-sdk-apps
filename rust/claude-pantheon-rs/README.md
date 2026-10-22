@@ -16,7 +16,7 @@ cargo build --release
 ~/.cache/cargo-target/release/claude-pantheon-rs
 ```
 
-Toolchain: Rust 1.99, system GTK 4.22 and Granite 7.8 (`libgranite-7-dev`). No other native libraries.
+Toolchain: Rust 1.99, system GTK 4.22 and Granite 7.8 (`libgranite-7-dev`), plus `libgtksourceview-5-dev` (code blocks), `libvte-2.91-gtk4-dev` (terminal pane) and `libwebkitgtk-6.0-dev` (visual replies; the web process starts only when a page is shown).
 
 Other entry points:
 
@@ -134,3 +134,7 @@ installed app until it is restarted. The D-Bus service file lets the desktop ent
 `gapplication launch io.github.techmore.ClaudePantheonRs` start the app; a second launch, the desktop
 actions and `gapplication action io.github.techmore.ClaudePantheonRs new-thread` all reach the running
 window.
+
+## Visual replies
+
+When an agent answers with a page (the `html_render` tool), the turn shows a card with the page title and a **Show page** button. The WebKitGTK view (and its web process) is created only when that button is pressed and freed with the card's close button, so an idle window has no web process. Links open in the browser; a Granite palette style sheet makes unstyled pages follow light and dark; full screen opens the page in its own window (Escape closes it). Signed asset URLs come from `assets.createUrl` on each open.

@@ -25,6 +25,7 @@ pub mod t3;
 pub mod terminal;
 pub mod transcript;
 pub mod usage;
+pub mod webview;
 pub mod workflow;
 
 pub const APP_ID: &str = "io.github.techmore.ClaudePantheonRs";

@@ -222,6 +222,21 @@ fn tool_summary_from_name(name: &str, input: &str) -> String {
 /// Callback for a permission prompt: (request id, decision).
 pub type Decide = Rc<dyn Fn(&str, &str)>;
 
+/// Resolves an attachment id to a signed page URL (None when it cannot); installed by the app.
+pub type PageResolver = Rc<dyn Fn(String, Rc<dyn Fn(Option<String>)>)>;
+
+thread_local! {
+    static PAGE_RESOLVER: std::cell::RefCell<Option<PageResolver>> = const { std::cell::RefCell::new(None) };
+}
+
+pub fn set_page_resolver(resolver: Option<PageResolver>) {
+    PAGE_RESOLVER.with(|r| *r.borrow_mut() = resolver);
+}
+
+fn page_resolver() -> Option<PageResolver> {
+    PAGE_RESOLVER.with(|r| r.borrow().clone())
+}
+
 /// One T3 turn item as a widget; `pending_result` lets an imported tool call pick up the result that
 /// follows it in the same text.
 pub fn item_widget(item: &TurnItem, decide: Option<Decide>) -> Option<gtk::Widget> {
@@ -298,6 +313,21 @@ pub fn item_widget(item: &TurnItem, decide: Option<Decide>) -> Option<gtk::Widge
         )),
         "tool_call" => {
             let name = item.name.clone().or(item.title.clone()).unwrap_or_else(|| "tool".into());
+            // A visual reply: the page card creates its WebKit view only when asked.
+            let tool_name = item.rest.get("toolName").and_then(Value::as_str).or(Some(name.as_str()));
+            // The server stores a tool's output as a JSON string; the web client parses it the same way.
+            let parsed_output = item
+                .output
+                .as_deref()
+                .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                .or_else(|| item.rest.get("output").cloned());
+            if let Some(render) = crate::webview::html_render_of(tool_name, parsed_output.as_ref())
+                && let Some(resolver) = page_resolver()
+            {
+                let id = render.attachment_id.clone();
+                let page = crate::webview::PageView::new(&render, Rc::new(move |done| resolver(id.clone(), done)));
+                return Some(page.root.clone().upcast());
+            }
             let input = item
                 .rest
                 .get("input")
