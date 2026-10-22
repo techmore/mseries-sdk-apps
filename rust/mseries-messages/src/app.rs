@@ -2812,11 +2812,15 @@ impl App {
         let Some(key) = self.state.borrow().selected.clone() else {
             return;
         };
+        let phone_generation = self.pin_load_generation.get();
         let backend = self.backend.clone();
         let weak = Rc::downgrade(self);
         glib::MainContext::default().spawn_local(async move {
             let result = backend.set_starred(&key, starred).await;
             if let Some(app) = weak.upgrade() {
+                if app.pin_load_generation.get() != phone_generation {
+                    return;
+                }
                 if let Err(error) = result {
                     app.status
                         .set_text(&format!("Could not update favorite: {error}"));
@@ -2978,6 +2982,7 @@ impl App {
             self.render_conversation(Some(thread));
             self.scroll_messages_to_bottom();
         }
+        let phone_generation = self.pin_load_generation.get();
         let backend = self.backend.clone();
         let weak = Rc::downgrade(self);
         glib::MainContext::default().spawn_local(async move {
@@ -2989,6 +2994,9 @@ impl App {
                     .await
             };
             if let Some(app) = weak.upgrade() {
+                if app.pin_load_generation.get() != phone_generation {
+                    return;
+                }
                 {
                     let mut state = app.state.borrow_mut();
                     state.pending.retain(|pending| pending != &key);

@@ -1,3 +1,13 @@
+## Messages stale send/favorite responses — 2026-10-22
+
+Send and favorite completion callbacks now capture the phone-profile generation
+and ignore results after an observed profile change. An old send response can
+no longer clear a new profile's matching-key draft or edit its outbox/UI.
+This does not cancel an already dispatched backend operation. Locked Messages
+check, formatting and diff checks pass. Remaining phone-switch work includes
+per-profile draft/outbox retention, confirmation dialogs, contact searches,
+history/read callbacks and synthetic delayed-response regressions.
+
 ## Messages inbox cache on phone changes — 2026-10-22
 
 A reported phone-profile change now forces a recent-inbox fetch and discards
