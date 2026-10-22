@@ -3,6 +3,7 @@
 
 pub mod attach;
 pub mod auth;
+pub mod contracts;
 pub mod http;
 pub mod model;
 pub mod rpc;

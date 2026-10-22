@@ -824,8 +824,10 @@ impl App {
             .logo_icon_name("io.github.techmore.ClaudePantheonRs")
             .version(env!("CARGO_PKG_VERSION"))
             .comments(format!(
-                "A native elementary OS client of the T3 Code server.\n\nServer: {server}\nServer version: {version} {environment}\nProviders ready: {}",
-                if ready.is_empty() { "none".to_string() } else { ready.join(", ") }
+                "A native elementary OS client of the T3 Code server.\n\nServer: {server}\nServer version: {version} {environment}\nProviders ready: {}\nOrchestration protocol {} (contracts from t3code {})",
+                if ready.is_empty() { "none".to_string() } else { ready.join(", ") },
+                t3::contracts::PROTOCOL_VERSION,
+                t3::contracts::CONTRACTS_COMMIT
             ))
             .website("https://github.com/techmore/ElementaryOS_MSeries")
             .website_label("techmore/ElementaryOS_MSeries")
@@ -1072,7 +1074,11 @@ impl App {
             Err(e) => {
                 self.connecting.set(false);
                 let text = match &e {
-                    WsError::Refused { status: 426, body } => format!("Server needs a newer client: {body}"),
+                    WsError::Refused { status: 426, body } => format!(
+                        "Server needs a newer client (this one speaks orchestration protocol {}, contracts {}): {body}",
+                        t3::contracts::PROTOCOL_VERSION,
+                        t3::contracts::CONTRACTS_COMMIT
+                    ),
                     WsError::Refused { status: 401, .. } | WsError::Refused { status: 403, .. } => {
                         "The stored pairing was rejected; pair again.".to_string()
                     }

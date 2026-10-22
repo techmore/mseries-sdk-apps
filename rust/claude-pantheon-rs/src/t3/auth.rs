@@ -11,7 +11,8 @@ use gtk::gio;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-pub const PROTOCOL_VERSION: u32 = 2;
+/// The orchestration protocol this client speaks (from the vendored contracts).
+pub const PROTOCOL_VERSION: u32 = super::contracts::PROTOCOL_VERSION;
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct Credential {

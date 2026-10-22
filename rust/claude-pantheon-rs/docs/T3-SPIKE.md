@@ -54,3 +54,14 @@ Build the Rust GTK app as a T3 client: native sidebar of projects and threads, p
 picker (Claude, Codex, OpenCode, Grok, …), streamed turns, permission prompts, diffs, a Usage page.
 Keep the JSONL transcript viewer as offline fallback. Keep the Vala CLI-direct build as the
 lightweight comparator.
+
+## Contracts and drift
+
+`contracts/PROTOCOL_VERSION` and `contracts/METHODS` are the client's copy of `ORCHESTRATION_PROTOCOL_VERSION` and the
+`WS_METHODS` + `ORCHESTRATION_V2_WS_METHODS` tag lists from `packages/contracts/src` of pingdotgg/t3code, taken from the
+sparse clone at `~/claude-work/repos/t3code` by `scripts/refresh-contracts.sh`. `build.rs` compiles them into
+`t3::contracts` (`PROTOCOL_VERSION`, `METHODS`, `CONTRACTS_COMMIT`) and, when the clone is present, fails the build if
+the clone has moved on (`T3_CONTRACTS_DRIFT=warn` downgrades it). A unit test checks that every tag the client calls
+exists in the list, and debug builds assert it per call. The server's 426 answer on the WebSocket upgrade is shown
+in-app with the protocol version and contracts commit this client was built with. `--record` re-records
+`tests/fixtures` from the running server after a refresh.

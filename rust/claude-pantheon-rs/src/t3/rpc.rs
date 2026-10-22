@@ -210,6 +210,7 @@ impl Rpc {
 
     /// One request, one answer.
     pub async fn call(&self, tag: &str, payload: Value) -> Result<Value, RpcError> {
+        debug_assert!(super::contracts::is_known(tag), "RPC tag {tag} is not in the vendored contracts");
         if self.inner.closed.get() {
             return Err(RpcError::Transport("not connected".into()));
         }
@@ -222,6 +223,7 @@ impl Rpc {
 
     /// A streaming request: values arrive on the receiver until the server's Exit (Ok end) or an error.
     pub fn subscribe(&self, tag: &str, payload: Value) -> (String, mpsc::UnboundedReceiver<Result<Value, RpcError>>) {
+        debug_assert!(super::contracts::is_known(tag), "RPC tag {tag} is not in the vendored contracts");
         let id = self.new_id();
         let (tx, rx) = mpsc::unbounded();
         if self.inner.closed.get() {
