@@ -3768,7 +3768,12 @@ mod tests {
             .method_call(move |_, _, _, _, method, _, invocation| {
                 let json = match method {
                     "GetStatus" => serde_json::json!({"api_version":2,"map":true,"phone_profile_id":*reported_profile.borrow()}).to_string(),
-                    "ListThreads" | "ListRecent" => "[]".to_string(),
+                    "ListThreads" => serde_json::json!([{
+                        "key":"shared-key", "name":"Synthetic Contact",
+                        "recipients":["+12025550123"], "reply_ready":true,
+                        "messages":[{"handle":"fixture-1", "body":"Synthetic history message", "read":true}]
+                    }]).to_string(),
+                    "ListRecent" => "[]".to_string(),
                     _ => panic!("unexpected fixture method: {method}"),
                 };
                 invocation.return_value(Some(&(json,).to_variant()));
@@ -3782,6 +3787,22 @@ mod tests {
         assert!(!app.status.has_css_class("warning"));
         assert!(!app.send_button.is_sensitive()); // no conversation selected
         assert_eq!(app.state.borrow().drafts["test-thread"], "unsent draft");
+        assert!(app.state.borrow().selected.is_none());
+        app.select_thread("shared-key");
+        assert_eq!(app.conversation_title.text(), "Synthetic Contact");
+        assert!(app.editor.is_sensitive());
+        assert!(app.send_button.is_sensitive());
+        assert!(app.messages.first_child().is_some());
+        app.editor.buffer().set_text("Composer draft");
+        assert_eq!(app.state.borrow().drafts["shared-key"], "Composer draft");
+        app.go_back_to_conversations();
+        app.select_thread("shared-key");
+        let buffer = app.editor.buffer();
+        assert_eq!(
+            buffer.text(&buffer.start_iter(), &buffer.end_iter(), false),
+            "Composer draft"
+        );
+        app.go_back_to_conversations();
         let phone_a = "12345678-1234-4234-8234-123456789abc";
         let phone_b = "87654321-1234-4234-8234-123456789abc";
         *fixture_profile.borrow_mut() = Some(phone_a.into());
