@@ -1,3 +1,16 @@
+## Screenshot release package ready; privileged install blocked — 2026-10-22
+
+Built build/screenshot-native-release/pantheon-rust-compositor_0.1.0+git0de7b82e_arm64.deb.
+Its embedded binary exactly matches the tested native release SHA-256
+0401af12e75e9d406cc5f6b78e8f7ca4a8adb224ad336c30bda50830db264ad6;
+package SHA-256 2310fdce7418bfd2206210e178fdf821e059c95841d4ea762a9a17a9023831c4.
+Installed package is 0.1.0+git75c2c3df, unmodified according to dpkg -V, with
+75c2c3df confirmed an ancestor of this source. The existing session is active.
+The package has not been installed: sudo -n is denied by the process’s no-new-privileges
+flag. This is a privilege boundary, not a failed build or automatic review rejection.
+Owner must run the installer from their terminal; it stages the new package without
+restarting the running compositor. A later login and live acceptance are required.
+
 ## Native release screenshot regression passes — 2026-10-22
 
 The optimized native-drm binary now passes the complete nested screenshot/shelf
