@@ -8,7 +8,10 @@ The GTK test now awaits the actual failed startup refresh and Retry completion,
 asserts the warning/recovery state and disabled sending, and verifies the draft
 survives retry. No offline flags are forced by the test. This extended test passes
 locally. Expected missing-portal/software-display warnings do not affect this
-widget-state check. CI execution, visual/accessibility and connected-phone acceptance remain
+widget-state check. The same passing test now publishes a read-only synthetic
+Messages1 service on the private bus and verifies Retry transitions to connected,
+clears the warning, retains the draft and keeps Send disabled without a selection.
+The fixture exposes no send methods and uses empty synthetic history/inbox data. CI execution, visual/accessibility and connected-phone acceptance remain
 unverified. The locally built Debian package remains uninstalled under build/.
 
 ## Messages isolated GTK recovery regression — 2026-10-22

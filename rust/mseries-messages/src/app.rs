@@ -3740,6 +3740,47 @@ mod tests {
         assert!(!app.backend_available.get());
         assert!(!app.send_button.is_sensitive());
         assert_eq!(app.state.borrow().drafts["test-thread"], "unsent draft");
+        // Publish only read methods on this test's private bus. Sends are unsupported.
+        use gtk::glib::variant::ToVariant;
+        let bus = gtk::gio::bus_get_sync(gtk::gio::BusType::Session, gtk::gio::Cancellable::NONE)
+            .unwrap();
+        bus.call_sync(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            "RequestName",
+            Some(&("io.weirdware.BlueFerry", 0_u32).to_variant()),
+            None,
+            gtk::gio::DBusCallFlags::NONE,
+            1000,
+            gtk::gio::Cancellable::NONE,
+        )
+        .unwrap();
+        let node = gtk::gio::DBusNodeInfo::for_xml(r#"<node><interface name="io.weirdware.BlueFerry.Messages1">
+          <method name="GetStatus"><arg type="s" direction="out"/></method>
+          <method name="ListThreads"><arg type="u" direction="in"/><arg type="s" direction="out"/></method>
+          <method name="ListRecent"><arg type="s" direction="in"/><arg type="u" direction="in"/><arg type="s" direction="out"/></method>
+        </interface></node>"#).unwrap();
+        let registration = bus
+            .register_object("/io/weirdware/BlueFerry", &node.interfaces()[0])
+            .method_call(|_, _, _, _, method, _, invocation| {
+                let json = match method {
+                    "GetStatus" => r#"{"api_version":2,"map":true}"#,
+                    "ListThreads" | "ListRecent" => "[]",
+                    _ => panic!("unexpected fixture method: {method}"),
+                };
+                invocation.return_value(Some(&(json,).to_variant()));
+            })
+            .build()
+            .unwrap();
+        app.refresh_recent();
+        wait_for_refresh();
+        assert!(app.backend_available.get());
+        assert!(app.state.borrow().map_ready);
+        assert!(!app.status.has_css_class("warning"));
+        assert!(!app.send_button.is_sensitive()); // no conversation selected
+        assert_eq!(app.state.borrow().drafts["test-thread"], "unsent draft");
+        bus.unregister_object(registration).unwrap();
         app.window.close();
     }
 
