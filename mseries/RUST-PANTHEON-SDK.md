@@ -27,13 +27,18 @@ guessing a font from pixel resolution or viewing distance.
 
 The Mac hardware target needs rounded content surfaces and window frames. App
 cards use a shared 12 logical-pixel radius; the GTK client-side window style,
-Gala window clip, and built-in display mask share a provisional 20 logical-pixel
-radius independent of font/text scaling. This is not yet verified against the
-panel's exact physical curve; the recorded live display-mask setting was 14
-logical pixels. Visual qualification must check normal, maximized, fullscreen,
-dialog, popover and external-monitor surfaces. Top-level clipping remains a
-system/compositor concern; an app class alone cannot guarantee that a window
-follows the built-in display outline.
+Gala window clip, and Rust compositor's built-in display mask share a
+provisional 20 logical-pixel radius independent of font/text scaling. The Rust
+compositor masks all four corners only on recognized internal-panel connectors
+(eDP, LVDS or DSI); `PANTHEON_SCREEN_CORNER_RADIUS` selects a logical-pixel
+radius at compositor startup and `0` disables the mask. Cached, supersampled
+textures add no polling or per-frame rasterization. This is not yet visually
+qualified against the panel's exact physical curve; the recorded previous
+display-mask setting was 14 logical pixels. Visual qualification must check
+normal, maximized, fullscreen, dialog, popover and external-monitor surfaces.
+Top-level window clipping remains a separate system/compositor concern; an app
+class alone cannot guarantee that a window follows the built-in display
+outline.
 
 Apple's [guidance for layout](https://developer.apple.com/design/human-interface-guidelines/layout)
 and [designing for macOS](https://developer.apple.com/design/human-interface-guidelines/designing-for-macos)
