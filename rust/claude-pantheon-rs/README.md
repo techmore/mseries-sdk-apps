@@ -31,6 +31,23 @@ Other entry points:
 | `CLAUDE_PANTHEON_RENDERER=gl` | use a GL renderer instead of cairo (see PERFORMANCE.md) |
 | `CLAUDE_PANTHEON_DEBUG=1` | log RPC frames to stderr |
 
+## Keyboard shortcuts
+
+| Keys | Action |
+|---|---|
+| Ctrl+N | New thread |
+| Ctrl+K | Command palette (the thread search until the palette lands) |
+| Ctrl+F | Search threads |
+| Ctrl+Enter | Send |
+| Ctrl+W | Close the thread |
+| Ctrl+Shift+U | Usage |
+| Ctrl+, | Settings |
+| Ctrl+Q | Quit |
+
+The same actions sit in the app menu (header bar, right) with their accelerator labels, plus Repos
+and Issues, Changes, Diagnostics, Import Sessions, Hand Off to Repo, Open Offline Twin, Reconnect,
+Forget Pairing and About (version, server, providers ready).
+
 ## Pairing with the server
 
 The server is `t3 serve` (here: the user service `t3code.service` on `127.0.0.1:3773`). Run `t3 pair`,

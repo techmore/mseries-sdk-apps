@@ -175,17 +175,49 @@ impl App {
         let new_chat = gtk::Button::from_icon_name("list-add-symbolic");
         new_chat.set_tooltip_text(Some("New Thread (Ctrl+N)"));
         main_header.pack_start(&new_chat);
+        // The app menu (elementary HIG: a MenuButton in the header, sections, accelerator labels drawn by
+        // GTK from the `win.*` accelerators registered in `wire`).
         let menu_model = gio::Menu::new();
-        menu_model.append(Some("Usage"), Some("win.usage"));
-        menu_model.append(Some("Repos and Issues"), Some("win.repos"));
-        menu_model.append(Some("Changes in This Thread"), Some("win.changes"));
-        menu_model.append(Some("Diagnostics"), Some("win.diagnostics"));
-        menu_model.append(Some("Import Sessions from Claude Code and Codex"), Some("win.import"));
-        menu_model.append(Some("Hand Off to Repo"), Some("win.handoff"));
-        menu_model.append(Some("Open Offline Twin"), Some("win.offline"));
-        menu_model.append(Some("Reconnect"), Some("win.reconnect"));
-        menu_model.append(Some("Forget Pairing"), Some("win.forget"));
-        let menu = gtk::MenuButton::builder().icon_name("open-menu-symbolic").menu_model(&menu_model).build();
+        let section = |items: &[(&str, &str)]| {
+            let m = gio::Menu::new();
+            for (label_text, action) in items {
+                m.append(Some(label_text), Some(action));
+            }
+            m
+        };
+        menu_model.append_section(
+            None,
+            &section(&[
+                ("New Thread", "win.new-thread"),
+                ("Command Palette", "win.palette"),
+                ("Search Threads", "win.search"),
+            ]),
+        );
+        menu_model.append_section(
+            None,
+            &section(&[
+                ("Usage", "win.usage"),
+                ("Repos and Issues", "win.repos"),
+                ("Changes in This Thread", "win.changes"),
+                ("Diagnostics", "win.diagnostics"),
+            ]),
+        );
+        menu_model.append_section(
+            None,
+            &section(&[
+                ("Import Sessions from Claude Code and Codex", "win.import"),
+                ("Hand Off to Repo", "win.handoff"),
+                ("Open Offline Twin", "win.offline"),
+                ("Close Thread", "win.close-thread"),
+            ]),
+        );
+        menu_model.append_section(
+            None,
+            &section(&[("Settings", "win.settings"), ("Reconnect", "win.reconnect"), ("Forget Pairing", "win.forget")]),
+        );
+        menu_model.append_section(None, &section(&[("About Claude", "win.about"), ("Quit", "win.quit")]));
+        let menu =
+            gtk::MenuButton::builder().icon_name("open-menu-symbolic").menu_model(&menu_model).primary(true).build();
         menu.set_tooltip_text(Some("Menu"));
         main_header.pack_end(&gtk::WindowControls::new(gtk::PackType::End));
         main_header.pack_end(&menu);
@@ -470,51 +502,105 @@ impl App {
         let a = self.clone();
         self.provider_dd.connect_selected_notify(move |_| a.fill_models());
 
+        // Window actions with their HIG accelerators; the menu shows the labels automatically.
         type Action = Box<dyn Fn(&Rc<App>)>;
-        let actions: Vec<(&str, Action)> = vec![
-            ("usage", Box::new(|a| a.show_usage())),
-            ("repos", Box::new(|a| a.show_repos())),
-            ("changes", Box::new(|a| a.show_changes())),
-            ("diagnostics", Box::new(|a| a.show_diagnostics())),
-            ("import", Box::new(|a| a.import_sessions())),
-            ("handoff", Box::new(|a| a.handoff_to_repo())),
-            ("offline", Box::new(|a| a.open_offline_twin())),
-            ("reconnect", Box::new(|a| a.connect_stored())),
-            ("forget", Box::new(|a| a.forget())),
+        let actions: Vec<(&str, &[&str], Action)> = vec![
+            ("new-thread", &["<Control>n"], Box::new(|a| a.new_chat())),
+            ("palette", &["<Control>k"], Box::new(|a| a.palette())),
+            ("search", &["<Control>f"], Box::new(|a| a.focus_search())),
+            ("send", &["<Control>Return", "<Control>KP_Enter"], Box::new(|a| a.send())),
+            ("usage", &["<Control><Shift>u"], Box::new(|a| a.show_usage())),
+            ("repos", &[], Box::new(|a| a.show_repos())),
+            ("changes", &[], Box::new(|a| a.show_changes())),
+            ("diagnostics", &[], Box::new(|a| a.show_diagnostics())),
+            ("import", &[], Box::new(|a| a.import_sessions())),
+            ("handoff", &[], Box::new(|a| a.handoff_to_repo())),
+            ("offline", &[], Box::new(|a| a.open_offline_twin())),
+            ("close-thread", &["<Control>w"], Box::new(|a| a.close_thread())),
+            ("settings", &["<Control>comma"], Box::new(|a| a.settings())),
+            ("reconnect", &[], Box::new(|a| a.connect_stored())),
+            ("forget", &[], Box::new(|a| a.forget())),
+            ("about", &[], Box::new(|a| a.about())),
+            ("quit", &["<Control>q"], Box::new(|a| a.window.close())),
         ];
-        for (name, f) in actions {
+        let application = self.window.application();
+        for (name, accels, f) in actions {
             let action = gio::SimpleAction::new(name, None);
             let a = self.clone();
             action.connect_activate(move |_, _| f(&a));
             self.window.add_action(&action);
-        }
-
-        let keys = gtk::EventControllerKey::new();
-        let a = self.clone();
-        keys.connect_key_pressed(move |_, key, _, state| {
-            let ctrl = state.contains(gdk::ModifierType::CONTROL_MASK);
-            match key {
-                gdk::Key::f | gdk::Key::F if ctrl => {
-                    a.search.grab_focus();
-                    glib::Propagation::Stop
-                }
-                gdk::Key::n | gdk::Key::N if ctrl => {
-                    a.new_chat();
-                    glib::Propagation::Stop
-                }
-                gdk::Key::q | gdk::Key::Q if ctrl => {
-                    a.window.close();
-                    glib::Propagation::Stop
-                }
-                gdk::Key::Return | gdk::Key::KP_Enter if ctrl => {
-                    a.send();
-                    glib::Propagation::Stop
-                }
-                _ => glib::Propagation::Proceed,
+            if !accels.is_empty()
+                && let Some(app) = &application
+            {
+                app.set_accels_for_action(&format!("win.{name}"), accels);
             }
-        });
-        keys.set_propagation_phase(gtk::PropagationPhase::Capture);
-        self.window.add_controller(keys);
+        }
+    }
+
+    fn focus_search(&self) {
+        self.search.grab_focus();
+        self.search.select_region(0, -1);
+    }
+
+    /// Ctrl+K: the command palette lands with the palette issue; until then it opens the thread search.
+    fn palette(self: &Rc<Self>) {
+        self.focus_search();
+    }
+
+    /// Ctrl+W: leaves the open thread or transcript and shows the empty page.
+    pub fn close_thread(self: &Rc<Self>) {
+        self.leave_live();
+        *self.current_session.borrow_mut() = None;
+        *self.transcript.borrow_mut() = None;
+        self.list.unselect_all();
+        self.title.set_text("Claude");
+        self.window.set_title(Some("Claude"));
+        self.subtitle.set_visible(false);
+        self.show_page("empty");
+    }
+
+    /// Ctrl+,: the settings window lands with its own issue; until then say so.
+    fn settings(self: &Rc<Self>) {
+        self.toast("Settings arrive with the settings-window issue; pairing lives in the menu for now.");
+    }
+
+    /// About: version, server and provider state, in a Granite-styled dialog.
+    fn about(self: &Rc<Self>) {
+        let (server, version, environment) = match self.conn.borrow().as_ref() {
+            Some(c) => (
+                format!("{} ({})", c.cred.label, c.cred.server),
+                c.config.environment.get("serverVersion").and_then(Value::as_str).unwrap_or("?").to_string(),
+                c.config
+                    .environment
+                    .get("platform")
+                    .map(|p| {
+                        format!(
+                            "{} {}",
+                            p.get("os").and_then(Value::as_str).unwrap_or(""),
+                            p.get("arch").and_then(Value::as_str).unwrap_or("")
+                        )
+                    })
+                    .unwrap_or_default(),
+            ),
+            None => ("not connected".to_string(), "–".to_string(), String::new()),
+        };
+        let ready: Vec<String> = self.providers.borrow().iter().filter(|p| p.ready()).map(Provider::name).collect();
+        let dialog = gtk::AboutDialog::builder()
+            .transient_for(&self.window)
+            .modal(true)
+            .program_name("Claude")
+            .logo_icon_name("io.github.techmore.ClaudePantheonRs")
+            .version(env!("CARGO_PKG_VERSION"))
+            .comments(format!(
+                "A native elementary OS client of the T3 Code server.\n\nServer: {server}\nServer version: {version} {environment}\nProviders ready: {}",
+                if ready.is_empty() { "none".to_string() } else { ready.join(", ") }
+            ))
+            .website("https://github.com/techmore/ElementaryOS_MSeries")
+            .website_label("techmore/ElementaryOS_MSeries")
+            .license_type(gtk::License::Gpl30Only)
+            .build();
+        dialog.add_css_class("about-dialog");
+        dialog.present();
     }
 
     pub fn window(&self) -> &gtk::ApplicationWindow {
