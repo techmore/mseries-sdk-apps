@@ -1,3 +1,13 @@
+## Command+Shift+4 region source wiring — 2026-10-22
+
+Added selection state to the compositor, +4 entry, crosshair cursor override,
+pointer drag tracking, consumed selection buttons, Escape cancellation and
+selected-region cropping before the existing PNG worker. +3 clears region mode.
+The native-drm check passes. This has not yet passed an end-to-end drag test;
+selection/hover overlays, Space/window capture, complete modal-input handling,
+lock/grab interruption and transformed/multi-output crop acceptance remain open.
+No live binary installed; owner shortcuts are not fixed in the running session.
+
 ## Screenshot region-to-pixel crop mapping — 2026-10-22
 
 Added crop mapping from global logical selection bounds to an upright output
