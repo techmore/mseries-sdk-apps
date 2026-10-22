@@ -34,7 +34,11 @@ same-body draft/outbox untouched. The parked send remains OutcomeUnknown. The
 post-response check now waits for a test-only completion counter incremented
 inside the real send callback, with a five-second failure deadline. It proves
 the response was processed before asserting isolation; the fixed delay has been
-removed. The GTK scenario and strict all-target Messages Clippy pass. CI execution, visual/accessibility and connected-phone acceptance remain
+removed. The GTK scenario and strict all-target Messages Clippy pass.
+The GTK scenario also passes compact list/detail/Back visibility and regular
+two-pane restoration while retaining the composer draft. It explicitly applies
+layout classes; actual resize breakpoints, allocated bounds, enlarged text,
+light/dark visual review and assistive technology remain unqualified. CI execution, visual/accessibility and connected-phone acceptance remain
 unverified. The locally built Debian package remains uninstalled under build/.
 
 ## Messages isolated GTK recovery regression — 2026-10-22

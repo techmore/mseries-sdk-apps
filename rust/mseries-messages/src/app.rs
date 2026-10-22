@@ -3822,7 +3822,14 @@ mod tests {
         assert!(!app.send_button.is_sensitive()); // no conversation selected
         assert_eq!(app.state.borrow().drafts["test-thread"], "unsent draft");
         assert!(app.state.borrow().selected.is_none());
+        app.window.add_css_class("pantheon-compact");
+        app.apply_layout_class(mseries_pantheon_kit::LayoutClass::Compact);
+        assert!(app.sidebar.is_visible());
+        assert!(!app.detail.is_visible());
         app.select_thread("shared-key");
+        assert!(!app.sidebar.is_visible());
+        assert!(app.detail.is_visible());
+        assert!(app.back_button.is_visible());
         assert_eq!(app.conversation_title.text(), "Synthetic Contact");
         assert!(app.editor.is_sensitive());
         assert!(app.send_button.is_sensitive());
@@ -3830,7 +3837,15 @@ mod tests {
         app.editor.buffer().set_text("Composer draft");
         assert_eq!(app.state.borrow().drafts["shared-key"], "Composer draft");
         app.go_back_to_conversations();
+        assert!(app.sidebar.is_visible());
+        assert!(!app.detail.is_visible());
+        assert!(!app.back_button.is_visible());
         app.select_thread("shared-key");
+        app.window.remove_css_class("pantheon-compact");
+        app.apply_layout_class(mseries_pantheon_kit::LayoutClass::Regular);
+        assert!(app.sidebar.is_visible());
+        assert!(app.detail.is_visible());
+        assert!(!app.back_button.is_visible());
         let buffer = app.editor.buffer();
         assert_eq!(
             buffer.text(&buffer.start_iter(), &buffer.end_iter(), false),
