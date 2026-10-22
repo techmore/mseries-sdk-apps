@@ -109,12 +109,9 @@ impl Settings {
         match self.appearance.as_str() {
             "light" => settings.set_gtk_application_prefer_dark_theme(false),
             "dark" => settings.set_gtk_application_prefer_dark_theme(true),
-            _ => {
-                let granite = granite::Settings::default();
-                settings.set_gtk_application_prefer_dark_theme(
-                    granite.prefers_color_scheme() == granite::SettingsColorScheme::Dark,
-                );
-            }
+            // "system": Granite's own style manager already follows the portal; asking it here again
+            // costs a synchronous D-Bus round trip at start-up, so leave it alone.
+            _ => {}
         }
     }
 }
@@ -178,7 +175,12 @@ fn page(title: &str, description: &str) -> gtk::Box {
 
 impl SettingsWindow {
     pub fn open(parent: &gtk::ApplicationWindow, settings: Rc<RefCell<Settings>>, ctx: Context) -> Rc<SettingsWindow> {
-        let window = gtk::Window::builder().transient_for(parent).title("Settings").default_width(760).default_height(520).build();
+        let window = gtk::Window::builder()
+            .transient_for(parent)
+            .title("Settings")
+            .default_width(760)
+            .default_height(520)
+            .build();
         let header = gtk::HeaderBar::builder().show_title_buttons(true).build();
         header.add_css_class(granite::STYLE_CLASS_FLAT);
         window.set_titlebar(Some(&header));
@@ -188,14 +190,28 @@ impl SettingsWindow {
         sidebar.set_stack(&stack);
         sidebar.set_width_request(190);
         sidebar.add_css_class(granite::STYLE_CLASS_SIDEBAR);
-        let paned = gtk::Paned::builder().orientation(gtk::Orientation::Horizontal).start_child(&sidebar).end_child(&stack).position(190).shrink_start_child(false).resize_start_child(false).build();
+        let paned = gtk::Paned::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .start_child(&sidebar)
+            .end_child(&stack)
+            .position(190)
+            .shrink_start_child(false)
+            .resize_start_child(false)
+            .build();
         window.set_child(Some(&paned));
         let s = settings.clone();
 
         // ---- Appearance ----------------------------------------------------------------------
-        let appearance = page("Appearance", "Light and dark follow the system by default; Granite's accent colour comes from the system settings.");
+        let appearance = page(
+            "Appearance",
+            "Light and dark follow the system by default; Granite's accent colour comes from the system settings.",
+        );
         let choices = gtk::DropDown::from_strings(&["Follow system", "Light", "Dark"]);
-        choices.set_selected(match s.borrow().appearance.as_str() { "light" => 1, "dark" => 2, _ => 0 });
+        choices.set_selected(match s.borrow().appearance.as_str() {
+            "light" => 1,
+            "dark" => 2,
+            _ => 0,
+        });
         let s2 = s.clone();
         choices.connect_selected_notify(move |d| {
             let mut st = s2.borrow_mut();
@@ -207,12 +223,19 @@ impl SettingsWindow {
         stack.add_titled(&appearance, Some("appearance"), "Appearance");
 
         // ---- Defaults ------------------------------------------------------------------------
-        let defaults = page("Defaults", "The provider and permission mode new threads start with. A project can override both; full access stays a per-thread choice in the composer.");
-        let provider_names: Vec<String> = std::iter::once("Server's first ready provider".to_string()).chain(ctx.providers.iter().map(|(_, n)| n.clone())).collect();
+        let defaults = page(
+            "Defaults",
+            "The provider and permission mode new threads start with. A project can override both; full access stays a per-thread choice in the composer.",
+        );
+        let provider_names: Vec<String> = std::iter::once("Server's first ready provider".to_string())
+            .chain(ctx.providers.iter().map(|(_, n)| n.clone()))
+            .collect();
         let refs: Vec<&str> = provider_names.iter().map(String::as_str).collect();
         let provider_dd = gtk::DropDown::from_strings(&refs);
         let current = s.borrow().default_provider.clone();
-        provider_dd.set_selected(current.and_then(|c| ctx.providers.iter().position(|(id, _)| *id == c)).map(|i| i as u32 + 1).unwrap_or(0));
+        provider_dd.set_selected(
+            current.and_then(|c| ctx.providers.iter().position(|(id, _)| *id == c)).map(|i| i as u32 + 1).unwrap_or(0),
+        );
         let s2 = s.clone();
         let ids: Vec<String> = ctx.providers.iter().map(|(id, _)| id.clone()).collect();
         provider_dd.connect_selected_notify(move |d| {
@@ -230,19 +253,28 @@ impl SettingsWindow {
             st.default_runtime_mode = MODES[d.selected() as usize].0.into();
             st.save();
         });
-        defaults.append(&row("Default permission mode", Some("Supervised (ask before actions) unless you choose otherwise"), &mode_dd));
+        defaults.append(&row(
+            "Default permission mode",
+            Some("Supervised (ask before actions) unless you choose otherwise"),
+            &mode_dd,
+        ));
         if !ctx.projects.is_empty() {
             defaults.append(&label("Per project", &["title-4"]));
             for (pid, title) in &ctx.projects {
-                let pm = gtk::DropDown::from_strings(&std::iter::once("Use default").chain(mode_names.iter().copied()).collect::<Vec<_>>());
+                let pm = gtk::DropDown::from_strings(
+                    &std::iter::once("Use default").chain(mode_names.iter().copied()).collect::<Vec<_>>(),
+                );
                 let o = s.borrow().projects.get(pid).and_then(|p| p.runtime_mode.clone());
-                pm.set_selected(o.and_then(|m| MODES.iter().position(|(k, _)| *k == m)).map(|i| i as u32 + 1).unwrap_or(0));
+                pm.set_selected(
+                    o.and_then(|m| MODES.iter().position(|(k, _)| *k == m)).map(|i| i as u32 + 1).unwrap_or(0),
+                );
                 let s2 = s.clone();
                 let pid2 = pid.clone();
                 pm.connect_selected_notify(move |d| {
                     let mut st = s2.borrow_mut();
                     let entry = st.projects.entry(pid2.clone()).or_default();
-                    entry.runtime_mode = if d.selected() == 0 { None } else { Some(MODES[d.selected() as usize - 1].0.into()) };
+                    entry.runtime_mode =
+                        if d.selected() == 0 { None } else { Some(MODES[d.selected() as usize - 1].0.into()) };
                     st.save();
                 });
                 defaults.append(&row(title, Some("Permission mode for new threads in this project"), &pm));
@@ -251,7 +283,10 @@ impl SettingsWindow {
         stack.add_titled(&defaults, Some("defaults"), "Defaults");
 
         // ---- Server --------------------------------------------------------------------------
-        let server = page("Server", "The T3 Code server this window talks to. Pairing stores a session credential in the keyring.");
+        let server = page(
+            "Server",
+            "The T3 Code server this window talks to. Pairing stores a session credential in the keyring.",
+        );
         let state = match (&ctx.server, &ctx.server_label) {
             (Some(url), Some(l)) => format!("Paired with {l} at {url}"),
             (Some(url), None) => format!("Paired with {url}"),
@@ -267,22 +302,53 @@ impl SettingsWindow {
             unpair.add_css_class("destructive-action");
             let on_unpair = ctx.on_unpair.clone();
             unpair.connect_clicked(move |_| on_unpair());
-            server.append(&row("Unpair", Some("Removes the stored credential; the server keeps its own record until revoked there"), &unpair));
+            server.append(&row(
+                "Unpair",
+                Some("Removes the stored credential; the server keeps its own record until revoked there"),
+                &unpair,
+            ));
             let mcp = format!("{}/mcp", ctx.server.clone().unwrap_or_default());
             let copy = gtk::Button::with_label("Copy");
             let m = mcp.clone();
             copy.connect_clicked(move |b| b.clipboard().set_text(&m));
-            server.append(&row("MCP endpoint", Some(&format!("{mcp} · for agents the server did not launch (OAuth sign-in)")), &copy));
+            server.append(&row(
+                "MCP endpoint",
+                Some(&format!("{mcp} · for agents the server did not launch (OAuth sign-in)")),
+                &copy,
+            ));
         }
-        server.append(&row("Keyring", Some(if ctx.keyring { "secret-tool found; credentials go to the keyring" } else { "No secret-tool; credentials go to ~/.config/claude-pantheon-rs (0600)" }), &gtk::Box::new(gtk::Orientation::Horizontal, 0)));
+        server.append(&row(
+            "Keyring",
+            Some(if ctx.keyring {
+                "secret-tool found; credentials go to the keyring"
+            } else {
+                "No secret-tool; credentials go to ~/.config/claude-pantheon-rs (0600)"
+            }),
+            &gtk::Box::new(gtk::Orientation::Horizontal, 0),
+        ));
         stack.add_titled(&server, Some("server"), "Server");
 
         // ---- Notifications -------------------------------------------------------------------
         let notes = page("Notifications", "Shown only while the window is not the active one.");
         for (title, sub, get, set) in [
-            ("Turn finished", "When a thread's run completes", Box::new(|s: &Settings| s.notify_turn_finished) as Box<dyn Fn(&Settings) -> bool>, Box::new(|s: &mut Settings, v| s.notify_turn_finished = v) as Box<dyn Fn(&mut Settings, bool)>),
-            ("Permission prompts", "When a thread waits for your answer", Box::new(|s: &Settings| s.notify_prompts), Box::new(|s: &mut Settings, v| s.notify_prompts = v)),
-            ("Dock badge", "Running threads on the dock icon, with a progress bar while a turn runs", Box::new(|s: &Settings| s.dock_badge), Box::new(|s: &mut Settings, v| s.dock_badge = v)),
+            (
+                "Turn finished",
+                "When a thread's run completes",
+                Box::new(|s: &Settings| s.notify_turn_finished) as Box<dyn Fn(&Settings) -> bool>,
+                Box::new(|s: &mut Settings, v| s.notify_turn_finished = v) as Box<dyn Fn(&mut Settings, bool)>,
+            ),
+            (
+                "Permission prompts",
+                "When a thread waits for your answer",
+                Box::new(|s: &Settings| s.notify_prompts),
+                Box::new(|s: &mut Settings, v| s.notify_prompts = v),
+            ),
+            (
+                "Dock badge",
+                "Running threads on the dock icon, with a progress bar while a turn runs",
+                Box::new(|s: &Settings| s.dock_badge),
+                Box::new(|s: &mut Settings, v| s.dock_badge = v),
+            ),
         ] {
             let sw = gtk::Switch::builder().active(get(&s.borrow())).build();
             let s2 = s.clone();
@@ -297,7 +363,10 @@ impl SettingsWindow {
         stack.add_titled(&notes, Some("notifications"), "Notifications");
 
         // ---- Advanced ------------------------------------------------------------------------
-        let advanced = page("Advanced", "The cairo renderer draws this window in a third of the memory of the GL renderers on Mesa/Asahi (docs/PERFORMANCE.md). Changes apply at the next launch.");
+        let advanced = page(
+            "Advanced",
+            "The cairo renderer draws this window in a third of the memory of the GL renderers on Mesa/Asahi (docs/PERFORMANCE.md). Changes apply at the next launch.",
+        );
         let renderers = ["cairo", "gl", "ngl", "vulkan"];
         let rd = gtk::DropDown::from_strings(&renderers);
         rd.set_selected(renderers.iter().position(|r| *r == s.borrow().renderer).unwrap_or(0) as u32);
@@ -307,14 +376,26 @@ impl SettingsWindow {
             st.renderer = renderers[d.selected() as usize].into();
             st.save();
         });
-        advanced.append(&row("Renderer", Some("GSK renderer; CLAUDE_PANTHEON_RENDERER in the environment still wins"), &rd));
+        advanced.append(&row(
+            "Renderer",
+            Some("GSK renderer; CLAUDE_PANTHEON_RENDERER in the environment still wins"),
+            &rd,
+        ));
         let open_config = gtk::Button::with_label("Open folder");
         open_config.connect_clicked(|_| {
             if let Some(dir) = path().parent() {
-                gtk::FileLauncher::new(Some(&gio::File::for_path(dir))).launch(gtk::Window::NONE, gio::Cancellable::NONE, |_| {});
+                gtk::FileLauncher::new(Some(&gio::File::for_path(dir))).launch(
+                    gtk::Window::NONE,
+                    gio::Cancellable::NONE,
+                    |_| {},
+                );
             }
         });
-        advanced.append(&row("Configuration", Some(&crate::look::tilde(&path().parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default())), &open_config));
+        advanced.append(&row(
+            "Configuration",
+            Some(&crate::look::tilde(&path().parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default())),
+            &open_config,
+        ));
         stack.add_titled(&advanced, Some("advanced"), "Advanced");
 
         window.present();

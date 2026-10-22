@@ -41,7 +41,7 @@ Other entry points:
 | Enter | Send (Shift+Enter inserts a newline; Ctrl+Enter also sends) |
 | Ctrl+W | Close the thread |
 | Ctrl+Shift+U | Usage |
-| Ctrl+, | Settings |
+| Ctrl+, | Settings (appearance, defaults per project, server, notifications, renderer) |
 | Ctrl+Shift+T | Terminal pane for the open thread (the server's PTY, no local shell) |
 | Ctrl+Q | Quit |
 | Y / N | Allow once / deny the oldest waiting permission prompt (when not typing) |

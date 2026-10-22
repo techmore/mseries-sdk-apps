@@ -287,6 +287,22 @@ fn main() {
         assert!(pump_until("the thread again", 60, || app.live_item_count() > 0));
         pump(200);
 
+        // ---- settings window -----------------------------------------------------------------------
+        WidgetExt::activate_action(app.window(), "win.settings", None).expect("settings action");
+        pump(400);
+        let settings_window = gtk::Window::list_toplevels()
+            .into_iter()
+            .find(|w| w.downcast_ref::<gtk::Window>().is_some_and(|w| w.title().is_some_and(|t| t == "Settings")));
+        let settings_window = settings_window.expect("a Settings window").downcast::<gtk::Window>().unwrap();
+        let mut t = Vec::new();
+        texts(settings_window.upcast_ref(), &mut t);
+        for expect in ["Default permission mode", "Pairing", "Renderer", "Turn finished"] {
+            assert!(t.iter().any(|x| x.contains(expect)), "settings shows '{expect}'");
+        }
+        settings_window.close();
+        pump(200);
+        println!("settings ok");
+
         // ---- command palette (Ctrl+K) --------------------------------------------------------------
         let palette = app.palette();
         pump(200);
