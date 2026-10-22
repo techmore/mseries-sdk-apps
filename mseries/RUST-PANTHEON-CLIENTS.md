@@ -1,3 +1,20 @@
+## Screenshot workflow milestone: nested batch passes — 2026-10-22
+
+Implemented modal selection-key handling, Space capture of the hovered window,
+blue region/window outlines, and native Wayland shelf placement at bottom-right
+with a 16-logical-pixel margin. Shelf windows do not activate/steal keyboard focus.
+The combined private-Xvfb test passes on the rebuilt compositor: actual +3 key,
+upright/channel-checked pixels, +4 200x150 drag, 400x300 hovered-window Space
+capture, Escape cancellation, private PNG publication, stubbed shutter request,
+real shelf appearance, retained app active state, three-second expiry and all four
+originals retained. Receipt /tmp/pantheon-capture-probe.e8GfBR; shelf-visible.png
+is synthetic. Native-drm check passes. An earlier test accidentally started before
+the new binary finished building and failed; the fresh-binary repeats pass.
+No live compositor installation/restart. Remaining: native-session capture and
+audio, multi-output/rotated/scaled capture, input/grab/lock edge cases, shelf drag
+into actual Signal, and release/install qualification. Earlier source-only and
+unwired notes are historical and superseded only by these scoped results.
+
 ## Command+Shift+4 region source wiring — 2026-10-22
 
 Added selection state to the compositor, +4 entry, crosshair cursor override,
