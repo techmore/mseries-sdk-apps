@@ -1078,7 +1078,7 @@ impl App {
             self.list.append(&row);
         }
         *self.order.borrow_mut() = order;
-        if let Some(index) = selected_index.or_else(|| (!threads.is_empty()).then_some(0)) {
+        if let Some(index) = selected_index {
             if let Some(row) = self.list.row_at_index(index) {
                 self.list.select_row(Some(&row));
             }

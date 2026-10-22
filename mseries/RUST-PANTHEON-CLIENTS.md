@@ -85,7 +85,8 @@ The application menu exposes a keyboard-shortcuts sheet. Ctrl+N starts a
 message, Ctrl+F searches, Ctrl+R or F5 refreshes, Alt+Left returns to the
 conversation list, Ctrl+Enter sends, and Escape clears search or returns from a
 compact conversation. Returning to the list clears the selected conversation
-and retains its draft.
+and retains its draft. The list starts without an automatic selection, so a
+refresh cannot open or mark the first conversation read without user action.
 
 Imported pin review remains open until BlueFerry exposes a stable opaque
 per-phone profile identifier through its supported status API. The Python
