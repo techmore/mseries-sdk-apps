@@ -1,3 +1,19 @@
+## Live screenshot shelf repair — 2026-10-22
+
+Owner reports screenshot capture is not working. Read-only session inspection
+finds pantheon-compositor running, no Gala process, and no screenshot/screencopy
+implementation in this branch’s compositor source. The installed October 18
+shelf was also stale. PR #525’s shelf passes all ten retention regressions and
+was installed/restarted alone; installed/source SHA-256 match
+`ccd40eeba0531eab67e54bc0d70f8398eddb88203fc4a77f68a89e38a79213ec`.
+The new process is running and logs the correct watch directory. Originals now
+remain saved after drags. No compositor/panel restart or live capture occurred.
+The installer’s broad pkill matched the invoking shell command (exit 143), but
+independent checks confirm successful installation/start. Narrow that process
+match next. Native compositor capture/keybinding integration remains missing;
+updating the shelf alone does not fix capture. Owner symptom clarification is
+pending.
+
 ## Reproducible Messages GTK test harness — 2026-10-22
 
 Run `bash rust/mseries-messages/test-gui.sh` to exercise the offline widget test
