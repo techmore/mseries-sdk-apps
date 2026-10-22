@@ -1,3 +1,14 @@
+## Screenshot PNG publication — 2026-10-22
+
+Added bounded PNG saving for the capture worker: private 0600 files, completed
+encoding/flush/sync before atomic same-directory publication, unique names,
+no replacement of existing captures, and cleanup of temporary files. The real
+compositor test decodes saved synthetic pixels, checks permissions, distinct
+paths and absence of leftover temporary files; it passes. Native-drm check also
+passes. This helper has no render-loop caller yet. Capture requests/shortcuts,
+worker lifecycle, selection overlays, sound and shelf handoff remain unwired;
+Command+Shift+3/4 are still unfixed in the live session. No desktop restart.
+
 ## Screenshot offscreen output composition — 2026-10-22
 
 Added a generic renderer path that composes desktop elements into an owned
