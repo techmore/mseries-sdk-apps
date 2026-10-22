@@ -372,6 +372,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "claude-pantheon-rs"
+version = "0.1.0"
+dependencies = [
+ "futures-channel",
+ "futures-util",
+ "granite-rs",
+ "gtk4",
+ "rayon",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "combine"
 version = "4.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"

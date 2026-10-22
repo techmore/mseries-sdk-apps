@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Claude
+GenericName=AI coding agents
+Comment=Claude Code, Codex, OpenCode and Grok threads through the T3 Code server, with your Claude Code transcripts offline
+Exec=claude-pantheon-rs
+Icon=io.github.techmore.ClaudePantheonRs
+Terminal=false
+Type=Application
+Categories=Development;Utility;GTK;
+Keywords=Claude;Codex;AI;agent;chat;T3;
+StartupNotify=true
+X-GNOME-UsesNotifications=false
