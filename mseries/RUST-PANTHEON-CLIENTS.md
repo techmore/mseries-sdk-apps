@@ -1,3 +1,13 @@
+## Reproducible Messages GTK test harness — 2026-10-22
+
+Run `bash rust/mseries-messages/test-gui.sh` to exercise the offline widget test
+under Xvfb/Cairo, temporary XDG directories and a private D-Bus with no service
+activation directories. The script cleans its temporary files and passes locally;
+the Messages CI workflow now installs Xvfb/xauth/D-Bus and runs it explicitly.
+Expected missing-portal/software-display warnings do not affect this widget-state
+check. CI execution, visual/accessibility and connected-phone acceptance remain
+unverified. The locally built Debian package remains uninstalled under build/.
+
 ## Messages isolated GTK recovery regression — 2026-10-22
 
 An opt-in ignored GTK test now constructs the real App, verifies offline compose
