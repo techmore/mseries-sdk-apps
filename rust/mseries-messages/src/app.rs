@@ -3846,6 +3846,60 @@ mod tests {
         assert!(app.sidebar.is_visible());
         assert!(app.detail.is_visible());
         assert!(!app.back_button.is_visible());
+        let wait_for_layout = |compact: bool| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while app.window.has_css_class("pantheon-compact") != compact {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "layout did not change: width={}, surface={:?}, mapped={}, visible={}, expected compact={compact}",
+                    app.window.width(),
+                    app.window
+                        .surface()
+                        .map(|surface| (surface.width(), surface.height())),
+                    app.window.is_mapped(),
+                    app.window.is_visible()
+                );
+                gtk::glib::MainContext::default().iteration(false);
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        };
+        let windows = std::process::Command::new("xdotool")
+            .args([
+                "search",
+                "--onlyvisible",
+                "--pid",
+                &std::process::id().to_string(),
+                "--name",
+                "^Messages$",
+            ])
+            .output()
+            .expect("xdotool");
+        assert!(windows.status.success());
+        let window_id = String::from_utf8(windows.stdout)
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap()
+            .to_string();
+        let resize = |width: &str| {
+            assert!(
+                std::process::Command::new("xdotool")
+                    .args(["windowsize", &window_id, width, "730"])
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        };
+        resize("520");
+        wait_for_layout(true);
+        assert!(!app.sidebar.is_visible());
+        assert!(app.detail.is_visible());
+        assert!(app.back_button.is_visible());
+        resize("1040");
+        wait_for_layout(false);
+        assert!(app.sidebar.is_visible());
+        assert!(app.detail.is_visible());
+        assert!(!app.back_button.is_visible());
         let buffer = app.editor.buffer();
         assert_eq!(
             buffer.text(&buffer.start_iter(), &buffer.end_iter(), false),

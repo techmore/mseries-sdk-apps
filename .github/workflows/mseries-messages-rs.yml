@@ -37,7 +37,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config cargo rustc libgtk-4-dev \
-            libgranite-7-dev desktop-file-utils appstream xvfb xauth dbus
+            libgranite-7-dev desktop-file-utils appstream xvfb xauth dbus xdotool
 
       - uses: actions/cache@v6
         with:

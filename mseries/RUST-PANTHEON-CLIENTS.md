@@ -36,9 +36,13 @@ inside the real send callback, with a five-second failure deadline. It proves
 the response was processed before asserting isolation; the fixed delay has been
 removed. The GTK scenario and strict all-target Messages Clippy pass.
 The GTK scenario also passes compact list/detail/Back visibility and regular
-two-pane restoration while retaining the composer draft. It explicitly applies
-layout classes; actual resize breakpoints, allocated bounds, enlarged text,
-light/dark visual review and assistive technology remain unqualified. CI execution, visual/accessibility and connected-phone acceptance remain
+two-pane restoration while retaining the composer draft. It also resizes the visible X11 app window to 520 and 1040 pixels and awaits
+the SDK’s compact/regular classes and matching pane visibility. The test passes
+on bare private Xvfb; xdotool is now a harness/CI dependency. An initial probe
+selected an auxiliary title-matching X11 window; restricting the search to
+visible windows resolved the false failure. GTK emits a transient zero-width
+GtkBox measurement warning during transitions; allocated content bounds,
+enlarged text, visual review and assistive technology remain unqualified. CI execution, visual/accessibility and connected-phone acceptance remain
 unverified. The locally built Debian package remains uninstalled under build/.
 
 ## Messages isolated GTK recovery regression — 2026-10-22
