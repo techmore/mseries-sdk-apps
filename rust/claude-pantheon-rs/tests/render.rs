@@ -146,6 +146,43 @@ fn main() {
         save_png(app.window(), path);
     }
 
+    // ---- permission card (synthetic pending approval) -----------------------------------------------
+    {
+        use claude_pantheon_rs::t3::model::TurnItem;
+        let item: TurnItem = serde_json::from_value(serde_json::json!({
+            "id": "item-1", "type": "approval_request", "status": "waiting", "requestId": "req-1",
+            "requestKind": "command", "prompt": "rm -rf build/\nand then rebuild", "reason": "The agent wants to run a command"
+        })).unwrap();
+        let answered = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let seen = answered.clone();
+        let widget = claude_pantheon_rs::chat::item_widget(&item, Some(std::rc::Rc::new(move |id: &str, decision: &str| {
+            seen.borrow_mut().push(format!("{id}:{decision}"));
+        }))).expect("a card");
+        let mut t = Vec::new();
+        texts(&widget, &mut t);
+        for expect in ["Run a command?", "rm -rf build/", "Allow Once", "Allow for This Thread", "Deny"] {
+            assert!(t.iter().any(|x| x.contains(expect)), "card shows '{expect}': {t:?}");
+        }
+        fn first_button(w: &gtk::Widget, label_text: &str) -> Option<gtk::Button> {
+            if let Some(b) = w.downcast_ref::<gtk::Button>()
+                && b.label().is_some_and(|l| l == label_text)
+            {
+                return Some(b.clone());
+            }
+            let mut child = w.first_child();
+            while let Some(c) = child {
+                if let Some(b) = first_button(&c, label_text) {
+                    return Some(b);
+                }
+                child = c.next_sibling();
+            }
+            None
+        }
+        first_button(&widget, "Allow for This Thread").expect("button").emit_clicked();
+        assert_eq!(answered.borrow().as_slice(), ["req-1:acceptForSession"]);
+        println!("permission card ok");
+    }
+
     // ---- milestone 2: live threads ------------------------------------------------------------
     if app.is_connected() {
         assert!(pump_until("the thread list", 30, || !app.threads().is_empty()), "the server sent threads");
