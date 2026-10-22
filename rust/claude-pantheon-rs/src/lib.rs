@@ -3,6 +3,7 @@
 //! The library exists so the render test can drive the real window; the app is `src/main.rs`.
 
 pub mod app;
+pub mod changes;
 pub mod chat;
 pub mod claude_cli;
 pub mod composer;

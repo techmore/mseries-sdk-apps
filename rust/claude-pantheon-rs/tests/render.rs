@@ -260,6 +260,17 @@ fn main() {
         pump(1300);
         println!("composer drafts ok");
 
+        // ---- changes page ------------------------------------------------------------------------------
+        app.show_changes();
+        assert!(pump_until("the diff", 60, || shown(&app)
+            .iter()
+            .any(|x| x.contains(" files · +") || x.contains("No file changes") || x.starts_with("Diff failed"))));
+        pump(200);
+        println!("changes page: {} files", app.changes_page().file_count());
+        app.select_id(&pick.id);
+        assert!(pump_until("the thread again", 60, || app.live_item_count() > 0));
+        pump(200);
+
         // ---- command palette (Ctrl+K) --------------------------------------------------------------
         let palette = app.palette();
         pump(200);

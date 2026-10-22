@@ -11,7 +11,7 @@ use crate::t3::model::{Provider, ServerConfig, Shell, ThreadShell, ThreadView, T
 use crate::t3::{self, Rpc, auth, ws::WsError};
 use crate::transcript::{self, Transcript};
 use crate::workflow::{self, Issue, PinnedRepo};
-use crate::{composer, diagnostics, handoff, notify, palette, repos, sidebar, usage};
+use crate::{changes, composer, diagnostics, handoff, notify, palette, repos, sidebar, usage};
 use futures_util::StreamExt;
 use granite::prelude::{PlaceholderExt, ToastExt};
 use gtk::{gdk, gio, glib, pango, prelude::*};
@@ -97,7 +97,7 @@ pub struct App {
     usage_page: usage::UsagePage,
     repos_page: Rc<repos::ReposPage>,
     diagnostics_page: Rc<diagnostics::DiagnosticsPage>,
-    changes: gtk::Box,
+    changes_page: Rc<changes::ChangesPage>,
     // state
     conn: RefCell<Option<Conn>>,
     sessions: RefCell<Vec<Session>>,
@@ -323,16 +323,7 @@ impl App {
         let usage_page = usage::UsagePage::new();
         let repos_page = Rc::new(repos::ReposPage::new());
         let diagnostics_page = Rc::new(diagnostics::DiagnosticsPage::new());
-        let changes = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        changes.set_margin_top(18);
-        changes.set_margin_bottom(18);
-        changes.set_margin_start(24);
-        changes.set_margin_end(24);
-        let changes_scroll = gtk::ScrolledWindow::builder()
-            .child(&changes)
-            .hscrollbar_policy(gtk::PolicyType::Never)
-            .vexpand(true)
-            .build();
+        let changes_page = changes::ChangesPage::new();
 
         let stack = gtk::Stack::new();
         stack.set_transition_type(gtk::StackTransitionType::Crossfade);
@@ -343,7 +334,7 @@ impl App {
         stack.add_named(usage_page.widget(), Some("usage"));
         stack.add_named(repos_page.widget(), Some("repos"));
         stack.add_named(diagnostics_page.widget(), Some("diagnostics"));
-        stack.add_named(&changes_scroll, Some("changes"));
+        stack.add_named(&changes_page.root, Some("changes"));
         stack.set_vexpand(true);
 
         let toast = granite::Toast::new("");
@@ -404,7 +395,7 @@ impl App {
             usage_page,
             repos_page,
             diagnostics_page,
-            changes,
+            changes_page,
             conn: RefCell::new(None),
             sessions: RefCell::new(Vec::new()),
             current_session: RefCell::new(None),
@@ -1861,6 +1852,11 @@ impl App {
                             self.run_finished();
                         }
                     }
+                    "checkpoint.captured" => {
+                        if let Some(live) = self.live.borrow_mut().as_mut() {
+                            live.view.checkpoints.push(payload.clone());
+                        }
+                    }
                     "thread.updated" | "thread.created" => {
                         if let Some(t) = payload.get("title").and_then(Value::as_str) {
                             self.title.set_text(t);
@@ -2518,52 +2514,47 @@ impl App {
     // ---- changes and diagnostics ------------------------------------------------------------------
 
     /// The full diff of the open thread's checkpoints, one collapsed row per file.
+    /// The Changes page: file tree, inline or side-by-side diff, per-hunk copy, restore to checkpoint.
     pub fn show_changes(self: &Rc<Self>) {
-        let (rpc, thread_id, turns) = {
+        let (rpc, thread_id, turns, checkpoints) = {
             let conn = self.conn.borrow();
             let live = self.live.borrow();
             match (conn.as_ref(), live.as_ref()) {
-                (Some(c), Some(l)) => (c.rpc.clone(), l.thread_id.clone(), l.view.runs.len()),
+                (Some(c), Some(l)) => {
+                    (c.rpc.clone(), l.thread_id.clone(), l.view.runs.len(), l.view.checkpoints.clone())
+                }
                 _ => {
                     self.toast("Open a live thread first.");
                     return;
                 }
             }
         };
-        while let Some(c) = self.changes.first_child() {
-            self.changes.remove(&c);
-        }
-        self.changes.append(&label("Reading the thread's diff…", &["dim-label"]));
-        self.show_page("changes");
         let app = self.clone();
-        glib::spawn_future_local(async move {
-            let payload = json!({"threadId": thread_id, "toTurnCount": turns.max(1)});
-            let result = rpc.call("orchestration.getFullThreadDiff", payload).await;
-            while let Some(c) = app.changes.first_child() {
-                app.changes.remove(&c);
-            }
-            match result {
-                Ok(v) => {
-                    let diff = v.get("diff").and_then(Value::as_str).unwrap_or("");
-                    if diff.trim().is_empty() {
-                        app.changes.append(&label("No file changes recorded for this thread.", &["dim-label"]));
+        let tid = thread_id.clone();
+        let rpc2 = rpc.clone();
+        self.changes_page.on_restore(Rc::new(move |scope, checkpoint| {
+            let app = app.clone();
+            let rpc = rpc2.clone();
+            let payload = json!({
+                "type": "checkpoint.rollback", "restoreFiles": true, "commandId": new_id(), "threadId": tid,
+                "scopeId": scope, "checkpointId": checkpoint,
+            });
+            glib::spawn_future_local(async move {
+                match rpc.call("orchestration.dispatchCommand", payload).await {
+                    Ok(_) => {
+                        app.toast("Restoring files to the checkpoint…");
+                        app.show_changes();
                     }
-                    for (file, body) in split_diff(diff) {
-                        let (adds, dels) = body.lines().fold((0, 0), |(a, d), l| {
-                            if l.starts_with('+') && !l.starts_with("+++") {
-                                (a + 1, d)
-                            } else if l.starts_with('-') && !l.starts_with("---") {
-                                (a, d + 1)
-                            } else {
-                                (a, d)
-                            }
-                        });
-                        app.changes.append(&chat::diff_row(&format!("{file}  +{adds} −{dels}"), body));
-                    }
+                    Err(e) => app.toast(&format!("Restore failed: {}", e.message())),
                 }
-                Err(e) => app.changes.append(&label(&format!("Diff failed: {}", e.message()), &["dim-label"])),
-            }
-        });
+            });
+        }));
+        self.show_page("changes");
+        self.changes_page.load(rpc, thread_id, turns, checkpoints);
+    }
+
+    pub fn changes_page(&self) -> &Rc<changes::ChangesPage> {
+        &self.changes_page
     }
 
     pub fn show_diagnostics(self: &Rc<Self>) {
@@ -2624,24 +2615,4 @@ fn load_css() {
     if let Some(display) = gdk::Display::default() {
         gtk::style_context_add_provider_for_display(&display, &provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
     }
-}
-
-/// Splits a unified diff into (file, hunk text) pairs on `diff --git` headers.
-pub fn split_diff(diff: &str) -> Vec<(String, String)> {
-    let mut out: Vec<(String, String)> = Vec::new();
-    for line in diff.lines() {
-        if let Some(rest) = line.strip_prefix("diff --git ") {
-            let file = rest.split_whitespace().nth(1).map(|b| b.trim_start_matches("b/")).unwrap_or(rest).to_string();
-            out.push((file, String::new()));
-            continue;
-        }
-        match out.last_mut() {
-            Some((_, body)) => {
-                body.push_str(line);
-                body.push('\n');
-            }
-            None => out.push(("changes".into(), format!("{line}\n"))),
-        }
-    }
-    out
 }

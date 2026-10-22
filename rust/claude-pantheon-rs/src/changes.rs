@@ -12,6 +12,9 @@ use sourceview5::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+/// Called with (scope id, checkpoint id) once the owner confirmed a restore.
+pub type RestoreHook = Rc<dyn Fn(String, String)>;
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FileDiff {
     pub path: String,
@@ -96,7 +99,7 @@ pub struct ChangesPage {
     checkpoints: RefCell<Vec<Value>>,
     thread_id: RefCell<Option<String>>,
     rpc: RefCell<Option<Rpc>>,
-    on_restore: RefCell<Option<Rc<dyn Fn(String, String)>>>,
+    on_restore: RefCell<Option<RestoreHook>>,
 }
 
 fn status_icon(status: &str) -> &'static str {
@@ -110,8 +113,16 @@ fn status_icon(status: &str) -> &'static str {
 
 impl ChangesPage {
     pub fn new() -> Rc<ChangesPage> {
-        let tree = gtk::ListBox::builder().selection_mode(gtk::SelectionMode::Single).css_classes(["navigation-sidebar"]).build();
-        let tree_scroll = gtk::ScrolledWindow::builder().child(&tree).hscrollbar_policy(gtk::PolicyType::Never).width_request(260).vexpand(true).build();
+        let tree = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::Single)
+            .css_classes(["navigation-sidebar"])
+            .build();
+        let tree_scroll = gtk::ScrolledWindow::builder()
+            .child(&tree)
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .width_request(260)
+            .vexpand(true)
+            .build();
         let view_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
         view_box.set_margin_top(12);
         view_box.set_margin_bottom(12);
@@ -135,7 +146,13 @@ impl ChangesPage {
         let restore_btn = gtk::MenuButton::builder().label("Restore to checkpoint…").build();
         restore_btn.set_sensitive(false);
         bar.append(&restore_btn);
-        let paned = gtk::Paned::builder().orientation(gtk::Orientation::Horizontal).start_child(&tree_scroll).end_child(&view_scroll).position(260).shrink_start_child(false).build();
+        let paned = gtk::Paned::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .start_child(&tree_scroll)
+            .end_child(&view_scroll)
+            .position(260)
+            .shrink_start_child(false)
+            .build();
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
         root.append(&bar);
         root.append(&paned);
@@ -172,7 +189,7 @@ impl ChangesPage {
     }
 
     /// Called with (scopeId, checkpointId) after the owner confirmed a restore.
-    pub fn on_restore(&self, f: Rc<dyn Fn(String, String)>) {
+    pub fn on_restore(&self, f: RestoreHook) {
         *self.on_restore.borrow_mut() = Some(f);
     }
 
@@ -213,11 +230,12 @@ impl ChangesPage {
             self.tree.append(&row);
         }
         let (adds, dels) = files.iter().fold((0, 0), |(a, d), f| (a + f.additions, d + f.deletions));
-        self.status.set_text(if files.is_empty() {
+        let summary = if files.is_empty() {
             "No file changes recorded for this thread.".to_string()
         } else {
             format!("{} files · +{adds} −{dels}", files.len())
-        });
+        };
+        self.status.set_text(&summary);
         *self.files.borrow_mut() = files;
         if let Some(first) = self.tree.row_at_index(0) {
             self.tree.select_row(Some(&first));
@@ -270,7 +288,11 @@ impl ChangesPage {
         let menu = gio::Menu::new();
         let mut shown = 0;
         for c in checkpoints.iter().rev().take(12) {
-            let (Some(id), Some(scope)) = (c.get("id").and_then(Value::as_str), c.get("scopeId").and_then(Value::as_str)) else { continue };
+            let (Some(id), Some(scope)) =
+                (c.get("id").and_then(Value::as_str), c.get("scopeId").and_then(Value::as_str))
+            else {
+                continue;
+            };
             if c.get("status").and_then(Value::as_str) != Some("ready") {
                 continue;
             }
@@ -335,7 +357,11 @@ fn diff_view(text: &str, class: Option<&str>) -> gtk::Widget {
     if let Some(c) = class {
         view.add_css_class(c);
     }
-    let scroll = gtk::ScrolledWindow::builder().child(&view).vscrollbar_policy(gtk::PolicyType::Never).propagate_natural_height(true).build();
+    let scroll = gtk::ScrolledWindow::builder()
+        .child(&view)
+        .vscrollbar_policy(gtk::PolicyType::Never)
+        .propagate_natural_height(true)
+        .build();
     scroll.upcast()
 }
 
