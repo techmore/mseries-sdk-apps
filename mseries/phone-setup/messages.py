@@ -32,7 +32,9 @@ from messages_style import build_style, missing_accent_names
 from messages_widgets import (AVATAR_PX, avatar, build_composer, build_notice, build_status, clear,
                               conversation_row, empty_state, favorite_tile, icon_for, identity_of,
                               label, photo_frame, render_messages)
-from message_pins import PinStore, profile_key, read_snapshot, suggested_matches, matched_state, ordered_keys, effective_choices
+from message_pins import (PinStore, profile_key, read_snapshot, suggested_matches, matched_state,
+                          ordered_keys, effective_choices, effective_pins, unresolved_imports,
+                          toggle_pin_state, default_state)
 
 _ = gettext.gettext
 ngettext = gettext.ngettext
@@ -95,7 +97,7 @@ class Messages(Gtk.Application):
         self.favorite_avatars = {}
         self.favorite_buttons = {}
         self.heading_signature = None
-        self.pin_state = dict(version=1, snapshot=None, choices=[])
+        self.pin_state = default_state()
         self.pin_profile = None
         self.pin_store = None
         self.pin_pending = False
@@ -510,7 +512,7 @@ class Messages(Gtk.Application):
 
     def populate(self):
         order = ordered_keys(self.threads, self.pin_state)
-        pinned = set(effective_choices(self.threads, self.pin_state))
+        pinned = set(effective_pins(self.threads, self.pin_state))
         # Avoid destroying focus/selection when a status poll changes nothing.
         def last(thread):
             return thread['messages'][-1] if thread['messages'] else {}
@@ -575,7 +577,7 @@ class Messages(Gtk.Application):
         if profile == self.pin_profile:
             return
         self.pin_profile = profile
-        self.pin_state = dict(version=1, snapshot=None, choices=[])
+        self.pin_state = default_state()
         self.pin_pending = True
         def load():
             store = PinStore(profile)
@@ -599,12 +601,51 @@ class Messages(Gtk.Application):
             self.pin_notice('')
             return
         stamp = datetime.fromisoformat(snapshot['captured_at']).astimezone().strftime('%x %X')
-        missing = sum(key not in self.threads for key in effective_choices(self.threads, self.pin_state))
+        missing = unresolved_imports(self.pin_state, self.threads)
         self.pin_notice((_('Pins from Mac · %s') % stamp) + (_(' · %d need matching') % missing if missing else ''))
         self.pin_note.set_tooltip_text(_('This is the Mac’s exported pin order. Changes on your iPhone require a new export. Review Imported Pins to match missing conversations.'))
         if snapshot.get('source_modified_at'):
             modified = datetime.fromisoformat(snapshot['source_modified_at']).astimezone().strftime('%x %X')
             self.pin_note.set_tooltip_text(self.pin_note.get_tooltip_text() + '\n' + (_('Apple pin settings last changed: %s') % modified))
+    def toggle_pin(self, key):
+        if self.pin_pending:
+            self.pin_notice(_('Favorites are still loading. Try again in a moment.'))
+            return
+        try:
+            new_state = toggle_pin_state(key, self.threads, self.pin_state)
+        except ValueError as error:
+            self.pin_notice(str(error))
+            return
+        if self.fixture:
+            self.pin_state = new_state
+            self.update_pin_note()
+            self.populate()
+            return
+        try:
+            profile = profile_key()
+        except ValueError:
+            self.pin_notice(_('Connect an iPhone before saving favorites.'))
+            return
+        if profile != self.pin_profile or self.pin_store is None:
+            self.pin_notice(_('Saved favorites are unavailable. Reopen Messages after connecting your iPhone.'))
+            return
+        self.pin_pending = True
+        def persist():
+            if profile_key() != profile:
+                raise RuntimeError('The connected phone changed')
+            return PinStore(profile).save(new_state)
+        def saved(result, error):
+            self.pin_pending = False
+            if profile != self.pin_profile:
+                return
+            if error:
+                self.pin_notice(_('Could not save that favorite. Your previous pins are kept.'))
+                return
+            self.pin_store, self.pin_state = PinStore(profile), result
+            self.update_pin_note()
+            self.populate()
+            self.load_photos()
+        self.task(persist, saved)
     def import_pins(self, *_args):
         chooser = Gtk.FileDialog(title=_('Import iPhone Pins'))
         file_filter = Gtk.FileFilter(name=_('Apple Messages pin export'))
@@ -684,7 +725,7 @@ class Messages(Gtk.Application):
         def save(*_args):
             try:
                 selected = [keys[d.get_selected()-1] if d.get_selected() else None for d in dropdowns]
-                new_state = matched_state(snapshot, selected, self.threads)
+                new_state = matched_state(snapshot, selected, self.threads, previous=self.pin_state)
                 profile = 'fixture' if self.fixture else profile_key()
             except ValueError as error:
                 error_label.set_label(str(error));error_label.set_visible(True);return
@@ -719,6 +760,10 @@ class Messages(Gtk.Application):
         actions = []
         if thread.get('unread_count') and not thread.get('inbox_only') and not thread.get('new'):
             actions.append((_('Mark as Read'), lambda: self.mark_read(thread)))
+        if thread.get('recipients') and not thread.get('new'):
+            pinned = thread['key'] in effective_pins(self.threads, self.pin_state)
+            text = _('Remove from Favorites') if pinned else _('Add to Favorites')
+            actions.append((text, lambda key=thread['key']: self.toggle_pin(key)))
         if thread.get('recipients'):
             address = ', '.join(thread['recipients'])
             actions.append((_('Copy Number or Address') if len(thread['recipients']) == 1 else _('Copy Numbers'),

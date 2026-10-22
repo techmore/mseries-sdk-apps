@@ -59,6 +59,13 @@ BlueFerry. The new window is a client of that existing daemon, not a competing M
 client. Advanced BlueFerry remains accessible from its menu. Setup now opens this
 native client once message access is ready.
 
+The **Favorites** section combines imported Mac pin order with local favorites.
+Use a conversation's right-click or long-press menu to add or remove it. Local
+favorites are stored per connected phone in the desktop keyring; they do not
+change the exported Apple snapshot or the iPhone. Direct-chat favorites follow a
+unique phone address when the backend promotes a recent inbox entry into its
+canonical conversation. Groups retain their backend identity.
+
 Drafts are kept per conversation while the window is open. Sending is explicit,
 shows pending/failure, prevents duplicate clicks, and keeps a failed draft for
 retry. The captured thread identity/roster token controls the send even if the
