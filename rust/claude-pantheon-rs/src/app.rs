@@ -470,7 +470,8 @@ impl App {
         let a = self.clone();
         self.provider_dd.connect_selected_notify(move |_| a.fill_models());
 
-        let actions: Vec<(&str, Box<dyn Fn(&Rc<App>)>)> = vec![
+        type Action = Box<dyn Fn(&Rc<App>)>;
+        let actions: Vec<(&str, Action)> = vec![
             ("usage", Box::new(|a| a.show_usage())),
             ("repos", Box::new(|a| a.show_repos())),
             ("changes", Box::new(|a| a.show_changes())),
