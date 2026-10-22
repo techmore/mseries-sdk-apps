@@ -1,3 +1,14 @@
+## Rust app package runtime requirements — 2026-10-22
+
+Messages, System Monitor and T3 Debian packages now require GTK 4.20 and
+Granite 7.8, matching the enabled Cargo API features and shared SDK. Previously
+the package metadata allowed GTK 4.12 and unversioned Granite, which could
+permit installation on unsupported runtimes. Both Granite package-name
+alternatives retain the same minimum version. Shell syntax and dependency
+version comparisons pass; this metadata correction does not qualify a live
+phone or desktop. Next: finish current build/package CI and the outstanding
+visual, keyboard/accessibility and owner-phone acceptance.
+
 # Rust Pantheon clients: T3, Signal and Messages
 
 ## Direction

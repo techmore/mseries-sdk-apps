@@ -37,7 +37,7 @@ Section: net
 Priority: optional
 Architecture: $arch
 Installed-Size: $installed_kb
-Depends: libgtk-4-1 (>= 4.12), libgranite-7-7 | libgranite7, libglib2.0-0, libsecret-tools
+Depends: libgtk-4-1 (>= 4.20), libgranite-7-7 (>= 7.8) | libgranite7 (>= 7.8), libglib2.0-0, libsecret-tools
 Suggests: blueferry
 Maintainer: elementaryos-mseries local build
 Homepage: https://github.com/techmore/ElementaryOS_MSeries
