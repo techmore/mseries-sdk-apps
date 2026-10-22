@@ -88,12 +88,24 @@ need runtime and phone acceptance.
 
 ## Signal
 
-The installed signed Signal Desktop remains the functional client while a
-first-party app boundary is investigated. Signal Desktop is officially
-distributed as an Electron/TypeScript application. Signal's `libsignal`
-repository says its client APIs are for Signal's own use and external use is
-unsupported. A Rust GTK shell alone would not provide supported access to
-Signal conversations, encrypted storage, attachments or sends.
+The selected path is the official signed Signal client with Pantheon
+integration. Ready PR [#525](https://github.com/techmore/ElementaryOS_MSeries/pull/525)
+keeps Signal's official Electron client and adds system-accent refresh for the
+mutable install, desktop launcher identity, and a Wingpanel tray host. Atomic
+releases retain upstream colors. Its checks pass; the PR does not replace
+Signal's UI with Rust or GTK.
+
+The screenshot shelf's actual compose preview, multiple images, paste fallback,
+and XWayland-to-Wayland acceptance remain open under
+[issue #227](https://github.com/techmore/ElementaryOS_MSeries/issues/227).
+The shelf's source-level retention and portal checks do not prove Signal
+attached the image.
+
+Signal Desktop is officially distributed as an Electron/TypeScript application.
+Signal's `libsignal` repository says its client APIs are for Signal's own use
+and external use is unsupported. A Rust GTK shell alone would not provide
+supported access to Signal conversations, encrypted storage, attachments or
+sends.
 
 Do not inspect or modify Signal's private profile/database, reimplement its
 protocol, or present a shell around the existing client as a native Signal

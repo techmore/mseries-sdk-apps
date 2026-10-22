@@ -100,7 +100,13 @@ it accepts bounded JPEG/PNG headers, scales in memory and leaves the user's
 existing opt-in unchanged. A Rust import of Apple pin snapshots also needs
 BlueFerry to publish a stable, opaque per-phone profile identifier through its
 supported status contract so the SDK can scope the Secret Service item. The
-Rust app must not read BlueFerry's private configuration to derive that key.
+pinned Messages API v2 status omits that identifier. BlueFerry's compatibility
+rules allow additive `GetStatus` keys without changing the API generation, so
+an upstream source update can expose the ID while keeping the existing
+interface. BlueFerry must create and own the stable ID for its configured
+phone; the Rust app must not read private configuration, hash a Bluetooth
+address, or infer a profile from conversation recipients. See BlueFerry's
+[pinned D-Bus API contract](https://github.com/erikwb/blueferry/blob/60fd7ef1abbd25947981f0cf27a521d82784a75f/docs/en/developer/dbus-api.md#compatibility).
 The Rust Messages preview now includes bounded public HTTPS image, GIF, and
 YouTube previews. Incoming links require an explicit load; sent links can load
 automatically. Downloads are DNS-pinned to validated public addresses, limited
