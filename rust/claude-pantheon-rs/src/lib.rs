@@ -11,6 +11,7 @@ pub mod handoff;
 pub mod index;
 pub mod look;
 pub mod markdown;
+pub mod notify;
 pub mod palette;
 pub mod probe;
 pub mod render;
