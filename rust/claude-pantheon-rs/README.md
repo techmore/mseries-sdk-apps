@@ -48,6 +48,7 @@ Other entry points:
 | Ctrl+Shift+T | Terminal pane for the open thread (the server's PTY, no local shell) |
 | Ctrl+Shift+S | SnapShot: screenshot through the portal, named after the focused window, attached to the draft |
 | Ctrl+plus / Ctrl+minus / Ctrl+0 | Text zoom (80–200 %, remembered; also in Settings → Appearance) |
+| Ctrl+Shift+V | Voice input: record, press again to stop; the words go into the draft, never sent |
 | Ctrl+Q | Quit |
 | Y / N | Allow once / deny the oldest waiting permission prompt (when not typing) |
 
@@ -177,3 +178,11 @@ HiDPI and the owner's font DPI are kept; the window was checked at `GDK_SCALE=2`
 the search field, the thread list and each chat item carry accessible names (chat items read as "You: …",
 "Assistant: …", "Tool call Bash: …", "Permission request: …"), and keyboard focus is outlined on list rows and flat
 buttons.
+
+## Voice input
+
+The composer's mic button (or Ctrl+Shift+V) records through PipeWire (`pw-record`, 16 kHz mono) until pressed again,
+transcribes locally with whisper.cpp (`sudo apt install whisper.cpp`; a `ggml-*.bin` model in
+`~/.local/share/claude-pantheon-rs/models` or named in Settings → Advanced) and inserts the words at the draft's cursor.
+It never sends: the owner reviews and presses Send. A transcript for a draft that changed hands meanwhile is dropped.
+Without whisper or a model the status line says what to install.

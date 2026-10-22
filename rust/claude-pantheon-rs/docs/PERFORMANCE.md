@@ -93,6 +93,7 @@ start-up probe; the table tracks drift per feature.
 | #482 | Webhook runner tasks (issues.labeled) and per-run provider rotation every 5 min (one list RPC) | 68 | 0.0 | 456 – 696 (machine at load 90 from other jobs) |
 | #485 | Shared GTK-PERFORMANCE-ASAHI.md, standalone checkouts retired (docs only) | 68 | 0.0 | 374 – 731 (machine at load 75 from other jobs) |
 | #486 | dev-clean script, timer and DEV-HYGIENE.md in-repo (no app change) | 65 | 0.0 | 481 – 782 (machine at load 65–80 from other jobs) |
+| #483 | Voice input: pw-record capture + whisper.cpp transcription into the draft (processes only while recording) | 68 | 0.0 | 840 – 1403 (machine at load 95 from other jobs; nothing voice-related runs before the first frame) |
 
 ## Reproduce
 

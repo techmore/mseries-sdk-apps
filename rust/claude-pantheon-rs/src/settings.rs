@@ -44,6 +44,16 @@ pub struct Settings {
     /// Text zoom factor (Ctrl+plus / Ctrl+minus / Ctrl+0), 0.8 – 2.0.
     #[serde(default = "default_zoom")]
     pub text_zoom: f64,
+    /// Path of the whisper.cpp ggml model for voice input; empty means "search the usual folders".
+    #[serde(default)]
+    pub voice_model: String,
+    /// Language code for whisper ("auto" detects).
+    #[serde(default = "default_voice_language")]
+    pub voice_language: String,
+}
+
+fn default_voice_language() -> String {
+    "auto".into()
 }
 
 fn default_zoom() -> f64 {
@@ -94,6 +104,8 @@ impl Default for Settings {
             dock_badge: true,
             renderer: default_renderer(),
             text_zoom: 1.0,
+            voice_model: String::new(),
+            voice_language: default_voice_language(),
         }
     }
 }
@@ -434,6 +446,37 @@ impl SettingsWindow {
             Some(&crate::look::tilde(&path().parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default())),
             &open_config,
         ));
+        let model = gtk::Entry::builder()
+            .text(&s.borrow().voice_model)
+            .placeholder_text("auto: ~/.local/share/claude-pantheon-rs/models/ggml-*.bin")
+            .hexpand(true)
+            .build();
+        model.update_property(&[gtk::accessible::Property::Label("Whisper model path")]);
+        let s4 = s.clone();
+        model.connect_changed(move |e| {
+            let mut st = s4.borrow_mut();
+            st.voice_model = e.text().trim().to_string();
+            st.save();
+        });
+        let avail = crate::voice::Availability::probe(Some(&s.borrow().voice_model));
+        let voice_note = if avail.ready() {
+            format!(
+                "Ready: {}",
+                crate::look::tilde(&avail.model.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default())
+            )
+        } else {
+            avail.hint()
+        };
+        advanced.append(&row("Voice input model", Some(&voice_note), &model));
+        let lang = gtk::Entry::builder().text(&s.borrow().voice_language).width_chars(6).build();
+        lang.update_property(&[gtk::accessible::Property::Label("Voice input language")]);
+        let s5 = s.clone();
+        lang.connect_changed(move |e| {
+            let mut st = s5.borrow_mut();
+            st.voice_language = e.text().trim().to_string();
+            st.save();
+        });
+        advanced.append(&row("Voice input language", Some("whisper language code; auto detects"), &lang));
         stack.add_titled(&advanced, Some("advanced"), "Advanced");
 
         window.present();

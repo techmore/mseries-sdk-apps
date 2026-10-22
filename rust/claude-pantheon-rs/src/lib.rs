@@ -27,6 +27,7 @@ pub mod t3;
 pub mod terminal;
 pub mod transcript;
 pub mod usage;
+pub mod voice;
 pub mod webview;
 pub mod winstate;
 pub mod workflow;

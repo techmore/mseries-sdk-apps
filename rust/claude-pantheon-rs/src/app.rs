@@ -13,7 +13,7 @@ use crate::transcript::{self, Transcript};
 use crate::workflow::{self, Issue, PinnedRepo};
 use crate::{
     changes, composer, diagnostics, environments, handoff, notify, palette, repos, settings, sidebar, skeleton,
-    snapshot, terminal, usage, winstate,
+    snapshot, terminal, usage, voice, winstate,
 };
 use futures_util::StreamExt;
 use granite::prelude::{PlaceholderExt, ToastExt};
@@ -134,6 +134,9 @@ pub struct App {
     environments: RefCell<environments::Environments>,
     env_states: RefCell<HashMap<String, environments::State>>,
     tunnel: RefCell<Option<environments::Tunnel>>,
+    // voice input
+    voice_rec: RefCell<Option<voice::Recorder>>,
+    voice_draft: RefCell<Option<Option<String>>>,
     palette: RefCell<Option<Rc<palette::Palette>>>,
     sidebar_cfg: RefCell<sidebar::SidebarConfig>,
     settings: Rc<RefCell<settings::Settings>>,
@@ -495,6 +498,8 @@ impl App {
             environments: RefCell::new(environments::Environments::load()),
             env_states: RefCell::new(HashMap::new()),
             tunnel: RefCell::new(None),
+            voice_rec: RefCell::new(None),
+            voice_draft: RefCell::new(None),
             palette: RefCell::new(None),
             sidebar_cfg: RefCell::new(sidebar::SidebarConfig::load()),
             settings: Rc::new(RefCell::new(settings::Settings::load())),
@@ -612,6 +617,7 @@ impl App {
             ("zoom-in", &["<Control>plus", "<Control>equal", "<Control>KP_Add"], Box::new(|a| a.zoom_by(0.1))),
             ("zoom-out", &["<Control>minus", "<Control>KP_Subtract"], Box::new(|a| a.zoom_by(-0.1))),
             ("zoom-reset", &["<Control>0", "<Control>KP_0"], Box::new(|a| a.zoom_to(1.0))),
+            ("voice", &["<Control><Shift>v"], Box::new(|a| a.toggle_voice())),
         ];
         for (name, what) in [
             ("thread-pin", "pin"),
@@ -952,6 +958,103 @@ impl App {
         self.entry.on_attach(Rc::new(move |bytes, name| a.upload_attachment(bytes, name)));
         let a = self.clone();
         self.entry.on_search(Rc::new(move |query, reply| a.search_project_files(query, reply)));
+        let a = self.clone();
+        self.entry.on_voice(Rc::new(move |active| {
+            let recording = a.voice_rec.borrow().is_some();
+            if active != recording {
+                a.toggle_voice();
+            }
+        }));
+    }
+
+    // ---- voice input -----------------------------------------------------------------------
+
+    pub fn is_recording(&self) -> bool {
+        self.voice_rec.borrow().is_some()
+    }
+
+    /// Ctrl+Shift+V / the mic button: start a recording, or stop it and transcribe into the draft.
+    pub fn toggle_voice(self: &Rc<Self>) {
+        if self.voice_rec.borrow().is_some() {
+            self.finish_voice();
+            return;
+        }
+        let model = self.settings.borrow().voice_model.clone();
+        let avail = voice::Availability::probe(Some(&model));
+        if !avail.ready() {
+            self.entry.set_voice_active(false);
+            self.entry.set_status(&format!("Voice input needs: {}", avail.hint()));
+            return;
+        }
+        match voice::start_recording() {
+            Ok(rec) => {
+                *self.voice_draft.borrow_mut() = Some(self.entry.draft_key());
+                *self.voice_rec.borrow_mut() = Some(rec);
+                self.entry.set_voice_active(true);
+                self.entry.set_status("Recording… press the mic or Ctrl+Shift+V to stop. Nothing is sent.");
+                // A recording left running is a mistake, not a dictation: stop after two minutes.
+                let app = self.clone();
+                glib::timeout_add_local_once(std::time::Duration::from_secs(120), move || {
+                    if app.voice_rec.borrow().is_some() {
+                        app.finish_voice();
+                    }
+                });
+            }
+            Err(e) => {
+                self.entry.set_voice_active(false);
+                self.entry.set_status(&format!("Could not start recording: {e}"));
+            }
+        }
+    }
+
+    fn finish_voice(self: &Rc<Self>) {
+        let Some(rec) = self.voice_rec.borrow_mut().take() else { return };
+        self.entry.set_voice_active(false);
+        let draft = self.voice_draft.borrow_mut().take().unwrap_or(None);
+        let seconds = rec.started.elapsed().as_secs_f64();
+        if seconds < 0.4 {
+            rec.cancel();
+            self.entry.set_status("");
+            return;
+        }
+        self.entry.set_status("Transcribing…");
+        let (model, language) = {
+            let s = self.settings.borrow();
+            (s.voice_model.clone(), s.voice_language.clone())
+        };
+        let app = self.clone();
+        glib::spawn_future_local(async move {
+            let wav = match rec.stop().await {
+                Ok(p) => p,
+                Err(e) => {
+                    app.entry.set_status(&format!("Recording failed: {e}"));
+                    return;
+                }
+            };
+            let Some(model) = voice::find_model(Some(&model)) else {
+                app.entry.set_status("No whisper model found.");
+                return;
+            };
+            let result = voice::transcribe(&wav, &model, &language).await;
+            let _ = std::fs::remove_file(&wav);
+            match result {
+                Ok(text) if text.trim().is_empty() => app.entry.set_status("Heard nothing."),
+                Ok(text) => app.insert_transcript(&text, draft),
+                Err(e) => app.entry.set_status(&format!("Transcription failed: {e}")),
+            }
+        });
+    }
+
+    /// Puts a transcript into the draft it was recorded for; a draft that changed hands keeps it out.
+    pub fn insert_transcript(&self, text: &str, draft: Option<String>) {
+        if self.entry.draft_key() != draft {
+            self.entry.set_status("Transcript dropped: the draft changed while it was being transcribed.");
+            return;
+        }
+        self.entry.insert_at_cursor(text);
+        let words = text.split_whitespace().count();
+        self.entry
+            .set_status(&format!("Transcribed {words} word{}; review, then send.", if words == 1 { "" } else { "s" }));
     }
 
     fn upload_attachment(self: &Rc<Self>, bytes: Vec<u8>, name: String) {
