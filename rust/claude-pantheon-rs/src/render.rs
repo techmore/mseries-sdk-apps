@@ -164,8 +164,14 @@ impl<'a> Builder<'a> {
             Tag::TableCell => {
                 self.markup.clear();
             }
-            Tag::FootnoteDefinition(_) | Tag::HtmlBlock | Tag::MetadataBlock(_) | Tag::DefinitionList
-            | Tag::DefinitionListTitle | Tag::DefinitionListDefinition | Tag::Superscript | Tag::Subscript => {}
+            Tag::FootnoteDefinition(_)
+            | Tag::HtmlBlock
+            | Tag::MetadataBlock(_)
+            | Tag::DefinitionList
+            | Tag::DefinitionListTitle
+            | Tag::DefinitionListDefinition
+            | Tag::Superscript
+            | Tag::Subscript => {}
         }
     }
 
@@ -352,14 +358,21 @@ pub fn code_widget(lang: &str, code: &str) -> gtk::Widget {
 
     let bar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     bar.add_css_class("code-bar");
-    let shown_lang = if lang.is_empty() { language.as_ref().map(|l| l.name().to_string()).unwrap_or_default() } else { lang.to_string() };
+    let shown_lang = if lang.is_empty() {
+        language.as_ref().map(|l| l.name().to_string()).unwrap_or_default()
+    } else {
+        lang.to_string()
+    };
     let tag = label(&shown_lang, &["caption", "dim-label", "code-lang"]);
     tag.set_hexpand(true);
     bar.append(&tag);
-    let wrap = gtk::ToggleButton::builder().icon_name("format-justify-left-symbolic").tooltip_text("Wrap long lines").build();
+    let wrap =
+        gtk::ToggleButton::builder().icon_name("format-justify-left-symbolic").tooltip_text("Wrap long lines").build();
     wrap.add_css_class("flat");
     let v = view.clone();
-    wrap.connect_toggled(move |b| v.set_wrap_mode(if b.is_active() { gtk::WrapMode::WordChar } else { gtk::WrapMode::None }));
+    wrap.connect_toggled(move |b| {
+        v.set_wrap_mode(if b.is_active() { gtk::WrapMode::WordChar } else { gtk::WrapMode::None })
+    });
     bar.append(&wrap);
     let copy = gtk::Button::builder().icon_name("edit-copy-symbolic").tooltip_text("Copy").build();
     copy.add_css_class("flat");
@@ -368,7 +381,9 @@ pub fn code_widget(lang: &str, code: &str) -> gtk::Widget {
         b.clipboard().set_text(&text);
         b.set_icon_name("emblem-ok-symbolic");
         let b2 = b.clone();
-        glib::timeout_add_local_once(std::time::Duration::from_millis(1200), move || b2.set_icon_name("edit-copy-symbolic"));
+        glib::timeout_add_local_once(std::time::Duration::from_millis(1200), move || {
+            b2.set_icon_name("edit-copy-symbolic")
+        });
     });
     bar.append(&copy);
 
@@ -401,7 +416,11 @@ pub fn apply_scheme(buffer: &sourceview5::Buffer) {
     #[allow(deprecated)]
     let dark = gtk::Settings::default().map(|s| s.is_gtk_application_prefer_dark_theme()).unwrap_or(false);
     let manager = sourceview5::StyleSchemeManager::default();
-    let wanted = if dark { ["Adwaita-dark", "solarized-dark", "classic-dark"] } else { ["Adwaita", "solarized-light", "classic"] };
+    let wanted = if dark {
+        ["Adwaita-dark", "solarized-dark", "classic-dark"]
+    } else {
+        ["Adwaita", "solarized-light", "classic"]
+    };
     for id in wanted {
         if let Some(scheme) = manager.scheme(id) {
             buffer.set_style_scheme(Some(&scheme));
