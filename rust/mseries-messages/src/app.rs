@@ -3764,6 +3764,8 @@ mod tests {
         </interface></node>"#).unwrap();
         let fixture_profile = std::rc::Rc::new(std::cell::RefCell::new(None::<String>));
         let reported_profile = fixture_profile.clone();
+        let api_version = std::rc::Rc::new(std::cell::Cell::new(2_u64));
+        let fixture_api_version = api_version.clone();
         let send_mode = std::rc::Rc::new(std::cell::Cell::new(0_u8));
         let fixture_send_mode = send_mode.clone();
         let switch_during_inbox = std::rc::Rc::new(std::cell::Cell::new(false));
@@ -3780,7 +3782,7 @@ mod tests {
                     return;
                 }
                 let json = match method {
-                    "GetStatus" => serde_json::json!({"api_version":2,"map":true,"phone_profile_id":*reported_profile.borrow()}).to_string(),
+                    "GetStatus" => serde_json::json!({"api_version":fixture_api_version.get(),"map":true,"phone_profile_id":*reported_profile.borrow()}).to_string(),
                     "ListThreads" => serde_json::json!([{
                         "key":"shared-key", "name":"Synthetic Contact",
                         "recipients":["+12025550123"], "reply_ready":true,
@@ -3898,6 +3900,28 @@ mod tests {
             app.state.borrow().outbox[1].status,
             super::OutboxStatus::OutcomeUnknown
         );
+        assert_eq!(
+            app.state.borrow().drafts["shared-key"],
+            "Synthetic uncertain draft"
+        );
+        api_version.set(99);
+        app.refresh_recent();
+        wait_for_refresh();
+        assert!(!app.backend_available.get());
+        assert!(!app.state.borrow().map_ready);
+        assert!(!app.send_button.is_sensitive());
+        assert!(app.status.has_css_class("warning"));
+        assert!(app.status.text().contains("API v2"));
+        assert_eq!(
+            app.state.borrow().drafts["shared-key"],
+            "Synthetic uncertain draft"
+        );
+        api_version.set(2);
+        app.refresh_recent();
+        wait_for_refresh();
+        assert!(app.backend_available.get());
+        assert!(app.state.borrow().map_ready);
+        assert!(!app.status.has_css_class("warning"));
         assert_eq!(
             app.state.borrow().drafts["shared-key"],
             "Synthetic uncertain draft"

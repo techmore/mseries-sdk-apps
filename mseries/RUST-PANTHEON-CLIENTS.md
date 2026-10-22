@@ -24,7 +24,10 @@ The fixture now handles checked sends locally with success, known-failure and
 unknown-outcome responses. The passing test verifies Transferred outbox state
 and cleared draft on success, removal of the failed bubble with draft retention,
 and retention of the uncertain bubble and draft. No real phone or recipient is
-reachable through this private-bus fixture. CI execution, visual/accessibility and connected-phone acceptance remain
+reachable through this private-bus fixture.
+The passing GTK fixture also advertises unsupported API v99, verifies the API-v2
+error, disabled sending and preserved draft, then restores v2 and verifies recovery.
+Strict combined SDK/Messages Clippy across all targets passes. CI execution, visual/accessibility and connected-phone acceptance remain
 unverified. The locally built Debian package remains uninstalled under build/.
 
 ## Messages isolated GTK recovery regression — 2026-10-22
