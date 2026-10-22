@@ -82,6 +82,7 @@ start-up probe; the table tracks drift per feature.
 | #466 | CI job: fmt --check, clippy -D warnings, tests; 8 clippy fixes (type aliases, while-let, collapsed ifs) | 58 | 0.0 | 194 – 269 |
 | #467 | HIG shortcuts, app menu with accelerator labels, Close Thread, About | 59 | 0.0 | 211 – 215 |
 | #468 | command palette (Ctrl+K) over threads, transcripts, projects, repos, issues and actions | 59 | 0.0 | 212 – 228 |
+| #469 | composer: 8-line growth, Enter sends, attachment chips (paste/drop, uploaded), @ file picker, drafts per thread | 59 | 0.0 | 213 – 230 |
 
 ## Reproduce
 

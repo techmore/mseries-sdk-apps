@@ -14,6 +14,12 @@ use std::rc::{Rc, Weak};
 
 const MAX_LINES: i32 = 8;
 
+/// Bytes and a name for a pasted or dropped attachment.
+pub type AttachHook = Rc<dyn Fn(Vec<u8>, String)>;
+/// Project-relative paths answering a picker query.
+pub type SearchReply = Rc<dyn Fn(Vec<String>)>;
+pub type SearchHook = Rc<dyn Fn(String, SearchReply)>;
+
 pub struct Composer {
     pub root: gtk::Box,
     pub view: gtk::TextView,
@@ -26,8 +32,8 @@ pub struct Composer {
     picker_paths: RefCell<Vec<String>>,
     picker_at: Cell<i32>,
     on_send: RefCell<Option<Rc<dyn Fn()>>>,
-    on_attach: RefCell<Option<Rc<dyn Fn(Vec<u8>, String)>>>,
-    on_search: RefCell<Option<Rc<dyn Fn(String, Rc<dyn Fn(Vec<String>)>)>>>,
+    on_attach: RefCell<Option<AttachHook>>,
+    on_search: RefCell<Option<SearchHook>>,
     draft_key: RefCell<Option<String>>,
     draft_timer: RefCell<Option<glib::SourceId>>,
     drafts: RefCell<HashMap<String, String>>,
@@ -57,7 +63,12 @@ impl Composer {
             .hexpand(true)
             .build();
         scroll.add_css_class("frame");
-        let chips = gtk::FlowBox::builder().selection_mode(gtk::SelectionMode::None).max_children_per_line(8).row_spacing(4).column_spacing(6).build();
+        let chips = gtk::FlowBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .max_children_per_line(8)
+            .row_spacing(4)
+            .column_spacing(6)
+            .build();
         chips.add_css_class("chips");
         chips.set_visible(false);
         let status = label("", &["caption", "dim-label"]);
@@ -70,12 +81,23 @@ impl Composer {
         // The @ picker: a popover anchored to the text view.
         let picker_entry = gtk::SearchEntry::builder().placeholder_text("File in this project…").build();
         let picker_list = gtk::ListBox::builder().selection_mode(gtk::SelectionMode::Single).build();
-        let picker_scroll = gtk::ScrolledWindow::builder().child(&picker_list).min_content_height(220).max_content_height(320).propagate_natural_height(true).hscrollbar_policy(gtk::PolicyType::Never).build();
+        let picker_scroll = gtk::ScrolledWindow::builder()
+            .child(&picker_list)
+            .min_content_height(220)
+            .max_content_height(320)
+            .propagate_natural_height(true)
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .build();
         let picker_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
         picker_box.set_width_request(420);
         picker_box.append(&picker_entry);
         picker_box.append(&picker_scroll);
-        let picker = gtk::Popover::builder().child(&picker_box).autohide(true).has_arrow(false).position(gtk::PositionType::Top).build();
+        let picker = gtk::Popover::builder()
+            .child(&picker_box)
+            .autohide(true)
+            .has_arrow(false)
+            .position(gtk::PositionType::Top)
+            .build();
         picker.set_parent(&view);
 
         let c = Rc::new(Composer {
@@ -94,7 +116,9 @@ impl Composer {
             on_search: RefCell::new(None),
             draft_key: RefCell::new(None),
             draft_timer: RefCell::new(None),
-            drafts: RefCell::new(std::fs::read(drafts_path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()),
+            drafts: RefCell::new(
+                std::fs::read(drafts_path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default(),
+            ),
             status,
             me: RefCell::new(Weak::new()),
         });
@@ -137,21 +161,35 @@ impl Composer {
                 clipboard.read_texture_async(gio::Cancellable::NONE, move |r| {
                     if let Ok(Some(texture)) = r {
                         let bytes = texture.save_to_png_bytes();
-                        me.attach_bytes(bytes.to_vec(), format!("pasted-{}.png", glib::DateTime::now_local().and_then(|d| d.format("%H%M%S")).map(|s| s.to_string()).unwrap_or_default()));
+                        me.attach_bytes(
+                            bytes.to_vec(),
+                            format!(
+                                "pasted-{}.png",
+                                glib::DateTime::now_local()
+                                    .and_then(|d| d.format("%H%M%S"))
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_default()
+                            ),
+                        );
                     }
                 });
                 view.stop_signal_emission_by_name("paste-clipboard");
             } else if formats.contains_type(gdk::FileList::static_type()) {
                 let me = me.clone();
-                clipboard.read_value_async(gdk::FileList::static_type(), glib::Priority::DEFAULT, gio::Cancellable::NONE, move |r| {
-                    if let Ok(v) = r
-                        && let Ok(list) = v.get::<gdk::FileList>()
-                    {
-                        for f in list.files() {
-                            me.attach_file(f);
+                clipboard.read_value_async(
+                    gdk::FileList::static_type(),
+                    glib::Priority::DEFAULT,
+                    gio::Cancellable::NONE,
+                    move |r| {
+                        if let Ok(v) = r
+                            && let Ok(list) = v.get::<gdk::FileList>()
+                        {
+                            for f in list.files() {
+                                me.attach_file(f);
+                            }
                         }
-                    }
-                });
+                    },
+                );
                 view.stop_signal_emission_by_name("paste-clipboard");
             }
         });
@@ -199,12 +237,12 @@ impl Composer {
 
     /// Called with the bytes and a name for every pasted or dropped attachment; the app uploads it
     /// and calls `add_attachment` when done.
-    pub fn on_attach(&self, f: Rc<dyn Fn(Vec<u8>, String)>) {
+    pub fn on_attach(&self, f: AttachHook) {
         *self.on_attach.borrow_mut() = Some(f);
     }
 
     /// Called with the picker query; the app answers through the callback with project-relative paths.
-    pub fn on_search(&self, f: Rc<dyn Fn(String, Rc<dyn Fn(Vec<String>)>)>) {
+    pub fn on_search(&self, f: SearchHook) {
         *self.on_search.borrow_mut() = Some(f);
     }
 
@@ -286,7 +324,11 @@ impl Composer {
         for (i, a) in list.iter().enumerate() {
             let chip = gtk::Box::new(gtk::Orientation::Horizontal, 4);
             chip.add_css_class("chip");
-            chip.append(&gtk::Image::from_icon_name(if a.is_image { "image-x-generic-symbolic" } else { "text-x-generic-symbolic" }));
+            chip.append(&gtk::Image::from_icon_name(if a.is_image {
+                "image-x-generic-symbolic"
+            } else {
+                "text-x-generic-symbolic"
+            }));
             let text = label(&format!("{} · {}", a.name, crate::look::size_text(a.size)), &["caption"]);
             chip.append(&text);
             let remove = gtk::Button::from_icon_name("window-close-symbolic");
@@ -320,26 +362,29 @@ impl Composer {
         let Some(f) = self.on_search.borrow().clone() else { return };
         let list = self.picker_list.clone();
         let me = self.me.borrow().clone();
-        f(query, Rc::new(move |results: Vec<String>| {
-            let Some(me) = me.upgrade() else { return };
-            while let Some(row) = list.row_at_index(0) {
-                list.remove(&row);
-            }
-            for p in &results {
-                let l = label(p, &[]);
-                l.set_ellipsize(pango::EllipsizeMode::Start);
-                l.set_margin_top(4);
-                l.set_margin_bottom(4);
-                l.set_margin_start(6);
-                let row = gtk::ListBoxRow::new();
-                row.set_child(Some(&l));
-                list.append(&row);
-            }
-            *me.picker_paths.borrow_mut() = results;
-            if let Some(first) = list.row_at_index(0) {
-                list.select_row(Some(&first));
-            }
-        }));
+        f(
+            query,
+            Rc::new(move |results: Vec<String>| {
+                let Some(me) = me.upgrade() else { return };
+                while let Some(row) = list.row_at_index(0) {
+                    list.remove(&row);
+                }
+                for p in &results {
+                    let l = label(p, &[]);
+                    l.set_ellipsize(pango::EllipsizeMode::Start);
+                    l.set_margin_top(4);
+                    l.set_margin_bottom(4);
+                    l.set_margin_start(6);
+                    let row = gtk::ListBoxRow::new();
+                    row.set_child(Some(&l));
+                    list.append(&row);
+                }
+                *me.picker_paths.borrow_mut() = results;
+                if let Some(first) = list.row_at_index(0) {
+                    list.select_row(Some(&first));
+                }
+            }),
+        );
     }
 
     fn pick_selected(&self) {
@@ -398,7 +443,11 @@ impl Composer {
         let Some(key) = self.draft_key.borrow().clone() else { return };
         let text = self.text();
         let mut drafts = self.drafts.borrow_mut();
-        let changed = if text.trim().is_empty() { drafts.remove(&key).is_some() } else { drafts.insert(key, text.clone()) != Some(text) };
+        let changed = if text.trim().is_empty() {
+            drafts.remove(&key).is_some()
+        } else {
+            drafts.insert(key, text.clone()) != Some(text)
+        };
         drop(drafts);
         if changed {
             self.save_drafts();
@@ -417,4 +466,3 @@ impl Composer {
         self.drafts.borrow().get(key).cloned()
     }
 }
-

@@ -26,6 +26,9 @@ fn main() -> gtk::glib::ExitCode {
     if args.first().map(String::as_str) == Some("--t3-dump") {
         return claude_pantheon_rs::probe::dump(args.get(1).cloned(), args.get(2).cloned());
     }
+    if args.first().map(String::as_str) == Some("--t3-attach") {
+        return claude_pantheon_rs::probe::attach(args.get(1).cloned().unwrap_or_default());
+    }
     if args.first().map(String::as_str) == Some("--t3-call") {
         return claude_pantheon_rs::probe::call(args.get(1).cloned().unwrap_or_default(), args.get(2).cloned());
     }

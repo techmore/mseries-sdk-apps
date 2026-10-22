@@ -60,7 +60,9 @@ impl From<WsError> for AttachError {
 /// `text/plain`; the server only accepts a few image types for the `image` kind.
 pub fn mime_for(name: &str, head: &[u8]) -> (String, bool) {
     let (content_type, _) = gio::content_type_guess(Some(Path::new(name)), head);
-    let mime = gio::content_type_get_mime_type(&content_type).map(|m| m.to_string()).unwrap_or_else(|| "application/octet-stream".into());
+    let mime = gio::content_type_get_mime_type(&content_type)
+        .map(|m| m.to_string())
+        .unwrap_or_else(|| "application/octet-stream".into());
     let is_image = matches!(mime.as_str(), "image/png" | "image/jpeg" | "image/gif" | "image/webp");
     (mime, is_image)
 }
@@ -78,12 +80,17 @@ pub async fn upload(server: &str, rpc: &Rpc, name: &str, bytes: Vec<u8>) -> Resu
         payload["type"] = json!("file");
     }
     let minted = rpc.call("attachments.createUploadUrl", payload).await.map_err(AttachError::Rpc)?;
-    let relative = minted.get("relativeUrl").and_then(Value::as_str).ok_or_else(|| AttachError::Http("no upload URL".into()))?;
+    let relative =
+        minted.get("relativeUrl").and_then(Value::as_str).ok_or_else(|| AttachError::Http("no upload URL".into()))?;
     let id = minted.get("attachmentId").and_then(Value::as_str).unwrap_or("").to_string();
     let url = format!("{}{}", server.trim_end_matches('/'), relative);
     let r = http::request("POST", &url, &[("Content-Type", &mime)], Some(&bytes)).await?;
     if r.status != 204 && r.status != 200 {
-        return Err(AttachError::Http(format!("upload answered {}: {}", r.status, r.body.chars().take(120).collect::<String>())));
+        return Err(AttachError::Http(format!(
+            "upload answered {}: {}",
+            r.status,
+            r.body.chars().take(120).collect::<String>()
+        )));
     }
     Ok(Attachment { id, name: name.to_string(), mime, size, is_image })
 }
@@ -92,7 +99,10 @@ pub async fn upload(server: &str, rpc: &Rpc, name: &str, bytes: Vec<u8>) -> Resu
 pub async fn upload_path(server: &str, rpc: &Rpc, path: &Path) -> Result<Attachment, AttachError> {
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "file".into());
     let p = path.to_path_buf();
-    let bytes = gio::spawn_blocking(move || std::fs::read(&p)).await.map_err(|_| AttachError::Io("read failed".into()))?.map_err(|e| AttachError::Io(e.to_string()))?;
+    let bytes = gio::spawn_blocking(move || std::fs::read(&p))
+        .await
+        .map_err(|_| AttachError::Io("read failed".into()))?
+        .map_err(|e| AttachError::Io(e.to_string()))?;
     upload(server, rpc, &name, bytes).await
 }
 
@@ -106,7 +116,8 @@ mod tests {
         assert_eq!(mime_for("shot.png", &png), ("image/png".to_string(), true));
         assert!(!mime_for("notes.md", b"# hi\n").1);
         assert_eq!(
-            Attachment { id: "a".into(), name: "n.txt".into(), mime: "text/plain".into(), size: 3, is_image: false }.to_json()["type"],
+            Attachment { id: "a".into(), name: "n.txt".into(), mime: "text/plain".into(), size: 3, is_image: false }
+                .to_json()["type"],
             "file"
         );
     }

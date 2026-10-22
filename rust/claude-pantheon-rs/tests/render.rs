@@ -168,6 +168,24 @@ fn main() {
         if let Some(path) = &shot_m2 {
             save_png(app.window(), path);
         }
+        // ---- composer: drafts per thread, attachment chips ---------------------------------------------
+        let first = pick.id.clone();
+        app.set_entry("half-written thought");
+        pump(1300); // the draft saves a second after the last change
+        let other = threads.iter().find(|t| t.id != first).cloned().expect("a second thread");
+        assert!(app.select_id(&other.id));
+        assert!(pump_until("the other thread", 60, || app.live_item_count() > 0 || app.page() == "chat"));
+        pump(300);
+        assert_eq!(app.composer().text(), "", "the other thread starts with an empty draft");
+        assert!(app.select_id(&first));
+        assert!(pump_until("the first thread again", 60, || app.live_item_count() > 0));
+        pump(300);
+        assert_eq!(app.composer().text(), "half-written thought", "the draft came back with its thread");
+        assert_eq!(app.composer().draft_for(&first).as_deref(), Some("half-written thought"));
+        app.set_entry("");
+        pump(1300);
+        println!("composer drafts ok");
+
         // ---- command palette (Ctrl+K) --------------------------------------------------------------
         let palette = app.palette();
         pump(200);

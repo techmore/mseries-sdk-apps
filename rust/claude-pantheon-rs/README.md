@@ -38,7 +38,7 @@ Other entry points:
 | Ctrl+N | New thread |
 | Ctrl+K | Command palette (the thread search until the palette lands) |
 | Ctrl+F | Search threads |
-| Ctrl+Enter | Send |
+| Enter | Send (Shift+Enter inserts a newline; Ctrl+Enter also sends) |
 | Ctrl+W | Close the thread |
 | Ctrl+Shift+U | Usage |
 | Ctrl+, | Settings |
@@ -47,6 +47,14 @@ Other entry points:
 The same actions sit in the app menu (header bar, right) with their accelerator labels, plus Repos
 and Issues, Changes, Diagnostics, Import Sessions, Hand Off to Repo, Open Offline Twin, Reconnect,
 Forget Pairing and About (version, server, providers ready).
+
+## Composer
+
+The message box grows to eight lines and then scrolls. Paste or drop images and files to attach
+them: each becomes a chip, uploaded through the server's `attachments.createUploadUrl` and sent with
+the message (10 attachments, 10 MB per image, 50 MB per file). Typing `@` opens a fuzzy picker over the
+thread's project (`projects.searchEntries`) and inserts `@path`. The draft is kept per thread in
+`~/.cache/claude-pantheon-rs/drafts.json` and comes back when the thread is reopened, across restarts.
 
 ## Pairing with the server
 
