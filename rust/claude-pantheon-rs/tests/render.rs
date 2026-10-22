@@ -123,6 +123,21 @@ fn main() {
         "tool rows show"
     );
     println!("opened offline '{}' ({} bytes)", pick.title, pick.size);
+    // Fenced code blocks render in GtkSourceView (the transcript has plenty).
+    fn has_type(widget: &gtk::Widget, name: &str) -> bool {
+        if widget.type_().name() == name {
+            return true;
+        }
+        let mut child = widget.first_child();
+        while let Some(c) = child {
+            if has_type(&c, name) {
+                return true;
+            }
+            child = c.next_sibling();
+        }
+        false
+    }
+    assert!(has_type(app.window().upcast_ref(), "GtkSourceView"), "a code block became a GtkSourceView");
     app.set_search("zzzz-nothing-matches");
     pump(100);
     app.set_search("");

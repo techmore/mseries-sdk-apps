@@ -96,3 +96,13 @@ levelbar.usage-gauge block.full { background: @error_color; }
 /* Composer attachments and the @ picker */
 .chips { margin: 0 2px; }
 .chip { padding: 2px 4px 2px 8px; border-radius: 12px; background: alpha(currentColor, 0.08); }
+
+/* Markdown */
+.md-quote { margin: 2px 0; }
+.md-quote-bar { min-width: 3px; background: alpha(@accent_color, 0.6); border-radius: 2px; }
+.md-table { padding: 4px 0; }
+.md-th { font-weight: 600; }
+.md-image { padding: 0; }
+.code-bar { padding: 2px 4px 0 12px; }
+.code-block { padding: 0; }
+.code-view { font-size: 0.95em; }
