@@ -133,9 +133,12 @@ The selected path is the official signed Signal client with Pantheon
 integration. Ready PR [#525](https://github.com/techmore/ElementaryOS_MSeries/pull/525)
 keeps Signal's official Electron client and adds system-accent refresh for the
 mutable install, desktop launcher identity, and a Wingpanel tray host. Atomic
-releases retain upstream colors. The current GitHub run has passing and pending
-checks, with no failures in the latest snapshot. The PR does not replace
-Signal's UI with Rust or GTK.
+releases retain upstream colors. All applicable checks for current head
+`b6ca6d24` pass. A throwaway, network-blocked Xvfb launch of Signal Desktop
+8.32.0-beta.1 showed its onboarding screen in light and dark modes after the
+Pantheon palette patch; the installed client was checked read-only and no
+account was opened. This verifies only onboarding, not composer or message
+states. The PR does not replace Signal's UI with Rust or GTK.
 
 The screenshot shelf's actual compose preview, multiple images, paste fallback,
 and XWayland-to-Wayland acceptance remain open under
