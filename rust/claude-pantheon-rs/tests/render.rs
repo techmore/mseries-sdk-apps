@@ -1,8 +1,7 @@
 //! Opens the real Claude window, waits for the offline index and (when a credential is stored) the T3
 //! server, drives it, checks what is shown and optionally writes PNGs. Needs a display:
 //!
-//!   dbus-run-session -- env -u WAYLAND_DISPLAY GDK_BACKEND=x11 GSETTINGS_BACKEND=memory GSK_RENDERER=cairo \
-//!     xvfb-run -a -s "-screen 0 1400x900x24" cargo test --release --test render
+//!   rust/claude-pantheon-rs/tests/run-render-sandbox.sh
 //!
 //! Environment:
 //!   CLAUDE_PANTHEON_SHOT=<file.png>      offline transcript view (milestone 1)
@@ -10,15 +9,61 @@
 //!   CLAUDE_PANTHEON_SHOT_M3=<file.png>   usage page (milestone 3)
 //!   CLAUDE_PANTHEON_SHOT_DIAG=<file.png> diagnostics page (milestone 4g)
 //!   CLAUDE_PANTHEON_SHOT_REPOS=<file.png> repos and issues (milestone 5), pinned repos from workflow.json
-//!   CLAUDE_PANTHEON_LIVE_SEND=1          start a real thread and wait for the answer (costs tokens)
+//!   CLAUDE_PANTHEON_LIVE_RENDER=1        opt in to the real home, keyring, T3 server and transcripts
+//!   CLAUDE_PANTHEON_LIVE_SEND=1           with LIVE_RENDER, send a real prompt (costs tokens)
+//!   CLAUDE_PANTHEON_LIVE_ROTATE=1         with LIVE_RENDER, may move a live runner task
+//!   CLAUDE_PANTHEON_TEST_MICROPHONE=1     start microphone capture during the voice probe
 //!   CLAUDE_PANTHEON_DARK=1               dark style
-//! Plain `main`, not libtest: GTK must stay on one thread.
+//! Plain `main`, not libtest: GTK must stay on one thread. The default run uses a temporary home,
+//! one checked-in transcript, and offline mode; live profile/server access needs explicit opt-in.
 
 use claude_pantheon_rs::app::App;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+
+struct TestHome(PathBuf);
+
+impl TestHome {
+    fn prepare() -> Self {
+        let home = std::env::temp_dir().join(format!("claude-pantheon-render-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let projects = home.join(".claude/projects/render-fixture");
+        std::fs::create_dir_all(&projects).expect("create temporary Claude project");
+        std::fs::write(
+            projects.join("offline-render-fixture.jsonl"),
+            include_str!("fixtures/offline-render-session.jsonl"),
+        )
+        .expect("write offline transcript fixture");
+        for name in ["config", "cache", "data", "state", "runtime"] {
+            std::fs::create_dir_all(home.join(name)).expect("create isolated XDG directory");
+        }
+        #[cfg(unix)]
+        std::fs::set_permissions(home.join("runtime"), std::os::unix::fs::PermissionsExt::from_mode(0o700))
+            .expect("restrict temporary runtime directory");
+        // SAFETY: this single-threaded integration harness sets process paths before GTK, GLib, Rayon,
+        // or any application worker is initialized. The process exits after the test.
+        unsafe {
+            std::env::set_var("HOME", &home);
+            std::env::set_var("XDG_CONFIG_HOME", home.join("config"));
+            std::env::set_var("XDG_CACHE_HOME", home.join("cache"));
+            std::env::set_var("XDG_DATA_HOME", home.join("data"));
+            std::env::set_var("XDG_STATE_HOME", home.join("state"));
+            std::env::set_var("XDG_RUNTIME_DIR", home.join("runtime"));
+            std::env::set_var("GSETTINGS_BACKEND", "memory");
+            std::env::set_var("GTK_USE_PORTAL", "0");
+            std::env::set_var("CLAUDE_PANTHEON_OFFLINE", "1");
+        }
+        Self(home)
+    }
+}
+
+impl Drop for TestHome {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
 
 fn pump(ms: u64) {
     let ctx = glib::MainContext::default();
@@ -80,6 +125,18 @@ fn save_png(window: &gtk::ApplicationWindow, path: &Path) {
 }
 
 fn main() {
+    if std::env::var("CLAUDE_PANTHEON_RENDER_TEST_SANDBOX").as_deref() != Ok("1") {
+        println!("SKIP: run tests/run-render-sandbox.sh for an isolated offline UI render");
+        return;
+    }
+    let live_render = std::env::var("CLAUDE_PANTHEON_LIVE_RENDER").as_deref() == Ok("1");
+    let _test_home = if live_render {
+        // SAFETY: see TestHome::prepare; this runs before GTK or application workers are initialized.
+        unsafe { std::env::remove_var("CLAUDE_PANTHEON_OFFLINE") };
+        None
+    } else {
+        Some(TestHome::prepare())
+    };
     if gtk::init().is_err() {
         eprintln!("FAIL: no display for GTK (run under xvfb-run)");
         std::process::exit(1);
@@ -92,7 +149,7 @@ fn main() {
     let shot = env("CLAUDE_PANTHEON_SHOT");
     let shot_m2 = env("CLAUDE_PANTHEON_SHOT_M2");
     let shot_m3 = env("CLAUDE_PANTHEON_SHOT_M3");
-    let live_send = std::env::var_os("CLAUDE_PANTHEON_LIVE_SEND").is_some();
+    let live_send = live_render && std::env::var("CLAUDE_PANTHEON_LIVE_SEND").as_deref() == Ok("1");
     #[allow(deprecated)]
     gtk::Settings::default()
         .expect("settings")
@@ -208,14 +265,15 @@ fn main() {
         app.insert_transcript("late words", Some("another-thread".into()));
         assert_eq!(app.composer().text(), "note: hello from the mic", "a transcript for another draft is dropped");
         app.composer().set_text("");
-        // The shortcut with nothing installed (or no PipeWire under Xvfb) reports instead of crashing.
-        app.toggle_voice();
-        pump(1200);
-        if app.is_recording() {
+        if std::env::var("CLAUDE_PANTHEON_TEST_MICROPHONE").as_deref() == Ok("1") {
             app.toggle_voice();
-            pump(1500);
+            pump(1200);
+            if app.is_recording() {
+                app.toggle_voice();
+                pump(1500);
+            }
+            assert!(!app.is_recording());
         }
-        assert!(!app.is_recording());
         println!("voice ok");
     }
 
@@ -350,22 +408,22 @@ fn main() {
         }
         println!("sidebar ok");
 
-        // ---- composer: drafts per thread, attachment chips ---------------------------------------------
-        let first = pick.id.clone();
+        // ---- composer: draft slots, attachment chips -------------------------------------------
+        // Use private keys so a live-render pass never overwrites or clears an owner's draft.
+        let first = format!("render-test-{}-first", std::process::id());
+        let other = format!("render-test-{}-other", std::process::id());
+        let composer = app.composer();
+        composer.set_draft_key(Some(first.clone()));
         app.set_entry("half-written thought");
         pump(1300); // the draft saves a second after the last change
-        let other = threads.iter().find(|t| t.id != first).cloned().expect("a second thread");
-        assert!(app.select_id(&other.id));
-        assert!(pump_until("the other thread", 60, || app.live_item_count() > 0 || app.page() == "chat"));
-        pump(300);
-        assert_eq!(app.composer().text(), "", "the other thread starts with an empty draft");
-        assert!(app.select_id(&first));
-        assert!(pump_until("the first thread again", 60, || app.live_item_count() > 0));
-        pump(300);
-        assert_eq!(app.composer().text(), "half-written thought", "the draft came back with its thread");
-        assert_eq!(app.composer().draft_for(&first).as_deref(), Some("half-written thought"));
+        composer.set_draft_key(Some(other));
+        assert_eq!(composer.text(), "", "a fresh draft slot starts empty");
+        composer.set_draft_key(Some(first.clone()));
+        assert_eq!(composer.text(), "half-written thought", "the saved draft comes back with its key");
+        assert_eq!(composer.draft_for(&first).as_deref(), Some("half-written thought"));
         app.set_entry("");
         pump(1300);
+        composer.set_draft_key(Some(pick.id.clone()));
         println!("composer drafts ok");
 
         // ---- terminal pane (the server's PTY) --------------------------------------------------------
@@ -463,11 +521,11 @@ fn main() {
         if let Some(path) = env("CLAUDE_PANTHEON_SHOT_REPOS") {
             save_png(app.window(), &path);
         }
-        // Rotation pass against the live task list (moves nothing unless a runner task sits on a
-        // provider with less capacity than the best one).
-        app.rotate_runners_now();
-        pump(1500);
-        println!("rotation pass ok");
+        if live_render && std::env::var("CLAUDE_PANTHEON_LIVE_ROTATE").as_deref() == Ok("1") {
+            app.rotate_runners_now();
+            pump(1500);
+            println!("rotation pass ok");
+        }
     } else {
         println!("not connected to a T3 server; live checks skipped");
     }
