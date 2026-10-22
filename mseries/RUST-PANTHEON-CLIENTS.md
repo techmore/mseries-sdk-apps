@@ -1,3 +1,14 @@
+## Native screenshot framebuffer readback core — 2026-10-22
+
+Added bounded renderer-owned framebuffer readback in ABGR8888/RGBA byte layout,
+with returned format/dimension checks and row-orientation conversion. The five
+screenshot selection/pixel tests pass in the actual compositor test executable;
+the native-drm build check passes. These are synthetic conversion tests, not
+GPU readback/image-orientation acceptance. Test linking completed in 6m30s under
+heavy host memory pressure (swap full); no duplicate build was started. Input,
+selection overlays, offscreen composition/native frame integration, PNG saving,
+sound and shelf publication remain to be wired. Nothing installed or restarted.
+
 ## Pantheon-R screenshot selection core — 2026-10-22
 
 Added the compositor screenshot selection model: normalized drag regions in
