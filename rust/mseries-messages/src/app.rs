@@ -111,6 +111,30 @@ struct State {
     map_ready: bool,
 }
 
+fn switch_phone_state(
+    current: &mut State,
+    parked: &mut HashMap<String, State>,
+    previous_profile: Option<&str>,
+    next_profile: Option<&str>,
+) {
+    let mut previous = std::mem::take(current);
+    previous.selected = None;
+    previous.pending.clear();
+    previous.map_ready = false;
+    previous.threads.retain(|thread| !thread.inbox_only);
+    for entry in &mut previous.outbox {
+        if entry.status == OutboxStatus::Sending {
+            entry.status = OutboxStatus::OutcomeUnknown;
+        }
+    }
+    if let Some(profile) = previous_profile {
+        parked.insert(profile.to_string(), previous);
+    }
+    *current = next_profile
+        .and_then(|profile| parked.remove(profile))
+        .unwrap_or_default();
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum OutboxStatus {
     Sending,
@@ -1405,23 +1429,12 @@ impl App {
                             app.recent_inbox_snapshot.replace(None);
                             app.recent_inbox_last_success.set(None);
                             app.recent_inbox_warning.replace(None);
-                            let mut previous = std::mem::take(&mut *app.state.borrow_mut());
-                            previous.selected = None;
-                            previous.pending.clear();
-                            previous.map_ready = false;
-                            previous.threads.retain(|thread| !thread.inbox_only);
-                            for entry in &mut previous.outbox {
-                                if entry.status == OutboxStatus::Sending {
-                                    entry.status = OutboxStatus::OutcomeUnknown;
-                                }
-                            }
-                            if let Some(profile) = app.pin_profile_id.borrow().as_ref() {
-                                app.parked_phone_states.borrow_mut().insert(profile.clone(), previous);
-                            }
-                            let restored = status.phone_profile_id.as_ref().and_then(|profile| {
-                                app.parked_phone_states.borrow_mut().remove(profile)
-                            }).unwrap_or_default();
-                            app.state.replace(restored);
+                            switch_phone_state(
+                                &mut app.state.borrow_mut(),
+                                &mut app.parked_phone_states.borrow_mut(),
+                                app.pin_profile_id.borrow().as_deref(),
+                                status.phone_profile_id.as_deref(),
+                            );
                             // No selection is active while clearing the previous editor text.
                             app.editor.buffer().set_text("");
                         }
@@ -3638,6 +3651,49 @@ fn normalize_recipient(input: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn phone_switch_preserves_drafts_without_sharing_or_retrying_sends() {
+        let mut state = super::State::default();
+        state
+            .drafts
+            .insert("same-key".into(), "phone A draft".into());
+        state.selected = Some("same-key".into());
+        state.pending.push("same-key".into());
+        state.map_ready = true;
+        state.outbox.push(super::OutboxMessage {
+            id: 1,
+            key: "same-key".into(),
+            body: "pending A".into(),
+            timestamp: String::new(),
+            baseline: 0,
+            status: super::OutboxStatus::Sending,
+        });
+        let mut parked = std::collections::HashMap::new();
+        super::switch_phone_state(&mut state, &mut parked, Some("A"), Some("B"));
+        assert!(state.drafts.is_empty());
+        assert!(state.outbox.is_empty());
+        state
+            .drafts
+            .insert("same-key".into(), "phone B draft".into());
+        super::switch_phone_state(&mut state, &mut parked, Some("B"), Some("A"));
+        assert_eq!(state.drafts["same-key"], "phone A draft");
+        assert_eq!(state.outbox[0].status, super::OutboxStatus::OutcomeUnknown);
+        assert!(state.pending.is_empty());
+        assert!(state.selected.is_none());
+        assert!(!state.map_ready);
+        assert_eq!(parked["B"].drafts["same-key"], "phone B draft");
+    }
+
+    #[test]
+    fn unidentified_drafts_are_not_assigned_to_an_identified_phone() {
+        let mut state = super::State::default();
+        state.drafts.insert("key".into(), "unknown phone".into());
+        let mut parked = std::collections::HashMap::new();
+        super::switch_phone_state(&mut state, &mut parked, None, Some("A"));
+        assert!(state.drafts.is_empty());
+        assert!(parked.is_empty());
+    }
+
     use super::*;
 
     #[test]

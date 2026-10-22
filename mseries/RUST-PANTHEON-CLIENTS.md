@@ -1,3 +1,12 @@
+## Messages phone-state regression coverage — 2026-10-22
+
+The production phone-state transition is now exercised by tests covering A/B
+phones with identical thread keys, separate draft restoration, cleared selection
+and pending flags, and unresolved sends restored as OutcomeUnknown. A second
+case verifies unidentified drafts are never assigned to a newly identified phone.
+All 16 Messages library tests pass. GTK callback/delayed-service interaction and
+live acceptance remain open; these tests qualify the state transition only.
+
 ## Messages per-phone session state — 2026-10-22
 
 On an observed phone change, Messages parks identified phones' in-memory drafts
