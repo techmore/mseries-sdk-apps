@@ -1,3 +1,15 @@
+## Native screenshot shelf backend capability — 2026-10-22
+
+Pantheon-R now advertises ScreenshotShelfPlacementVersion=1 on its existing
+DesktopIntegration D-Bus interface. The shelf queries the running service with
+NO_AUTO_START and a 500 ms bound, selects native Wayland when supported, and
+retains the Gala/XWayland fallback and explicit backend override. This closes
+an integration gap: the old detector recognized only patched Gala. Native-DRM
+cargo check and both shelf regression suites pass, including capability absence,
+invalid versions and explicit override. The PR #525 suite has 13 tests.
+The previously packaged compositor does not advertise this property; a new
+package is building. Live loading/DRM/Signal attachment acceptance remains open.
+
 ## Messages keyboard acceptance — 2026-10-22
 
 Actual X11 Ctrl+F/Escape input exposed GTK SearchEntry child-focus handling.
