@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=System Monitor
+Comment=Inspect CPU and memory use with btop
+Exec=mseries-system-monitor
+Icon=utilities-system-monitor
+Terminal=false
+Categories=GTK;System;Monitor;
+Keywords=cpu;memory;process;monitor;btop;
+StartupNotify=true

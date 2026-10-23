@@ -57,6 +57,9 @@ fn main() -> gtk::glib::ExitCode {
         .build();
     application.connect_startup(|_| {
         granite::init();
+        if let Some(display) = gtk::gdk::Display::default() {
+            mseries_pantheon_kit::install_css(&display);
+        }
         // GTK fades the text cursor with a frame-clock tick for ten seconds after every keystroke; with the
         // composer focused that kept the window repainting. A steady cursor costs nothing.
         if let Some(settings) = gtk::Settings::default() {

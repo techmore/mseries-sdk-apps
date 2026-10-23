@@ -231,6 +231,14 @@ impl Host {
                 glib::ControlFlow::Continue
             });
         }
+        if host.doc.borrow()["surfaces"][surface]["kind"] == "panel" {
+            let weak = Rc::downgrade(&host);
+            host.window.connect_realize(move |window| {
+                if let Some(h) = weak.upgrade() {
+                    crate::panel::attach(window, &h.doc.borrow()["surfaces"][&h.surface]);
+                }
+            });
+        }
         host.window.present();
         Some(host)
     }

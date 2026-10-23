@@ -149,7 +149,8 @@ impl P {
                 break;
             }
             let line = self.line();
-            let kw = self.word("a section keyword (app, needs, type, state, message, on, window ...)")?;
+            let kw = self
+                .word("a section keyword (app, needs, type, state, message, on, scope, entity, intent, window ...)")?;
             match kw.as_str() {
                 "app" => {
                     let name = self.name("the app's display name")?;
@@ -272,6 +273,19 @@ impl P {
                         .insert(msg, Value::Array(acts));
                     self.mark(&path, line);
                 }
+                "scope" => {
+                    let name = self.name("a scope name in quotes, like \"notes.create\"")?;
+                    let about = self.string("a one-sentence description of the scope")?;
+                    agent(&mut doc)
+                        .entry("scopes")
+                        .or_insert_with(|| json!({}))
+                        .as_object_mut()
+                        .expect("object")
+                        .insert(name.clone(), json!(about));
+                    self.mark(&format!("/agent/scopes/{name}"), line);
+                }
+                "entity" => self.entity(&mut doc, line)?,
+                "intent" => self.intent(&mut doc, line)?,
                 "window" | "dialog" | "popover" | "panel" | "fullscreen" => self.surface(&kw, &mut doc, line)?,
                 other => {
                     let kws: Vec<String> = [
@@ -285,6 +299,9 @@ impl P {
                         "feed",
                         "message",
                         "on",
+                        "scope",
+                        "entity",
+                        "intent",
                         "window",
                         "dialog",
                         "popover",
@@ -301,6 +318,103 @@ impl P {
             self.end_of_statement()?;
         }
         Ok(Value::Object(doc))
+    }
+
+    /// `entity Thread scope "chat.read" { title, project }`
+    fn entity(&mut self, doc: &mut Map<String, Value>, line: usize) -> R<()> {
+        let name = self.word("a record name")?;
+        let kw = self.word("`scope`")?;
+        if kw != "scope" {
+            return self.fail(format!("expected `scope`, found `{kw}`"));
+        }
+        let scope = self.name("a scope name in quotes")?;
+        self.expect('{')?;
+        let mut expose = vec![];
+        loop {
+            self.skip_nl();
+            while self.eat(',') {
+                self.skip_nl();
+            }
+            if self.eat('}') {
+                break;
+            }
+            expose.push(self.word("a field to expose")?);
+        }
+        agent(doc)
+            .entry("entities")
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+            .expect("object")
+            .insert(name.clone(), json!({ "scope": scope, "expose": expose }));
+        self.mark(&format!("/agent/entities/{name}"), line);
+        Ok(())
+    }
+
+    /// `intent Send(text: Text) { via Send  scope "chat.send"  risk external  confirm  verify "..."  about "..." }`
+    fn intent(&mut self, doc: &mut Map<String, Value>, line: usize) -> R<()> {
+        let name = self.word("an intent name")?;
+        let mut intent = Map::new();
+        if self.eat('(') {
+            let pname = self.word("a parameter name")?;
+            self.expect(':')?;
+            let ty = self.word("`Text` or `Bool`")?;
+            let ty = match ty.as_str() {
+                "Text" => "text",
+                "Bool" => "bool",
+                _ => return self.fail(format!("an intent parameter is `Text` or `Bool`, not `{ty}`")),
+            };
+            self.expect(')')?;
+            intent.insert("param".into(), json!({ "name": pname, "type": ty }));
+        }
+        self.expect('{')?;
+        loop {
+            self.skip_nl();
+            if self.eat('}') {
+                break;
+            }
+            let key = self.word("`via`, `scope`, `risk`, `confirm`, `show`, `verify` or `about`")?;
+            match key.as_str() {
+                "via" => {
+                    let m = self.word("a message name")?;
+                    if m != name {
+                        intent.insert("message".into(), json!(m));
+                    }
+                }
+                "scope" => {
+                    intent.insert("scope".into(), json!(self.name("a scope name in quotes")?));
+                }
+                "risk" => {
+                    intent.insert("risk".into(), json!(self.word("read, reversible, external or privileged")?));
+                }
+                "confirm" => {
+                    intent.insert("confirm".into(), json!(true));
+                }
+                "show" => {
+                    let keys = self.list(|p| p.word("a state key to show in the confirmation"))?;
+                    intent.insert("shows".into(), json!(keys));
+                }
+                "verify" => {
+                    intent.insert("verify".into(), json!(self.string("a sentence saying how the result is checked")?));
+                }
+                "about" => {
+                    intent.insert("about".into(), json!(self.string("a sentence describing the intent for an agent")?));
+                }
+                other => {
+                    self.i = self.i.saturating_sub(1);
+                    return self.fail(format!(
+                        "unknown intent property `{other}`; use via, scope, risk, confirm, show, verify, about"
+                    ));
+                }
+            }
+        }
+        agent(doc)
+            .entry("intents")
+            .or_insert_with(|| json!({}))
+            .as_object_mut()
+            .expect("object")
+            .insert(name.clone(), Value::Object(intent));
+        self.mark(&format!("/agent/intents/{name}"), line);
+        Ok(())
     }
 
     fn scalar_type(&mut self) -> R<String> {
@@ -857,6 +971,11 @@ impl P {
         }
         Ok(())
     }
+}
+
+/// The `agent` object of the document, created on first use.
+fn agent(doc: &mut Map<String, Value>) -> &mut Map<String, Value> {
+    doc.entry("agent").or_insert_with(|| json!({})).as_object_mut().expect("object")
 }
 
 fn number(n: f64) -> Value {

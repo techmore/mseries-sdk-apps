@@ -11,6 +11,7 @@ mod check;
 pub mod contrast;
 pub mod gate;
 pub mod inspect;
+pub mod intents;
 pub mod logic;
 pub mod schema;
 pub mod templates;

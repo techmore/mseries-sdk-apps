@@ -20,7 +20,12 @@ fn main() -> gtk::glib::ExitCode {
         .unwrap_or_else(|| PathBuf::from("/"));
 
     let application = gtk::Application::builder().application_id("org.techmore.mseries.DiskSpace").build();
-    application.connect_startup(|_| granite::init());
+    application.connect_startup(|_| {
+        granite::init();
+        if let Some(display) = gtk::gdk::Display::default() {
+            mseries_pantheon_kit::install_css(&display);
+        }
+    });
     application.connect_activate(move |application| {
         if let Some(existing) = application.active_window() {
             existing.present();

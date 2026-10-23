@@ -3,23 +3,23 @@
 @define-color ds_warn #d9791a;
 @define-color ds_full #c6262e;
 
-.ds-crumbs { padding: 4px 8px; }
-.ds-crumbs button { padding: 2px 8px; min-height: 24px; }
+.ds-crumbs { padding: 0.25em 0.5em; }
+.ds-crumbs button { padding: 0.12em 0.5em; min-height: 1.5em; }
 .ds-crumb-current { font-weight: 600; }
 
-.ds-legend { padding: 6px 12px 10px 12px; }
-.ds-sortbar { padding: 8px 12px; }
-.ds-actions { padding: 10px 12px; }
+.ds-legend { padding: 0.35em 0.7em 0.6em; }
+.ds-sortbar { padding: 0.45em 0.7em; }
+.ds-actions { padding: 0.6em 0.7em; }
 .ds-selection { font-weight: 500; }
-.ds-status { padding: 5px 12px; }
+.ds-status { padding: 0.3em 0.7em; }
 
 .ds-list { background: transparent; }
-.ds-row { padding: 6px 10px; }
+.ds-row { padding: 0.4em 0.6em; }
 .ds-name { font-weight: 500; }
 .ds-size { font-weight: 600; font-feature-settings: "tnum"; }
-.ds-more { padding: 10px 12px; }
+.ds-more { padding: 0.6em 0.7em; }
 
-.ds-side-row { padding: 4px 2px; }
+.ds-side-row { padding: 0.3em 0.15em; }
 
 progressbar.ds-bar trough { min-height: 4px; border-radius: 2px; }
 progressbar.ds-bar progress { min-height: 4px; border-radius: 2px; background: @ds_bar_accent; }

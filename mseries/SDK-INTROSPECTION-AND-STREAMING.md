@@ -4,6 +4,8 @@ Owner direction: the UI is a **human and agent first** experience. An agent must
 API for every app and its settings, built into the SDK; the UI should also be streamable, with WebRTC the preferred transport. The
 chat/support experience gets rebuilt on this SDK when it is done. This note defines the pieces and says what exists.
 
+> Agents do not use this API to act: they use typed, scoped intents declared in the description, see [SDK-AGENT-SURFACE.md](SDK-AGENT-SURFACE.md). L2 `click`/`type` stay a developer and accessibility tool.
+
 ## 1. Introspection API: a built-in "look inside" for every SDK app
 
 Like a browser's DevTools or an accessibility inspector, but part of the SDK: any running SDK app can be asked what it shows and

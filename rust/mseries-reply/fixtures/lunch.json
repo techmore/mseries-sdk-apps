@@ -1,0 +1,12 @@
+{
+  "app_id": "org.example.Chat",
+  "title": "Sam",
+  "marked": true,
+  "field": { "role": "text", "label": "Message", "declared_composer": true },
+  "header": "Sam",
+  "transcript": [
+    { "speaker": "Sam", "text": "Are we still on for lunch?" },
+    { "speaker": "Me", "from_owner": true, "text": "Yes, noon works." },
+    { "speaker": "Sam", "text": "Great. Thai place or the deli?" }
+  ]
+}

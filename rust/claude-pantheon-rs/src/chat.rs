@@ -35,6 +35,7 @@ pub fn mono(text: &str, classes: &[&str]) -> gtk::Label {
 pub fn user_bubble(text: &str) -> gtk::Box {
     let bubble = gtk::Box::new(gtk::Orientation::Vertical, 0);
     bubble.add_css_class("user-bubble");
+    bubble.add_css_class("pantheon-surface");
     bubble.set_halign(gtk::Align::End);
     bubble.set_margin_start(96);
     let l = gtk::Label::builder()
@@ -64,6 +65,7 @@ pub fn segment_widget(seg: &Segment) -> gtk::Widget {
             let frame = gtk::Box::new(gtk::Orientation::Vertical, 0);
             frame.add_css_class("code-block");
             frame.add_css_class("card");
+            frame.add_css_class("pantheon-surface");
             if !lang.is_empty() {
                 frame.append(&label(lang, &["caption", "dim-label", "code-lang"]));
             }
@@ -465,6 +467,7 @@ fn results_text(item: &TurnItem) -> String {
 fn card(title: &str) -> gtk::Box {
     let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
     card.add_css_class("card");
+    card.add_css_class("pantheon-surface");
     card.add_css_class("prompt-card");
     card.set_margin_end(48);
     card.append(&label(title, &["title-4"]));
@@ -519,6 +522,7 @@ fn approval_card(item: &TurnItem, decide: Option<Decide>) -> gtk::Widget {
     };
     let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
     card.add_css_class("card");
+    card.add_css_class("pantheon-surface");
     card.add_css_class("prompt-card");
     card.set_margin_end(48);
     let head = gtk::Box::new(gtk::Orientation::Horizontal, 8);

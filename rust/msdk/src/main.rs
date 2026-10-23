@@ -1,4 +1,4 @@
-//! `msdk check [--json] <file.ui.json>...`, `msdk schema`, `msdk components`, `msdk tokens [--json]`.
+//! `msdk check [--json] <file.ui.json>...`, `msdk agent-manifest <file> [--mcp]`, `msdk schema`, `msdk components`, `msdk tokens [--json]`.
 
 use std::process::ExitCode;
 
@@ -67,6 +67,7 @@ fn main() -> ExitCode {
             }
             if all.iter().all(|f| f.ok()) { ExitCode::SUCCESS } else { ExitCode::FAILURE }
         }
+        Some("agent-manifest") if args.len() > 1 => run_agent_manifest(&args[1..]),
         Some("fmt") if args.len() > 1 => run_fmt(&args[1..]),
         Some("render") if args.len() > 1 => run_render(&args[1..]),
         Some("text") if args.len() > 1 => convert(&args[1], true),
@@ -81,7 +82,7 @@ fn main() -> ExitCode {
         Some("new") if args.len() > 2 => run_new(&args[1..]),
         _ => {
             eprintln!(
-                "usage: msdk check [--json] <file.ui.json>...\n       msdk describe [Name] | explain <code> | complete <file> <json-pointer>\n       msdk gate <file.ui.json> [gates.json]\n       msdk render <file> [--surface NAME] [--state JSON] [--json]\n       msdk fmt [--check|--stdout] <file.msdk>... | text <file.ui.json> | json <file.msdk>\n       msdk templates | new <template> <dir> [--text] [--id ID] [--name NAME]\n       msdk schema | components | contrast [--json] | tokens [--json]"
+                "usage: msdk check [--json] <file.ui.json>...\n       msdk describe [Name] | explain <code> | complete <file> <json-pointer>\n       msdk gate <file.ui.json> [gates.json]\n       msdk agent-manifest <file> [--mcp] [--services f.json]\n       msdk render <file> [--surface NAME] [--state JSON] [--json]\n       msdk fmt [--check|--stdout] <file.msdk>... | text <file.ui.json> | json <file.msdk>\n       msdk templates | new <template> <dir> [--text] [--id ID] [--name NAME]\n       msdk schema | components | contrast [--json] | tokens [--json]"
             );
             ExitCode::from(2)
         }
@@ -139,6 +140,27 @@ fn run_check(args: &[String]) -> ExitCode {
         println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
     }
     if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+}
+
+/// `msdk agent-manifest <file> [--mcp] [--services f.json]`: what an agent may ask this app for, from its `agent` block.
+fn run_agent_manifest(args: &[String]) -> ExitCode {
+    load_services(args.first().map(String::as_str), args);
+    let doc = match load(&args[0]) {
+        Ok((d, _)) => d,
+        Err(e) => {
+            eprintln!("{}: {e}", args[0]);
+            return ExitCode::FAILURE;
+        }
+    };
+    let result =
+        if args.iter().any(|a| a == "--mcp") { msdk::intents::mcp_tools(&doc) } else { msdk::intents::manifest(&doc) };
+    match result {
+        Ok(v) => print_json(&v),
+        Err(e) => {
+            eprintln!("{}: {e}", args[0]);
+            ExitCode::FAILURE
+        }
+    }
 }
 
 fn run_gate(args: &[String]) -> ExitCode {

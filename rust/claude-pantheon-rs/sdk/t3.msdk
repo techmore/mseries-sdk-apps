@@ -101,6 +101,58 @@ on SetProvider { provider = $payload }
 on SetNotifications { notifications_on = $payload }
 on Reconnect { call t3.reconnect }
 
+// What an AI agent may ask this app for (design: mseries/SDK-AGENT-SURFACE.md). Deliberately NOT exposed: AllowOnce, Deny and
+// AllowOldest (an agent must never answer its own permission prompts), ToggleRunner (starts unattended work) and SetProvider.
+scope "chat.read" "See your thread list, their branches and what is waiting"
+scope "chat.history" "Read the messages inside your threads"
+scope "chat.navigate" "Switch between threads in the window"
+scope "chat.create" "Start new threads"
+scope "chat.compose" "Write into the message box without sending"
+scope "chat.send" "Send the drafted message to the selected thread"
+scope "usage.read" "See provider usage and limits"
+scope "work.read" "See your assigned issues"
+scope "work.start" "Start work on an issue"
+
+entity Thread scope "chat.read" { title, project, branch, provider, badge }
+entity Status scope "chat.read" { running, waiting, nearest, oldest_prompt }
+entity Line scope "chat.history" { kind, text }
+entity Account scope "usage.read" { name, status, session_pct, weekly_pct, session_text, weekly_text }
+entity Issue scope "work.read" { repo, number, title, lane, priority }
+
+intent NewThread {
+  scope "chat.create"
+  risk reversible
+  verify "a new thread exists and is the selected thread"
+  about "Start a new thread with the current provider."
+}
+intent SelectThread(thread: Text) {
+  scope "chat.navigate"
+  risk reversible
+  verify "the selected thread is the one requested"
+  about "Open the thread with the given id in the window."
+}
+intent EditDraft(text: Text) {
+  scope "chat.compose"
+  risk reversible
+  verify "the message box shows the text"
+  about "Replace the text in the message box. Nothing is sent."
+}
+intent Send {
+  scope "chat.send"
+  risk external
+  confirm
+  show selected, draft
+  verify "the message box is cleared and the message appears in the selected thread"
+  about "Send the current message-box text to the selected thread. The owner confirms the thread and the exact text first."
+}
+intent StartIssue(issue: Text) {
+  scope "work.start"
+  risk external
+  confirm
+  verify "a new thread for the issue is selected"
+  about "Route an issue with the local model and start a thread working on it."
+}
+
 window "Claude for elementary OS" {
   header {
     Tabs("Pages", bind: page, options: ["Chat", "Usage", "Work", "Settings"], onChange: SetPage)

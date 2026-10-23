@@ -257,6 +257,7 @@ impl ChangesPage {
         for (i, hunk) in f.hunks.iter().enumerate() {
             let hunk_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
             hunk_box.add_css_class("card");
+            hunk_box.add_css_class("pantheon-surface");
             hunk_box.add_css_class("code-block");
             let bar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
             bar.add_css_class("code-bar");

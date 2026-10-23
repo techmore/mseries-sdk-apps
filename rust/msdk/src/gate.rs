@@ -24,7 +24,7 @@ impl GateResult {
     }
 }
 
-fn builtin(doc: &Value) -> Vec<GateResult> {
+fn builtin(doc: &Value, gates: Option<&Value>) -> Vec<GateResult> {
     let errors: Vec<String> =
         check(doc).iter().filter(|d| d.severity == Severity::Error).map(|d| d.to_string()).collect();
     let mut out =
@@ -62,6 +62,60 @@ fn builtin(doc: &Value) -> Vec<GateResult> {
         passed: rust || missing.is_empty(),
         skipped: rust,
         details: if rust { vec!["logic is rust".into()] } else { missing },
+    });
+    out.extend(intent_gates(doc, gates));
+    out
+}
+
+/// With an `agent` block, every intent needs a scenario that names it (`"intent": "Send"`), and every text parameter must
+/// refuse hostile arguments before the message is sent.
+fn intent_gates(doc: &Value, gates: Option<&Value>) -> Vec<GateResult> {
+    let Some(intents) = doc.pointer("/agent/intents").and_then(Value::as_object).filter(|i| !i.is_empty()) else {
+        return vec![];
+    };
+    let covered: Vec<&str> =
+        gates.and_then(|g| g["gates"].as_array()).into_iter().flatten().filter_map(|g| g["intent"].as_str()).collect();
+    let missing: Vec<String> = intents
+        .keys()
+        .filter(|k| !covered.contains(&k.as_str()))
+        .map(|k| format!("intent `{k}` has no scenario with \"intent\": \"{k}\""))
+        .collect();
+    let mut out = vec![GateResult {
+        name: "every-intent-has-a-scenario".into(),
+        passed: missing.is_empty(),
+        skipped: false,
+        details: missing,
+    }];
+    let hostile = ["\u{0}", "\u{1b}[2J", "\u{202e}", &"x".repeat(crate::intents::MAX_TEXT_ARG + 1)];
+    let mut details = vec![];
+    match crate::intents::manifest(doc) {
+        Ok(m) => {
+            for (name, i) in m["intents"].as_object().into_iter().flatten() {
+                let Some((pname, schema)) = i["input"]["properties"].as_object().and_then(|p| p.iter().next()) else {
+                    continue;
+                };
+                if schema["type"] != "string" {
+                    continue;
+                }
+                for h in hostile {
+                    let args = json!({ pname.as_str(): h });
+                    if h != "\u{202e}" && crate::intents::validate_args(&m, name, &args).is_ok() {
+                        details
+                            .push(format!("intent `{name}` accepted a hostile argument ({} chars)", h.chars().count()));
+                    }
+                }
+                if crate::intents::validate_args(&m, name, &json!({ pname.as_str(): "ordinary text" })).is_err() {
+                    details.push(format!("intent `{name}` refused ordinary text"));
+                }
+            }
+        }
+        Err(e) => details.push(e),
+    }
+    out.push(GateResult {
+        name: "intent-arguments-are-bounded".into(),
+        passed: details.is_empty(),
+        skipped: false,
+        details,
     });
     out
 }
@@ -126,7 +180,7 @@ fn scenario(doc: &Value, g: &Value) -> GateResult {
 }
 
 pub fn run(doc: &Value, gates: Option<&Value>) -> Vec<GateResult> {
-    let mut out = builtin(doc);
+    let mut out = builtin(doc, gates);
     for g in gates.and_then(|g| g["gates"].as_array()).into_iter().flatten() {
         out.push(scenario(doc, g));
     }

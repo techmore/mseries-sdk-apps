@@ -179,6 +179,7 @@ impl DiagnosticsPage {
             let (cpu, rss) = hist.back().copied().unwrap_or((0.0, 0.0));
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
             row.add_css_class("card");
+            row.add_css_class("pantheon-surface");
             row.add_css_class("diag-row");
             let t = label(title, &["title-4"]);
             t.set_width_chars(18);

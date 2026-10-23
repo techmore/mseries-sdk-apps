@@ -7,15 +7,16 @@ staged, applied or rolled back, and the app turns a click into one fixed operati
 
 ```
 rust/mseries-update-core   status model (serde), the closed command set, and the root helper binary (no GUI deps)
-rust/mseries-updates       the GTK 4 + Granite 7 app (granite-rs); backend, window, tests
+rust/mseries-pantheon-kit  shared GTK/Granite app SDK and unprivileged updater CLI adapter
+rust/mseries-updates       the GTK 4 + Granite 7 app (granite-rs); window and presentation tests
 mseries/updates-app/       install.sh (dev install), test.sh (everything CI runs), this file
 ```
 
 ## How a click becomes a root action
 
-1. The window calls `Backend::run(Command)`. `Command` is `Check`, `Stage`, `Rollback` or `SwitchChannel(stable|dev)`;
+1. The window calls the SDK backend with `Command`. `Command` is `Check`, `Stage`, `Rollback` or `SwitchChannel(stable|dev)`;
    there is nothing else to call (no `init`, `config`, `apply --now`).
-2. The backend runs `pkexec /usr/libexec/mseries-updates/mseries-update-helper <op>`. polkit action
+2. The SDK adapter runs `pkexec /usr/libexec/mseries-updates/mseries-update-helper <op>`. polkit action
    `org.techmore.mseries.update` authorises exactly that program (its `exec.path`), with
    `auth_admin_keep` for the active session: an administrator password in the graphical prompt, no terminal and no `sudo`.
 3. The helper (a binary, because pkexec matches scripts by interpreter) re-parses the arguments against the same

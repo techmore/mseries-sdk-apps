@@ -1,0 +1,70 @@
+name: Rust Pantheon SDK and System Monitor
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev, main]
+    paths:
+      - "rust/mseries-pantheon-kit/**"
+      - "rust/mseries-system-monitor/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - ".github/workflows/rust-pantheon-system-monitor.yml"
+  pull_request:
+    paths:
+      - "rust/mseries-pantheon-kit/**"
+      - "rust/mseries-system-monitor/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - ".github/workflows/rust-pantheon-system-monitor.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-pantheon-system-monitor-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: SDK and System Monitor build/package (arm64)
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config cargo rustc rustfmt rust-clippy \
+            libgtk-4-dev libgranite-7-dev libvte-2.91-gtk4-dev \
+            desktop-file-utils appstream
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: rust-pantheon-system-monitor-${{ runner.arch }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: rust-pantheon-system-monitor-${{ runner.arch }}-
+
+      - name: Formatting and strict lint
+        run: |
+          cargo fmt --manifest-path rust/Cargo.toml -p mseries-pantheon-kit -p mseries-system-monitor --check
+          cargo clippy --manifest-path rust/Cargo.toml -p mseries-pantheon-kit -p mseries-system-monitor --locked -- -D warnings
+
+      - name: Build the Debian package
+        run: MSERIES_SYSTEM_MONITOR_OUTPUT_DIR="$RUNNER_TEMP/mseries-system-monitor" bash rust/mseries-system-monitor/build-deb.sh
+
+      - name: Validate desktop metadata
+        run: |
+          desktop-file-validate rust/mseries-system-monitor/data/org.techmore.mseries.SystemMonitor.desktop
+          appstreamcli validate --no-net rust/mseries-system-monitor/data/org.techmore.mseries.SystemMonitor.metainfo.xml
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mseries-system-monitor-deb-${{ github.run_id }}
+          path: ${{ runner.temp }}/mseries-system-monitor/*.deb
+          if-no-files-found: error

@@ -1,0 +1,95 @@
+name: Rust Pantheon Messages preview
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - "rust/mseries-messages/**"
+      - "rust/mseries-pantheon-kit/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - "mseries/phone-setup/message_pins.py"
+      - "mseries/phone-setup/messages_model.py"
+      - ".github/workflows/mseries-messages-rs.yml"
+  pull_request:
+    paths:
+      - "rust/mseries-messages/**"
+      - "rust/mseries-pantheon-kit/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - "mseries/phone-setup/message_pins.py"
+      - "mseries/phone-setup/messages_model.py"
+      - ".github/workflows/mseries-messages-rs.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mseries-messages-rs-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Rust Messages build and package (arm64)
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: erikwb/blueferry
+          ref: 60fd7ef1abbd25947981f0cf27a521d82784a75f
+          path: .pin-test-blueferry
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config cargo rustc libgtk-4-dev \
+            libgranite-7-dev desktop-file-utils appstream xvfb xauth dbus xdotool python3 libxtst6 gettext python3-gi gir1.2-secret-1 libsecret-tools gnome-keyring
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: messages-rs-${{ runner.arch }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: messages-rs-${{ runner.arch }}-
+
+      - name: Rust formatting and lint
+        run: |
+          cargo fmt --manifest-path rust/Cargo.toml -p mseries-messages -p mseries-pantheon-kit --check
+          cargo clippy --manifest-path rust/Cargo.toml -p mseries-messages -p mseries-pantheon-kit --all-targets --locked -- -D warnings
+
+      - name: Rust Messages and shared SDK unit tests
+        run: cargo test --manifest-path rust/Cargo.toml -p mseries-messages -p mseries-pantheon-kit --locked
+
+      - name: Validate translation template
+        run: |
+          python3 rust/mseries-messages/po/update.py
+          git diff --exit-code -- rust/mseries-messages/po/io.elementary.mseries.MessagesRust.pot
+          msgfmt --check-format -o "$RUNNER_TEMP/messages-template.mo" rust/mseries-messages/po/io.elementary.mseries.MessagesRust.pot
+
+      - name: Isolated Messages GTK recovery test
+        run: bash rust/mseries-messages/test-gui.sh
+
+      - name: Isolated Python and Rust favorites keyring round-trip
+        env:
+          PYTHONPATH: ${{ github.workspace }}/.pin-test-blueferry/src
+        run: bash rust/mseries-messages/test-keyring.sh
+
+      - name: Build and package
+        run: MSERIES_MESSAGES_OUTPUT_DIR="$RUNNER_TEMP/mseries-messages-rs" bash rust/mseries-messages/build-deb.sh
+
+      - name: Validate desktop metadata
+        run: |
+          desktop-file-validate rust/mseries-messages/data/io.elementary.mseries.MessagesRust.desktop
+          desktop-file-validate rust/mseries-messages/data/io.elementary.mseries.Conversations.desktop
+          appstreamcli validate --no-net rust/mseries-messages/data/io.elementary.mseries.MessagesRust.metainfo.xml
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mseries-messages-rs-deb-${{ github.run_id }}
+          path: ${{ runner.temp }}/mseries-messages-rs/*.deb
+          if-no-files-found: error

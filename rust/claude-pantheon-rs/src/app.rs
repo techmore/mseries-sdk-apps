@@ -72,6 +72,7 @@ struct Draft {
 
 pub struct App {
     window: gtk::ApplicationWindow,
+    dock_badge: mseries_pantheon_kit::DockBadge,
     // sidebar
     paned: gtk::Paned,
     list: gtk::ListBox,
@@ -201,7 +202,7 @@ impl App {
         let env_button =
             gtk::MenuButton::builder().child(&env_child).has_frame(false).tooltip_text("Environment").build();
         env_button.add_css_class("env-switch");
-        env_button.update_property(&[gtk::accessible::Property::Label("Environment")]);
+        mseries_pantheon_kit::set_accessible_label(&env_button, "Environment");
         status_box.append(&env_button);
         status_box.append(&status_icon);
         status_box.append(&status);
@@ -429,20 +430,21 @@ impl App {
             });
         }
         // Names for assistive technology on the controls whose only visible label is an icon or a hint.
-        new_chat.update_property(&[gtk::accessible::Property::Label("New Thread")]);
-        send_btn.update_property(&[gtk::accessible::Property::Label("Send")]);
-        stop_btn.update_property(&[gtk::accessible::Property::Label("Stop")]);
-        search.update_property(&[gtk::accessible::Property::Label("Search chats")]);
-        provider_dd.update_property(&[gtk::accessible::Property::Label("Provider")]);
-        model_dd.update_property(&[gtk::accessible::Property::Label("Model")]);
-        mode_dd.update_property(&[gtk::accessible::Property::Label("Permission mode")]);
-        list.update_property(&[gtk::accessible::Property::Label("Threads")]);
-        side.update_property(&[gtk::accessible::Property::Label("Sidebar")]);
+        mseries_pantheon_kit::set_accessible_label(&new_chat, "New Thread");
+        mseries_pantheon_kit::set_accessible_label(&send_btn, "Send");
+        mseries_pantheon_kit::set_accessible_label(&stop_btn, "Stop");
+        mseries_pantheon_kit::set_accessible_label(&search, "Search chats");
+        mseries_pantheon_kit::set_accessible_label(&provider_dd, "Provider");
+        mseries_pantheon_kit::set_accessible_label(&model_dd, "Model");
+        mseries_pantheon_kit::set_accessible_label(&mode_dd, "Permission mode");
+        mseries_pantheon_kit::set_accessible_label(&list, "Threads");
+        mseries_pantheon_kit::set_accessible_label(&side, "Sidebar");
         // Both header bars carry the window controls, so the real title bar stays hidden (elementary style).
         window.set_titlebar(Some(&gtk::Grid::builder().visible(false).build()));
 
         let app = Rc::new(App {
             window,
+            dock_badge: mseries_pantheon_kit::DockBadge::new(crate::APP_ID),
             paned,
             list,
             side_placeholder,
@@ -1797,12 +1799,12 @@ impl App {
     /// no fraction, so it sits at the half mark as a "working" indicator).
     fn refresh_launcher(&self) {
         if !self.settings.borrow().dock_badge {
-            notify::launcher_entry(0, None);
+            self.dock_badge.clear();
             return;
         }
         let running =
             self.conn.borrow().as_ref().map(|c| c.shell.threads.iter().filter(|t| t.is_running()).count()).unwrap_or(0);
-        notify::launcher_entry(running as i64, (running > 0).then_some(0.5));
+        self.dock_badge.update(running as u64, (running > 0).then_some(0.5));
     }
 
     /// Notifies about a thread only while the window is not the active one.

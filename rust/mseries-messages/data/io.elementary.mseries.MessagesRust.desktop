@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=Messages (Rust Preview)
+GenericName=Messages
+Comment=Native Pantheon client for BlueFerry conversations
+Exec=mseries-messages-rs
+Icon=io.elementary.mseries.Messages
+Terminal=false
+Type=Application
+Categories=Network;Chat;GTK;
+Keywords=iPhone;iMessage;SMS;BlueFerry;Pantheon;
+StartupNotify=true
+DBusActivatable=false
+X-MSeries-Chat=true
+X-MSeries-Chat-Adapter=blueferry

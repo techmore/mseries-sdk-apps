@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.techmore.mseries.SystemMonitor</id>
+  <name>System Monitor</name>
+  <summary>Inspect CPU and memory use with btop</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <description>
+    <p>A native Pantheon window for live CPU and memory use, with btop available for process-level detail.</p>
+  </description>
+  <developer id="io.elementary.mseries">
+    <name>elementary OS M-Series</name>
+  </developer>
+  <launchable type="desktop-id">org.techmore.mseries.SystemMonitor.desktop</launchable>
+  <url type="homepage">https://github.com/techmore/ElementaryOS_MSeries</url>
+  <url type="bugtracker">https://github.com/techmore/ElementaryOS_MSeries/issues</url>
+  <provides>
+    <binary>mseries-system-monitor</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-22">
+      <description><p>Initial native preview.</p></description>
+    </release>
+  </releases>
+</component>
