@@ -1,0 +1,47 @@
+{
+  "sdk": 1,
+  "app": { "id": "io.github.techmore.Template", "name": "Template Setup", "icon": "preferences-desktop" },
+  "state": { "step1": "bool", "step2": "bool", "step3": "bool", "name": "text", "agree": "bool", "can_continue": "bool", "summary": "text" },
+  "initial": { "step1": true },
+  "messages": { "EditName": "text", "SetAgree": "bool", "Next1": "none", "Back2": "none", "Next2": "none", "Back3": "none", "Finish": "none" },
+  "update": {
+    "EditName": [{ "set": "name", "to": "$payload" }, { "set": "can_continue", "to": true }],
+    "SetAgree": [{ "set": "agree", "to": "$payload" }],
+    "Next1": [{ "set": "step1", "to": false }, { "set": "step2", "to": true }],
+    "Back2": [{ "set": "step2", "to": false }, { "set": "step1", "to": true }],
+    "Next2": [{ "set": "step2", "to": false }, { "set": "step3", "to": true }, { "set": "summary", "to": "Welcome, {name}." }],
+    "Back3": [{ "set": "step3", "to": false }, { "set": "step2", "to": true }],
+    "Finish": [{ "toast": "All set" }, { "quit": true }]
+  },
+  "surfaces": {
+    "main": {
+      "kind": "window",
+      "title": "Template Setup",
+      "body": {
+        "type": "Box", "direction": "column", "spacing": "large",
+        "children": [
+          { "type": "Box", "direction": "column", "spacing": "medium", "visible_if": "step1", "children": [
+            { "type": "Text", "text": "What should we call you?", "text_style": "title" },
+            { "type": "Entry", "label": "Your name", "bind": "name", "on_change": "EditName" },
+            { "type": "Button", "label": "Next", "on": "Next1", "button_style": "suggested", "visible_if": "can_continue" }
+          ] },
+          { "type": "Box", "direction": "column", "spacing": "medium", "visible_if": "step2", "children": [
+            { "type": "Text", "text": "One more thing", "text_style": "title" },
+            { "type": "Switch", "label": "I agree to the terms", "bind": "agree", "on_change": "SetAgree" },
+            { "type": "Box", "direction": "row", "spacing": "small", "children": [
+              { "type": "Button", "label": "Back", "on": "Back2", "button_style": "flat" },
+              { "type": "Button", "label": "Next", "on": "Next2", "button_style": "suggested", "visible_if": "agree" }
+            ] }
+          ] },
+          { "type": "Box", "direction": "column", "spacing": "medium", "visible_if": "step3", "children": [
+            { "type": "Text", "text": "{summary}", "text_style": "title" },
+            { "type": "Box", "direction": "row", "spacing": "small", "children": [
+              { "type": "Button", "label": "Back", "on": "Back3", "button_style": "flat" },
+              { "type": "Button", "label": "Finish", "on": "Finish", "button_style": "suggested" }
+            ] }
+          ] }
+        ]
+      }
+    }
+  }
+}

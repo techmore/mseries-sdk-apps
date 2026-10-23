@@ -1,0 +1,33 @@
+{
+  "sdk": 1,
+  "app": { "id": "io.github.techmore.Template", "name": "Template Task Runner", "icon": "system-run" },
+  "capabilities": ["subprocess", "notifications"],
+  "state": { "idle": "bool", "running": "bool", "failed": "bool", "log": "text" },
+  "initial": { "idle": true },
+  "messages": { "Start": "none", "Done": "text", "Failed": "text" },
+  "update": {
+    "Start": [
+      { "set": "idle", "to": false }, { "set": "running", "to": true }, { "set": "failed", "to": false }, { "set": "log", "to": "" },
+      { "call": "process.run", "args": { "command": "echo preparing; sleep 1; echo finished" }, "then": "Done", "error": "Failed" }
+    ],
+    "Done": [{ "set": "running", "to": false }, { "set": "idle", "to": true }, { "set": "log", "to": "$payload" }, { "toast": "Finished" }],
+    "Failed": [{ "set": "running", "to": false }, { "set": "idle", "to": true }, { "set": "failed", "to": true }, { "set": "log", "to": "$payload" }]
+  },
+  "surfaces": {
+    "main": {
+      "kind": "window",
+      "title": "Template Task Runner",
+      "body": {
+        "type": "Box", "direction": "column", "spacing": "medium",
+        "children": [
+          { "type": "Box", "direction": "row", "spacing": "medium", "children": [
+            { "type": "Button", "label": "Run", "icon": "media-playback-start", "on": "Start", "button_style": "suggested", "visible_if": "idle" },
+            { "type": "Text", "text": "Running…", "text_style": "muted", "visible_if": "running" }
+          ] },
+          { "type": "Text", "text": "The task failed. Output below; press Run to try again.", "text_style": "caption", "visible_if": "failed" },
+          { "type": "Card", "title": "Output", "children": [{ "type": "Text", "text": "{log}", "text_style": "body" }] }
+        ]
+      }
+    }
+  }
+}

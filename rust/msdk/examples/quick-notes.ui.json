@@ -1,0 +1,49 @@
+{
+  "sdk": 1,
+  "app": { "id": "io.github.techmore.QuickNotes", "name": "Quick Notes", "icon": "accessories-text-editor" },
+  "capabilities": ["filesystem:data"],
+  "types": { "Note": { "id": "text", "title": "text", "when": "text", "body": "text" } },
+  "state": { "query": "text", "notes": "list<Note>", "selected": "text", "body": "text", "has_selection": "bool" },
+  "persist": ["notes", "selected"],
+  "messages": { "AddNote": "none", "DeleteNote": "none", "SelectNote": "text", "EditBody": "text", "Search": "text" },
+  "update": {
+    "AddNote": [
+      { "append": "notes", "record": { "id": "$id", "title": "New note", "when": "$now", "body": "" } },
+      { "set": "has_selection", "to": true }
+    ],
+    "DeleteNote": [
+      { "remove": "notes", "where": "{selected}" },
+      { "set": "has_selection", "to": false },
+      { "toast": "Note deleted" }
+    ],
+    "SelectNote": [{ "set": "selected", "to": "$payload" }, { "set": "has_selection", "to": true }],
+    "EditBody": [{ "set": "body", "to": "$payload" }, { "patch": "notes", "where": "{selected}", "fields": { "body": "$payload", "title": "$payload" } }],
+    "Search": [{ "set": "query", "to": "$payload" }]
+  },
+  "surfaces": {
+    "main": {
+      "kind": "window",
+      "title": "Quick Notes",
+      "header": [
+        { "type": "Button", "label": "New note", "icon": "list-add", "on": "AddNote", "shortcut": "Ctrl+N" },
+        { "type": "Button", "label": "Delete note", "icon": "edit-delete", "on": "DeleteNote", "button_style": "destructive", "confirm": "Delete this note?", "visible_if": "has_selection" }
+      ],
+      "body": {
+        "type": "Split",
+        "sidebar": {
+          "type": "Box", "direction": "column", "spacing": "small",
+          "children": [
+            { "type": "Entry", "label": "Search notes", "bind": "query", "entry_kind": "search", "on_change": "Search" },
+            {
+              "type": "List", "items": "notes", "key": "id", "on_select": "SelectNote",
+              "row": { "type": "Text", "text": "{title}", "text_style": "body" },
+              "empty": { "type": "EmptyState", "title": "No notes yet", "description": "Press Ctrl+N to write one.", "icon": "document-new",
+                         "action": { "type": "Button", "label": "New note", "on": "AddNote", "button_style": "suggested" } }
+            }
+          ]
+        },
+        "content": { "type": "Entry", "label": "Note text", "bind": "body", "entry_kind": "multiline", "on_change": "EditBody", "visible_if": "has_selection" }
+      }
+    }
+  }
+}

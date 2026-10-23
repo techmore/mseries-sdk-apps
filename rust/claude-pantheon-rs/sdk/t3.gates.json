@@ -1,0 +1,225 @@
+{
+ "gates": [
+  {
+   "name": "selecting a thread opens it on the chat page",
+   "steps": [
+    {
+     "send": "SetPage",
+     "payload": "Usage"
+    },
+    {
+     "send": "SelectThread",
+     "payload": "t1"
+    }
+   ],
+   "expect": [
+    {
+     "state": "selected",
+     "equals": "t1"
+    },
+    {
+     "state": "has_thread",
+     "equals": true
+    },
+    {
+     "state": "page",
+     "equals": "Chat"
+    },
+    {
+     "call": "t3.open"
+    }
+   ]
+  },
+  {
+   "name": "sending clears the draft and calls the server",
+   "steps": [
+    {
+     "send": "SelectThread",
+     "payload": "t1"
+    },
+    {
+     "send": "EditDraft",
+     "payload": "hello"
+    },
+    {
+     "send": "Send"
+    }
+   ],
+   "expect": [
+    {
+     "state": "draft",
+     "equals": ""
+    },
+    {
+     "call": "t3.send"
+    }
+   ]
+  },
+  {
+   "name": "nothing is sent without a thread",
+   "steps": [
+    {
+     "send": "EditDraft",
+     "payload": "hello"
+    },
+    {
+     "send": "Send"
+    }
+   ],
+   "expect": [
+    {
+     "state": "draft",
+     "equals": "hello"
+    }
+   ]
+  },
+  {
+   "name": "permission buttons answer the prompt",
+   "steps": [
+    {
+     "send": "AllowOnce",
+     "payload": "p1"
+    },
+    {
+     "send": "Deny",
+     "payload": "p2"
+    }
+   ],
+   "expect": [
+    {
+     "call": "t3.answer"
+    }
+   ]
+  },
+  {
+   "name": "an issue is routed before a thread starts",
+   "steps": [
+    {
+     "send": "StartIssue",
+     "payload": "i1"
+    }
+   ],
+   "expect": [
+    {
+     "state": "routing",
+     "equals": "Routing..."
+    },
+    {
+     "state": "pending_issue",
+     "equals": "i1"
+    },
+    {
+     "call": "router.route"
+    }
+   ]
+  },
+  {
+   "name": "the routing plan starts the thread",
+   "steps": [
+    {
+     "send": "StartIssue",
+     "payload": "i1"
+    },
+    {
+     "send": "Routed",
+     "payload": "claude, lane:build"
+    },
+    {
+     "send": "Started",
+     "payload": "t9"
+    }
+   ],
+   "expect": [
+    {
+     "call": "t3.start_issue"
+    },
+    {
+     "state": "selected",
+     "equals": "t9"
+    },
+    {
+     "toast": "Started"
+    }
+   ]
+  },
+  {
+   "name": "a routing failure is explained",
+   "steps": [
+    {
+     "send": "RouteFailed",
+     "payload": "no model"
+    }
+   ],
+   "expect": [
+    {
+     "state": "routing",
+     "equals": "no model"
+    },
+    {
+     "toast": "Could not route that issue"
+    }
+   ]
+  },
+  {
+   "name": "the tabs switch pages",
+   "steps": [
+    {
+     "send": "SetPage",
+     "payload": "Work"
+    }
+   ],
+   "expect": [
+    {
+     "state": "page",
+     "equals": "Work"
+    }
+   ]
+  },
+  {
+   "name": "the runner switch tells the server",
+   "steps": [
+    {
+     "send": "ToggleRunner",
+     "payload": true
+    }
+   ],
+   "expect": [
+    {
+     "state": "runner_on",
+     "equals": true
+    },
+    {
+     "call": "t3.runner"
+    }
+   ]
+  },
+  {
+   "name": "a new thread uses the chosen provider and then opens",
+   "steps": [
+    {
+     "send": "SetProvider",
+     "payload": "codex"
+    },
+    {
+     "send": "NewThread"
+    },
+    {
+     "send": "ThreadCreated",
+     "payload": "t7"
+    }
+   ],
+   "expect": [
+    {
+     "call": "t3.new_thread"
+    },
+    {
+     "state": "selected",
+     "equals": "t7"
+    },
+    {
+     "call": "t3.open"
+    }
+   ]
+  }
+ ]
+}

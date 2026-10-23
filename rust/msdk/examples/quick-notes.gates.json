@@ -1,0 +1,16 @@
+{
+  "gates": [
+    { "name": "adding a note creates and selects it",
+      "steps": [{ "send": "AddNote" }],
+      "expect": [{ "list": "notes", "length": 1 }, { "list": "notes", "item": { "title": "New note" } }, { "state": "has_selection", "equals": true }] },
+    { "name": "editing the body renames the selected note",
+      "steps": [{ "send": "AddNote" }, { "set": "selected", "to": "x" }, { "send": "EditBody", "payload": "hello" }],
+      "expect": [{ "state": "body", "equals": "hello" }] },
+    { "name": "searching stores the query",
+      "steps": [{ "send": "Search", "payload": "milk" }],
+      "expect": [{ "state": "query", "equals": "milk" }] },
+    { "name": "deleting clears the selection and says so",
+      "steps": [{ "send": "AddNote" }, { "send": "DeleteNote" }],
+      "expect": [{ "state": "has_selection", "equals": false }, { "toast": "Note deleted" }] }
+  ]
+}

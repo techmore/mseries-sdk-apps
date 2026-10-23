@@ -1,0 +1,6 @@
+{ "gates": [
+  { "name": "starts with the defaults", "steps": [], "expect": [{ "state": "enabled", "equals": true }, { "state": "schedule", "equals": "Weekdays" }] },
+  { "name": "switching off is remembered and confirmed", "steps": [{ "send": "SetEnabled", "payload": false }], "expect": [{ "state": "enabled", "equals": false }, { "toast": "Saved" }] },
+  { "name": "choosing a schedule stores it", "steps": [{ "send": "SetSchedule", "payload": "Manual" }], "expect": [{ "state": "schedule", "equals": "Manual" }] },
+  { "name": "reset restores the defaults", "steps": [{ "send": "SetEnabled", "payload": false }, { "send": "Reset" }], "expect": [{ "state": "enabled", "equals": true }, { "toast": "Settings reset" }] }
+] }

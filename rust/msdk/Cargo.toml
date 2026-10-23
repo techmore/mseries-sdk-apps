@@ -1,0 +1,17 @@
+[package]
+name = "msdk"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-only"
+description = "Phase 1 core of the M-series app SDK: the closed UI vocabulary and `msdk check`; no GUI dependencies"
+
+[lib]
+name = "msdk"
+
+[[bin]]
+name = "msdk"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = { version = "1", features = ["preserve_order"] }

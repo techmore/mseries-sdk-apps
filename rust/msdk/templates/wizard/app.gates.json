@@ -1,0 +1,6 @@
+{ "gates": [
+  { "name": "starts on the first step", "steps": [], "expect": [{ "state": "step1", "equals": true }, { "state": "step2", "equals": false }] },
+  { "name": "typing a name allows continuing", "steps": [{ "send": "EditName", "payload": "Sam" }], "expect": [{ "state": "can_continue", "equals": true }] },
+  { "name": "the flow reaches the summary", "steps": [{ "send": "EditName", "payload": "Sam" }, { "send": "Next1" }, { "send": "SetAgree", "payload": true }, { "send": "Next2" }], "expect": [{ "state": "step3", "equals": true }, { "state": "summary", "equals": "Welcome, Sam." }] },
+  { "name": "back returns without losing the name", "steps": [{ "send": "EditName", "payload": "Sam" }, { "send": "Next1" }, { "send": "Back2" }], "expect": [{ "state": "step1", "equals": true }, { "state": "name", "equals": "Sam" }] }
+] }

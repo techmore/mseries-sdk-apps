@@ -1,0 +1,36 @@
+{
+  "sdk": 1,
+  "app": { "id": "io.github.techmore.Template", "name": "Template Dashboard", "icon": "utilities-system-monitor" },
+  "capabilities": ["subprocess"],
+  "types": { "Reading": { "id": "text", "name": "text", "value": "text" } },
+  "state": { "readings": "list<Reading>", "refreshes": "number", "error": "text", "has_error": "bool" },
+  "messages": { "Refresh": "none", "GotLoad": "text", "GotUptime": "text", "Failed": "text" },
+  "update": {
+    "Refresh": [
+      { "add": "refreshes", "by": 1 },
+      { "set": "has_error", "to": false },
+      { "call": "process.run", "args": { "command": "cut -d' ' -f1-3 /proc/loadavg" }, "then": "GotLoad", "error": "Failed" },
+      { "call": "process.run", "args": { "command": "uptime -p" }, "then": "GotUptime", "error": "Failed" }
+    ],
+    "GotLoad": [{ "remove": "readings", "where": "load" }, { "append": "readings", "record": { "id": "load", "name": "Load average", "value": "$payload" } }],
+    "GotUptime": [{ "remove": "readings", "where": "uptime" }, { "append": "readings", "record": { "id": "uptime", "name": "Uptime", "value": "$payload" } }],
+    "Failed": [{ "set": "error", "to": "$payload" }, { "set": "has_error", "to": true }]
+  },
+  "surfaces": {
+    "main": {
+      "kind": "window",
+      "title": "Template Dashboard",
+      "header": [{ "type": "Button", "label": "Refresh", "icon": "view-refresh", "on": "Refresh", "shortcut": "Ctrl+R" }],
+      "body": {
+        "type": "Box", "direction": "column", "spacing": "medium",
+        "children": [
+          { "type": "Text", "text": "Updated {refreshes} time(s)", "text_style": "caption" },
+          { "type": "Text", "text": "{error}", "text_style": "caption", "visible_if": "has_error" },
+          { "type": "List", "items": "readings", "key": "id",
+            "row": { "type": "Card", "title": "{name}", "children": [{ "type": "Text", "text": "{value}", "text_style": "heading" }] },
+            "empty": { "type": "EmptyState", "title": "Nothing measured yet", "description": "Press Refresh to read the machine.", "icon": "utilities-system-monitor" } }
+        ]
+      }
+    }
+  }
+}

@@ -1,5 +1,5 @@
 [workspace]
-members = ["mseries-power", "granite-smoke", "pantheon-compositor", "mseries-update-core", "mseries-updates", "mseries-diskspace", "mseries-pantheon-kit", "mseries-ai", "mseries-messages", "mseries-system-monitor", "claude-pantheon-rs"]
+members = ["mseries-power", "granite-smoke", "pantheon-compositor", "mseries-update-core", "mseries-updates", "mseries-diskspace", "mseries-pantheon-kit", "mseries-ai", "mseries-messages", "mseries-system-monitor", "claude-pantheon-rs", "msdk", "msdk-gtk", "mseries-dock", "mseries-greeter"]
 resolver = "2"
 
 # Smaller, faster binaries for the session components (the compositor runs on
