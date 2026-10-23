@@ -1907,6 +1907,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mseries-broker"
+version = "0.1.0"
+dependencies = [
+ "msdk",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mseries-diskspace"
 version = "0.1.0"
 dependencies = [

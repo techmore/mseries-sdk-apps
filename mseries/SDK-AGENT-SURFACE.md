@@ -1,6 +1,6 @@
 # SDK agent surface: app intents, entitlements and consent (design, 2026-10-23)
 
-**Status: grammar, `msdk check` rules, `msdk agent-manifest` and the T3 port's agent block are built (section 7); the broker, grants and Settings page are not. Nothing is installed.** It joins two things that are already on `dev` but do not yet
+**Status: grammar, `msdk check` rules, `msdk agent-manifest`, the T3 port's agent block (section 7) and the broker's decision core (section 8) are built; the broker service, prompt UI, Settings page and app-side dispatcher are not. Nothing is installed.** It joins two things that are already on `dev` but do not yet
 know about each other: the SDK ([RUST-PANTHEON-SDK.md](RUST-PANTHEON-SDK.md), [SDK-INTROSPECTION-AND-STREAMING.md](SDK-INTROSPECTION-AND-STREAMING.md))
 and the agent broker ([local-ai/PANTHEON-MCP-DESIGN.md](local-ai/PANTHEON-MCP-DESIGN.md)). Owner direction: this should work like Apple's
 API permissions and scopes. An app says what it can do and what it needs, the system checks it, and the user (not the model)
@@ -196,3 +196,27 @@ StartIssue); `msdk agent-manifest --mcp` yields 10 tools.
 **Still not built:** the broker (grant store, TCC-style prompts, expiry, manifest-hash binding), the Settings page, a generated
 Rust-side intent dispatcher in `msdk-gtk`, structured multi-field payloads, manifests for the other SDK apps, and the live
 verification of `verify` readbacks.
+
+## 8. As built, broker core (2026-10-23)
+
+`rust/mseries-broker` is a library (no service, no UI yet) that takes an agent call plus an app's manifest and returns **Run**, **Ask**
+(a prompt) or **Refuse**. It is tested against the real T3 manifest.
+
+- **Order of checks:** known app, then known intent or entity (so T3's hidden `AllowOnce`/`Deny`/`ToggleRunner` are simply unknown), then
+  `msdk::intents::validate_args` (a hostile or malformed argument is refused **before** any prompt is created), then remembered denial,
+  then grants.
+- **Grants** are `(agent, app, scope)` bound to the manifest hash; a changed manifest asks again. Read and reversible scopes accept
+  *once* (one call), *for a time* or *always*. External and privileged scopes accept only *once* (one specific action) or an explicit
+  *widen*; "for a time" and "always" are rejected there.
+- **Per-action approvals** are bound to a fingerprint of the target, the arguments **and the state the confirmation shows** (T3's draft
+  and selected thread), so editing the draft after the owner approved a Send invalidates the approval. They expire after 120 s and are
+  spent on use.
+- **Denials** are remembered for 24 h per scope; **revocation** is immediate; answers only work for a prompt the broker issued, once.
+- **Storage:** an owner-only (0600) JSON file written atomically; a missing, damaged, wrong-version or group/other-accessible file means
+  *no grants* (ask again). The audit trail records agent, app, target and outcome, never arguments or content.
+- 14 tests cover each rule above.
+
+Still to build: the broker as a session service (IPC and MCP front end), the consent dialog that renders a `Prompt`, the Privacy &
+Agents Settings page, an app-side dispatcher in `msdk-gtk` that turns a `Run` payload into the app's message and returns the `verify`
+readback, and caller identity (the broker currently trusts the `agent` string it is given; a real service must take it from the
+connection).

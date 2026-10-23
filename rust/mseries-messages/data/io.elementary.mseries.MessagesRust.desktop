@@ -10,3 +10,5 @@ Categories=Network;Chat;GTK;
 Keywords=iPhone;iMessage;SMS;BlueFerry;Pantheon;
 StartupNotify=true
 DBusActivatable=false
+X-MSeries-Chat=true
+X-MSeries-Chat-Adapter=blueferry

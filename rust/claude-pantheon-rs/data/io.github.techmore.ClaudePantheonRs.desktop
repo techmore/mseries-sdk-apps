@@ -12,6 +12,7 @@ StartupNotify=true
 DBusActivatable=true
 X-GNOME-UsesNotifications=true
 Actions=new-thread;usage;
+X-MSeries-Chat=true
 
 [Desktop Action new-thread]
 Name=New Thread
