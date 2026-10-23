@@ -1,3 +1,17 @@
+## Merged BlueFerry phone-ID build prepared — 2026-10-22
+
+Live public GetStatus reports API v2 with MAP available, but no phone_profile_id;
+no message history or contacts were read for this check. A local wheel from the
+exact upstream merge ff418298e3e9b71b650e0d72b4b1ba61576cf29f is staged at
+build/blueferry-phone-profile/blueferry-0.8.1+phoneprofile.ff418298-py3-none-any.whl.
+Only version labels differ from upstream. SHA256:
+6b50435d466aa8018ca6d6a44660274e8224bf3d806d126341f9a06682453144.
+187 focused upstream tests pass on a private bus; direct wheel import verifies
+new phone-ID parsing and missing-field compatibility. License/metadata payloads
+were checked. Full provenance is in phone-setup/blueferry-profile-build-20261022.json.
+This development build was not installed into or used to restart the active
+owner backend. Pin import still awaits a qualified backend upgrade and live test.
+
 ## New-message picker keyboard parity — 2026-10-22
 
 Actual Ctrl+N/Down/Escape input found the same composite-entry focus bug in the

@@ -1,0 +1,21 @@
+{
+  "upstream": "https://github.com/erikwb/blueferry",
+  "commit": "ff418298e3e9b71b650e0d72b4b1ba61576cf29f",
+  "local_changes": "Version labels only: pyproject.toml and src/blueferry/__init__.py",
+  "version": "0.8.1+phoneprofile.ff418298",
+  "wheel": "blueferry-0.8.1+phoneprofile.ff418298-py3-none-any.whl",
+  "sha256": "6b50435d466aa8018ca6d6a44660274e8224bf3d806d126341f9a06682453144",
+  "focused_tests": {
+    "passed": 187,
+    "scope": [
+      "client_models",
+      "config_target",
+      "daemon_lifecycle",
+      "pair_setup",
+      "phone_profile_concurrency",
+      "private_files"
+    ]
+  },
+  "installed_into_owner_service": false,
+  "wheel_import_and_status_compatibility": "passed: new UUID and absent optional field"
+}
