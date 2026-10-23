@@ -80,12 +80,10 @@ Every app gets the same chrome without writing it, so a model never invents layo
 
 Found by looking at the T3 port rendered through the SDK, which is poor today. These are SDK gaps, not app gaps:
 
-1. **Layout control.** No alignment, grow or size props, so controls stretch by accident (the composer and Send button first filled
-   the window). Needs `align`, `grow`, `width` and `lines` and sensible non-stretching defaults.
-2. **Contrast was unchecked.** The user bubble was white on pale blue. The SDK needs a contrast gate (WCAG) over its tokens and the
-   theme's accent in light and dark; it is a natural `msdk gate` assertion.
-3. **Tabs do not look segmented**; the theme styles each toggle as a separate boxed button. Needs its own segmented style.
-4. **Icons are colourful.** A toolbar should use monochrome symbolic icons; the renderer should request `-symbolic` names.
+1. ~~Layout control~~ **Fixed:** every component takes `align` (on the parent's cross axis), `grow` and `width`; multiline entries take `lines` and `maxLines`; buttons, tabs and dropdowns default to their natural size instead of stretching.
+2. ~~Contrast was unchecked~~ **Fixed:** `msdk contrast` audits every colour pair the SDK styles create, in light and dark, for all ten elementary accents (WCAG 4.5:1); it is also a built-in gate for every app (`sdk-contrast`). It found a real failure on its first run (muted text, 4.19:1), fixed by raising the muted opacity token, and the badge text now uses the window background so it reads in dark mode too.
+3. ~~Tabs do not look segmented~~ **Fixed:** one rounded group with the selected tab raised.
+4. ~~Icons are colourful~~ **Fixed:** buttons and empty states use the `-symbolic` icon when the theme has it; app icons (dock) keep their colour.
 5. **No Markdown or highlighted code in the Transcript**, no avatars, provider dots, timestamps or thread status badges.
 6. **The sidebar is invisible at first sight** with auto-hide on; a first-run hint (or a pinned default) is needed if the feature stays.
 7. **Titlebar band is too subtle** to read as "silver"; tune `chrome.band_strength` against a real screenshot in both themes.

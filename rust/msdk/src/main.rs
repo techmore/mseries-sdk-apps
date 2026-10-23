@@ -49,6 +49,24 @@ fn main() -> ExitCode {
             }
             ExitCode::SUCCESS
         }
+        Some("contrast") => {
+            let all = msdk::contrast::audit();
+            if args.iter().any(|a| a == "--json") {
+                return print_json(&msdk::contrast::to_json(&all));
+            }
+            for f in &all {
+                let acc = f.accent.as_deref().map(|a| format!(" [{a}]")).unwrap_or_default();
+                println!(
+                    "{} {:<22} {:<5}{acc}: {:.2}:1 (needs {})",
+                    if f.ok() { "pass" } else { "FAIL" },
+                    f.pair,
+                    f.theme,
+                    f.ratio,
+                    f.needed
+                );
+            }
+            if all.iter().all(|f| f.ok()) { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+        }
         Some("fmt") if args.len() > 1 => run_fmt(&args[1..]),
         Some("render") if args.len() > 1 => run_render(&args[1..]),
         Some("text") if args.len() > 1 => convert(&args[1], true),
@@ -63,7 +81,7 @@ fn main() -> ExitCode {
         Some("new") if args.len() > 2 => run_new(&args[1..]),
         _ => {
             eprintln!(
-                "usage: msdk check [--json] <file.ui.json>...\n       msdk describe [Name] | explain <code> | complete <file> <json-pointer>\n       msdk gate <file.ui.json> [gates.json]\n       msdk render <file> [--surface NAME] [--state JSON] [--json]\n       msdk fmt [--check|--stdout] <file.msdk>... | text <file.ui.json> | json <file.msdk>\n       msdk templates | new <template> <dir> [--text] [--id ID] [--name NAME]\n       msdk schema | components | tokens [--json]"
+                "usage: msdk check [--json] <file.ui.json>...\n       msdk describe [Name] | explain <code> | complete <file> <json-pointer>\n       msdk gate <file.ui.json> [gates.json]\n       msdk render <file> [--surface NAME] [--state JSON] [--json]\n       msdk fmt [--check|--stdout] <file.msdk>... | text <file.ui.json> | json <file.msdk>\n       msdk templates | new <template> <dir> [--text] [--id ID] [--name NAME]\n       msdk schema | components | contrast [--json] | tokens [--json]"
             );
             ExitCode::from(2)
         }

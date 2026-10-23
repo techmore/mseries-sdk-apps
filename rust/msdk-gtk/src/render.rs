@@ -47,6 +47,60 @@ fn lookup(store: &Store, row: &Row, key: &str) -> Option<Value> {
         .cloned()
 }
 
+fn align_of(name: &str) -> gtk::Align {
+    match name {
+        "start" => gtk::Align::Start,
+        "center" => gtk::Align::Center,
+        "end" => gtk::Align::End,
+        _ => gtk::Align::Fill,
+    }
+}
+
+/// The monochrome (`-symbolic`) variant of an icon name when the theme has one; app icons keep their colour elsewhere.
+fn symbolic(name: &str) -> String {
+    if name.ends_with("-symbolic") || name.contains('{') {
+        return name.to_string();
+    }
+    let candidate = format!("{name}-symbolic");
+    match gtk::gdk::Display::default() {
+        Some(display) if gtk::IconTheme::for_display(&display).has_icon(&candidate) => candidate,
+        _ => name.to_string(),
+    }
+}
+
+/// Applies a child's layout props inside a box. `align` is on the parent's cross axis, `grow` takes free space on its main
+/// axis, `width` is a minimum width. Compact controls (buttons, tabs, dropdowns) default to their natural size, not stretched.
+fn place(w: &gtk::Widget, node: &Value, parent_vertical: bool) {
+    let compact = matches!(
+        s(node, "type"),
+        Some("Button" | "IconButton" | "Tabs" | "Dropdown")
+    );
+    let align = s(node, "align")
+        .map(align_of)
+        .or(compact.then_some(if parent_vertical {
+            gtk::Align::Start
+        } else {
+            gtk::Align::Center
+        }));
+    if let Some(a) = align {
+        if parent_vertical {
+            w.set_halign(a);
+        } else {
+            w.set_valign(a);
+        }
+    }
+    if node.get("grow").and_then(Value::as_bool) == Some(true) {
+        if parent_vertical {
+            w.set_vexpand(true);
+        } else {
+            w.set_hexpand(true);
+        }
+    }
+    if let Some(width) = node.get("width").and_then(Value::as_f64) {
+        w.set_size_request(width as i32, -1);
+    }
+}
+
 pub fn build_node(node: &Value, d: &D) -> Built {
     build(node, d, &Row::default())
 }
@@ -73,6 +127,7 @@ fn build(node: &Value, d: &D, row: &Row) -> Built {
                 .flatten()
             {
                 let ch = build(c, d, row);
+                place(&ch.widget, c, vertical);
                 b.append(&ch.widget);
                 refresh.extend(ch.refresh);
             }
@@ -94,7 +149,7 @@ fn build(node: &Value, d: &D, row: &Row) -> Built {
             let content = gtk::Box::new(gtk::Orientation::Horizontal, 6);
             content.set_halign(gtk::Align::Center);
             if let Some(icon) = s(node, "icon") {
-                content.append(&gtk::Image::from_icon_name(icon));
+                content.append(&gtk::Image::from_icon_name(&symbolic(icon)));
             }
             content.append(&gtk::Label::new(s(node, "label")));
             b.set_child(Some(&content));
@@ -186,7 +241,7 @@ fn build(node: &Value, d: &D, row: &Row) -> Built {
         "Transcript" => transcript(node, d, row, &mut refresh),
         "Tabs" => {
             let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-            row_box.add_css_class("linked");
+            row_box.add_css_class("msdk-tabs");
             let (bind, on) = (
                 s(node, "bind").unwrap_or("").to_string(),
                 s(node, "on_change").map(String::from),
@@ -279,6 +334,7 @@ fn build(node: &Value, d: &D, row: &Row) -> Built {
                 .flatten()
             {
                 let ch = build(c, d, row);
+                place(&ch.widget, c, true);
                 b.append(&ch.widget);
                 refresh.extend(ch.refresh);
             }
@@ -289,7 +345,7 @@ fn build(node: &Value, d: &D, row: &Row) -> Built {
             b.set_halign(gtk::Align::Center);
             b.set_valign(gtk::Align::Center);
             if let Some(i) = s(node, "icon") {
-                let img = gtk::Image::from_icon_name(i);
+                let img = gtk::Image::from_icon_name(&symbolic(i));
                 img.set_pixel_size(48);
                 img.add_css_class("msdk-muted");
                 b.append(&img);
@@ -529,6 +585,10 @@ fn entry(node: &Value, d: &D, refresh: &mut Vec<Refresh>) -> gtk::Widget {
     );
     let kind = s(node, "entry_kind").unwrap_or("text");
     if kind == "multiline" {
+        let line_h = 24.0;
+        let lines_min = (node.get("lines").and_then(Value::as_f64).unwrap_or(3.0) * line_h) as i32;
+        let lines_max =
+            (node.get("max_lines").and_then(Value::as_f64).unwrap_or(8.0) * line_h) as i32;
         let view = gtk::TextView::builder()
             .wrap_mode(gtk::WrapMode::WordChar)
             .top_margin(8)
@@ -581,8 +641,8 @@ fn entry(node: &Value, d: &D, refresh: &mut Vec<Refresh>) -> gtk::Widget {
             .child(&view)
             .vexpand(false)
             .hexpand(true)
-            .min_content_height(72)
-            .max_content_height(190)
+            .min_content_height(lines_min)
+            .max_content_height(lines_max)
             .propagate_natural_height(true)
             .build();
         sw.add_css_class("msdk-editor");

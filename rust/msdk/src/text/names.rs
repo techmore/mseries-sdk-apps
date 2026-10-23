@@ -47,6 +47,13 @@ pub fn prop_by_text<'a>(props: &'a [Prop], name: &str) -> Option<&'a Prop> {
     props.iter().find(|p| text_name(p.name) == name)
 }
 
+/// As [`prop_by_text`], also accepting the layout properties every component has.
+pub fn prop_or_layout(props: &'static [Prop], name: &str) -> Option<&'static Prop> {
+    prop_by_text(props, name).or_else(|| {
+        crate::vocab::COMMON.iter().find(|p| crate::vocab::LAYOUT_PROPS.contains(&p.name) && text_name(p.name) == name)
+    })
+}
+
 /// Names accepted on input that map to a canonical component, with the property they imply.
 /// `(alias, component, implied property, implied value)`.
 /// `(alias, component, implied property and value)`.

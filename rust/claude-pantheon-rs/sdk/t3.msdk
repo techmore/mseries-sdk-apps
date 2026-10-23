@@ -131,8 +131,8 @@ window "Claude for elementary OS" {
             empty { EmptyState("Pick a thread", description: "Or start a new one.", icon: "mail-message-new") }
           }
           HStack(spacing: small) {
-            TextEditor("Message", bind: draft, onChange: EditDraft, onSubmit: Send, enterSends: true)
-            Button("Send", icon: "mail-send", style: suggested) { Send }
+            TextEditor("Message", bind: draft, onChange: EditDraft, onSubmit: Send, enterSends: true, grow: true, lines: 2, maxLines: 8)
+            Button("Send", icon: "mail-send", style: suggested, align: end) { Send }
           }
         }.id("Chat")
         VStack(spacing: medium) {

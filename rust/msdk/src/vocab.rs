@@ -84,7 +84,15 @@ pub const COMMON: &[Prop] = &[
     opt("id", Kind::Str),
     opt("tooltip", Kind::Str),
     opt("visible_if", Kind::Bind(Want::Bool)),
+    // Layout. `align` is on the cross axis of the parent box (a vertical box aligns horizontally, a horizontal one
+    // vertically); `grow` takes the free space along the main axis; `width` is a minimum width in logical pixels.
+    opt("align", Kind::Enum("align")),
+    opt("grow", Kind::Bool),
+    opt("width", Kind::Num),
 ];
+
+/// The common properties written as named arguments in the text form (the others are `.visible()`, `.id()`, `.tooltip()`).
+pub const LAYOUT_PROPS: &[&str] = &["align", "grow", "width"];
 
 /// Named value sets. Values mirror the compositor protocol where one exists.
 pub const ENUMS: &[(&str, &[&str])] = &[
@@ -94,6 +102,7 @@ pub const ENUMS: &[(&str, &[&str])] = &[
     ("button_style", &["suggested", "destructive", "flat"]),
     ("entry_kind", &["text", "search", "multiline", "password"]),
     ("indicator", &["none", "open", "focused"]),
+    ("align", &["start", "center", "end", "fill"]),
     ("anchor", &["top", "bottom", "left", "right"]),
     ("hide_mode", &["never", "maximized_focus_window", "overlapping_focus_window", "overlapping_window", "always"]),
 ];
@@ -143,6 +152,8 @@ pub const COMPONENTS: &[Component] = &[
             opt("on_change", Kind::Msg(Payload::Text)),
             opt("on_submit", Kind::Msg(Payload::None)),
             opt("enter_sends", Kind::Bool),
+            opt("lines", Kind::Num),
+            opt("max_lines", Kind::Num),
         ],
     },
     Component {

@@ -306,8 +306,10 @@ fn node(v: &Value, ind: usize, out: &mut String) -> R<()> {
     let ty = o.get("type").and_then(Value::as_str).ok_or("component without a type")?;
     let comp = vocab::component(ty).ok_or(format!("unknown component {ty}"))?;
     for k in o.keys() {
-        let known =
-            k == "type" || comp.props.iter().any(|p| p.name == k) || COMMON_MODIFIERS.iter().any(|(_, j)| j == k);
+        let known = k == "type"
+            || comp.props.iter().any(|p| p.name == k)
+            || COMMON_MODIFIERS.iter().any(|(_, j)| j == k)
+            || vocab::LAYOUT_PROPS.contains(&k.as_str());
         if !known {
             return Err(format!("{ty} has no property `{k}`"));
         }
@@ -334,6 +336,11 @@ fn node(v: &Value, ind: usize, out: &mut String) -> R<()> {
         }
         if let Some(val) = o.get(p.name) {
             args.push(format!("{}: {}", text_name(p.name), prop_value(p, val)?));
+        }
+    }
+    for name in vocab::LAYOUT_PROPS {
+        if let (Some(val), Some(p)) = (o.get(*name), vocab::COMMON.iter().find(|p| p.name == *name)) {
+            args.push(format!("{}: {}", text_name(name), prop_value(p, val)?));
         }
     }
     let mut line = format!("{}{spelled}", pad(ind));

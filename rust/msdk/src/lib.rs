@@ -8,6 +8,7 @@
 
 pub mod agent;
 mod check;
+pub mod contrast;
 pub mod gate;
 pub mod inspect;
 pub mod logic;

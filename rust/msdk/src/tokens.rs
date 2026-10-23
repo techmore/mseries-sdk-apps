@@ -37,11 +37,14 @@ pub fn css() -> String {
          .msdk-sidebar {{ background: alpha(currentColor, 0.045); border-right: 1px solid alpha(currentColor, 0.12); }}\n\
          .msdk-floating-sidebar {{ background: @theme_bg_color; box-shadow: 6px 0 20px alpha(black, 0.20); border-radius: 0 {card}px {card}px 0; }}\n\
          .msdk-hover-edge {{ background: transparent; }}\n\
+         .msdk-tabs {{ border: 1px solid alpha(currentColor, 0.18); border-radius: 9px; padding: 2px; background: alpha(currentColor, 0.06); }}\n\
+         .msdk-tabs > button.toggle {{ border: none; box-shadow: none; background: transparent; border-radius: 7px; min-height: 26px; padding: 0 14px; }}\n\
+         .msdk-tabs > button.toggle:checked {{ background: @theme_base_color; box-shadow: 0 1px 2px alpha(black, 0.22); font-weight: 600; }}\n\
          .msdk-title {{ font-size: {title}em; font-weight: 600; }}\n\
          .msdk-heading {{ font-size: {heading}em; font-weight: 600; }}\n\
          .msdk-body {{ font-size: {body}em; }}\n\
-         .msdk-caption {{ font-size: {caption}em; opacity: 0.75; }}\n\
-         .msdk-muted {{ opacity: 0.65; }}\n\
+         .msdk-caption {{ font-size: {caption}em; opacity: {o_cap}; }}\n\
+         .msdk-muted {{ opacity: {o_muted}; }}\n\
          .msdk-card {{ background: alpha(currentColor, {sa}); border-radius: {card}px; padding: {py}px {padx}px; }}\n\
          window.msdk-app {{ font-size: {base}%; }}\n\
          .msdk-control {{ border-radius: {control}px; min-height: {ch}px; }}\n\
@@ -49,10 +52,10 @@ pub fn css() -> String {
          .msdk-indicator {{ min-width: 18px; min-height: 3px; border-radius: 2px; background: alpha(currentColor, 0.45); }}\n\
          .msdk-indicator.focused {{ background: @accent_color; }}\n\
          .msdk-bubble {{ background: alpha(currentColor, {sa}); border-radius: {card}px; padding: 8px 12px; }}\n\
-         .msdk-bubble-user {{ background: alpha(@accent_color, 0.22); color: @theme_fg_color; border-radius: {card}px; padding: 8px 12px; }}\n\
+         .msdk-bubble-user {{ background: alpha(@accent_color, {bub}); color: @theme_fg_color; border-radius: {card}px; padding: 8px 12px; }}\n\
          .msdk-editor {{ border-radius: {card}px; border: 1px solid alpha(currentColor, 0.18); background: @theme_base_color; }}\n\
          .msdk-code {{ font-family: monospace; background: alpha(currentColor, 0.08); border-radius: {control}px; padding: 8px 12px; }}\n\
-         .msdk-tool {{ font-size: {caption}em; opacity: 0.7; }}\n\
+         .msdk-tool {{ font-size: {caption}em; opacity: {o_tool}; }}\n\
          headerbar.msdk-titlebar {{ min-height: {tb}px; padding: 0 12px; border-radius: {win}px {win}px 0 0; \
            background-image: linear-gradient(to bottom, mix(shade(@theme_bg_color, 1.06), {silver}, {band}), mix(shade(@theme_bg_color, 0.95), {silver}, {band})); \
            border-bottom: 1px solid alpha(black, 0.14); box-shadow: inset 0 1px alpha(white, 0.55); }}\n\
@@ -67,7 +70,7 @@ pub fn css() -> String {
          headerbar.msdk-titlebar windowcontrols:hover button.minimize {{ background: #febc2e; }}\n\
          headerbar.msdk-titlebar windowcontrols:hover button.maximize {{ background: #28c840; }}\n\
          headerbar.msdk-titlebar button.flat {{ border-radius: {control}px; }}\n\
-         .msdk-badge {{ background: @error_color; color: white; border-radius: 9px; padding: 0 5px; font-size: {caption}em; }}\n",
+         .msdk-badge {{ background: @error_color; color: @theme_bg_color; border-radius: 9px; padding: 0 5px; font-size: {caption}em; }}\n",
         px = w["outline_px"].as_i64().unwrap_or(1),
         a = w["outline_alpha"].as_f64().unwrap_or(0.28),
         ab = w["outline_alpha_backdrop"].as_f64().unwrap_or(0.18),
@@ -81,6 +84,10 @@ pub fn css() -> String {
         py = t["layout"]["content_padding_y"].as_i64().unwrap_or(10),
         padx = t["layout"]["content_padding_x"].as_i64().unwrap_or(10) + 2,
         ch = t["layout"]["control_height"].as_i64().unwrap_or(34),
+        o_cap = t["opacity"]["caption"].as_f64().unwrap_or(0.75),
+        o_muted = t["opacity"]["muted"].as_f64().unwrap_or(0.65),
+        o_tool = t["opacity"]["tool"].as_f64().unwrap_or(0.7),
+        bub = t["colors"]["bubble_alpha"].as_f64().unwrap_or(0.22),
         base = t["base_font_percent"].as_i64().unwrap_or(100),
         tb = t["chrome"]["titlebar_height"].as_i64().unwrap_or(46),
         silver = t["chrome"]["silver"].as_str().unwrap_or("#aeb6c4"),

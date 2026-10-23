@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value, json};
 
 use super::lex::{Tok, Token, lex};
-use super::names::{ALIASES, COMMON_MODIFIERS, closure_prop, positional, prop_by_text, text_name};
+use super::names::{ALIASES, COMMON_MODIFIERS, closure_prop, positional, prop_by_text, prop_or_layout, text_name};
 use super::{ParseError, Parsed};
 use crate::vocab::{self, Kind};
 
@@ -733,10 +733,11 @@ impl P {
             let prop = if named {
                 let n = self.word("a property name")?;
                 self.next(); // ':'
-                match prop_by_text(comp.props, &n) {
+                match prop_or_layout(comp.props, &n) {
                     Some(p) => *p,
                     None => {
-                        let names: Vec<String> = comp.props.iter().map(|p| text_name(p.name)).collect();
+                        let mut names: Vec<String> = comp.props.iter().map(|p| text_name(p.name)).collect();
+                        names.extend(vocab::LAYOUT_PROPS.iter().map(|p| text_name(p)));
                         self.i = self.i.saturating_sub(2);
                         return self
                             .fail(format!("{ty} has no property `{n}`{}", nearest(&n, &names).unwrap_or_default()));

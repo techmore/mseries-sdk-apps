@@ -222,3 +222,38 @@ fn stack_children_need_ids_and_tabs_bind_text() {
     let tabs = json!({ "type": "Tabs", "label": "Pages", "bind": "flag", "options": ["A", "B"] });
     assert!(codes(&base(tabs)).contains(&"state-type-mismatch"));
 }
+
+#[test]
+fn contrast_gate_covers_every_accent_in_both_themes_and_passes() {
+    let all = msdk::contrast::audit();
+    assert_eq!(all.iter().filter(|f| f.pair == "user bubble text").count(), 20, "10 accents x 2 themes");
+    assert!(msdk::contrast::failures().is_empty(), "{:?}", msdk::contrast::failures());
+    // The built-in gate reports it for every app.
+    assert!(
+        msdk::gate::run(&base(json!({ "type": "Text", "text": "a" })), None)
+            .iter()
+            .any(|r| r.name == "sdk-contrast" && r.passed)
+    );
+    // Sanity of the maths: black on white is 21:1.
+    assert!((msdk::contrast::ratio([0.0; 3], [1.0; 3]) - 21.0).abs() < 0.01);
+}
+
+#[test]
+fn layout_props_validate_and_round_trip() {
+    let ok = json!({ "type": "Box", "children": [
+        { "type": "Button", "label": "a", "on": "Go", "align": "end", "grow": true, "width": 120 },
+        { "type": "Entry", "label": "m", "bind": "name", "entry_kind": "multiline", "lines": 2, "max_lines": 8 } ] });
+    assert!(codes(&base(ok.clone())).is_empty());
+    assert!(codes(&base(json!({ "type": "Text", "text": "a", "align": "middle" }))).contains(&"bad-value"));
+    assert!(codes(&base(json!({ "type": "Text", "text": "a", "grow": "yes" }))).contains(&"wrong-type"));
+    let doc = base(ok);
+    let text = msdk::text::print(&doc).unwrap();
+    assert!(
+        text.contains("align: end")
+            && text.contains("grow: true")
+            && text.contains("width: 120")
+            && text.contains("maxLines: 8"),
+        "{text}"
+    );
+    assert_eq!(msdk::text::parse(&text).unwrap().doc, doc);
+}

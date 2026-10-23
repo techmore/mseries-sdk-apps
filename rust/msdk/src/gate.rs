@@ -29,6 +29,25 @@ fn builtin(doc: &Value) -> Vec<GateResult> {
         check(doc).iter().filter(|d| d.severity == Severity::Error).map(|d| d.to_string()).collect();
     let mut out =
         vec![GateResult { name: "checker-clean".into(), passed: errors.is_empty(), skipped: false, details: errors }];
+    let bad = crate::contrast::failures();
+    out.push(GateResult {
+        name: "sdk-contrast".into(),
+        passed: bad.is_empty(),
+        skipped: false,
+        details: bad
+            .iter()
+            .map(|f| {
+                format!(
+                    "{} ({}{}): {:.2}:1, needs {}",
+                    f.pair,
+                    f.theme,
+                    f.accent.as_deref().map(|a| format!(", {a}")).unwrap_or_default(),
+                    f.ratio,
+                    f.needed
+                )
+            })
+            .collect(),
+    });
     let rust = doc.get("logic").and_then(Value::as_str) == Some("rust");
     let missing: Vec<String> = doc
         .get("messages")
