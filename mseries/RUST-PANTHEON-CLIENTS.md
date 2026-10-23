@@ -1,3 +1,17 @@
+## Signal elementary palette deployment verified — 2026-10-22
+
+The installed accent helper was older than the reviewed PR #525 version. Ran
+install-signal-integration.sh against the existing legacy official ARM64 install.
+Source/installed helper SHA256 now both:
+86f78748a12bf4a515f82822bd451a8d491a5ca25ef3d1a3f3d7ad880c6619f4.
+All six accent tests pass. Installed app.asar was compared entry-by-entry with
+the preserved app.asar.orig and expected selective transformation: 201 matches
+in main.js (1), preload/main.js (24), manifest.css (149), tailwind.css (27);
+all 1503 other packed files are byte-identical. Modified entry integrity hashes
+match recomputed SHA256 blocks. The desktop launcher validates. Signal was not
+restarted; reopening is required for owner visual acceptance. This does not
+qualify actual compose attachments, tray behavior or atomic-update deployment.
+
 ## Messages refresh viewport parity — 2026-10-22
 
 Conversation refresh preserves the reading position when away from the bottom,
