@@ -1067,6 +1067,13 @@ impl App {
                 app.refresh_recent();
                 return glib::Propagation::Stop;
             }
+            // Popovers own Escape; compact navigation must not consume it first.
+            if key == gtk::gdk::Key::Escape
+                && gtk::prelude::RootExt::focus(&app.window)
+                    .is_some_and(|focus| focus.ancestor(gtk::Popover::static_type()).is_some())
+            {
+                return glib::Propagation::Proceed;
+            }
             match (control, key) {
                 (true, gtk::gdk::Key::f) => {
                     if app.window.has_css_class("pantheon-compact")
@@ -1834,29 +1841,7 @@ impl App {
             return;
         }
         popover.set_child(Some(&actions));
-        popover.set_parent(row);
-
-        let right_click = gtk::GestureClick::builder().button(3).build();
-        right_click.set_propagation_phase(gtk::PropagationPhase::Capture);
-        let right_popover = popover.clone();
-        right_click.connect_pressed(move |gesture, _, x, y| {
-            right_popover
-                .set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
-            right_popover.popup();
-            gesture.set_state(gtk::EventSequenceState::Claimed);
-        });
-        row.add_controller(right_click);
-
-        let long_press = gtk::GestureLongPress::new();
-        long_press.set_propagation_phase(gtk::PropagationPhase::Capture);
-        let long_popover = popover.clone();
-        long_press.connect_pressed(move |gesture, x, y| {
-            long_popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
-            long_popover.popup();
-            gesture.set_state(gtk::EventSequenceState::Claimed);
-        });
-        row.add_controller(long_press);
-        row.connect_destroy(move |_| popover.unparent());
+        mseries_pantheon_kit::attach_context_menu(row, &popover);
     }
 
     fn rebuild_favorites(self: &Rc<Self>, threads: &[Thread], selected: Option<&str>) {
@@ -2867,6 +2852,18 @@ impl App {
         message: &Message,
         is_group: bool,
     ) {
+        mseries_pantheon_kit::set_accessible_label(
+            bubble,
+            &format!(
+                "{} {}",
+                if message.outgoing {
+                    "Sent message"
+                } else {
+                    "Received message"
+                },
+                message_quote(message, is_group)
+            ),
+        );
         let popover = gtk::Popover::new();
         popover.set_has_arrow(false);
         let actions = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -2908,28 +2905,7 @@ impl App {
         actions.append(&copy);
 
         popover.set_child(Some(&actions));
-        popover.set_parent(bubble);
-        let right_click = gtk::GestureClick::builder().button(3).build();
-        right_click.set_propagation_phase(gtk::PropagationPhase::Capture);
-        let right_popover = popover.clone();
-        right_click.connect_pressed(move |gesture, _, x, y| {
-            right_popover
-                .set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
-            right_popover.popup();
-            gesture.set_state(gtk::EventSequenceState::Claimed);
-        });
-        bubble.add_controller(right_click);
-
-        let long_press = gtk::GestureLongPress::new();
-        long_press.set_propagation_phase(gtk::PropagationPhase::Capture);
-        let long_popover = popover.clone();
-        long_press.connect_pressed(move |gesture, x, y| {
-            long_popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
-            long_popover.popup();
-            gesture.set_state(gtk::EventSequenceState::Claimed);
-        });
-        bubble.add_controller(long_press);
-        bubble.connect_destroy(move |_| popover.unparent());
+        mseries_pantheon_kit::attach_context_menu(bubble, &popover);
     }
 
     fn reply_to_message(&self, message: &Message, is_group: bool) {
@@ -4053,6 +4029,113 @@ mod tests {
             app.search.text().is_empty(),
             "Escape must clear focused conversation search"
         );
+        let context_menu = |widget: &gtk::Widget| {
+            let mut child = widget.first_child();
+            while let Some(current) = child {
+                if let Ok(menu) = current.clone().downcast::<gtk::Popover>() {
+                    return Some(menu);
+                }
+                child = current.next_sibling();
+            }
+            None
+        };
+        let close_menu = || {
+            assert!(
+                std::process::Command::new("xdotool")
+                    .args(["key", "--clearmodifiers", "Escape"])
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            let until = std::time::Instant::now() + std::time::Duration::from_millis(250);
+            while std::time::Instant::now() < until {
+                gtk::glib::MainContext::default().iteration(false);
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        };
+        app.window.add_css_class("pantheon-compact");
+        let row = app.list.row_at_index(0).unwrap();
+        let menu = context_menu(row.upcast_ref()).expect("conversation context menu");
+        row.grab_focus();
+        press_key("Menu");
+        assert!(menu.is_visible(), "Menu key must open conversation actions");
+        assert!(
+            mseries_pantheon_kit::has_focus_within(&menu),
+            "conversation actions must receive focus"
+        );
+        close_menu();
+        assert!(!menu.is_visible());
+        assert!(
+            app.state.borrow().selected.is_some(),
+            "Escape must close actions without navigating Back"
+        );
+        let mut child = app.messages.first_child();
+        let (bubble, menu) = loop {
+            let widget = child.expect("message with context actions");
+            if let Some(menu) = context_menu(&widget) {
+                break (widget, menu);
+            }
+            child = widget.next_sibling();
+        };
+        assert!(gtk::test_accessible_has_property(
+            &bubble,
+            gtk::AccessibleProperty::Label
+        ));
+        assert!(
+            bubble.grab_focus(),
+            "message anchor must accept keyboard focus; mapped={}",
+            bubble.is_mapped()
+        );
+        assert!(
+            mseries_pantheon_kit::has_focus_within(&bubble),
+            "message must own focus before Shift+F10"
+        );
+        // Xvfb exposes F10 at several keymap levels; xdotool may add Alt
+        // while resolving that keysym. Inject physical Shift/F10 with XTest.
+        assert!(
+            std::process::Command::new("python3")
+                .args([
+                    "-c",
+                    r#"
+import ctypes as c
+x = c.CDLL('libX11.so.6')
+t = c.CDLL('libXtst.so.6')
+x.XOpenDisplay.argtypes = [c.c_char_p]
+x.XOpenDisplay.restype = c.c_void_p
+x.XKeysymToKeycode.argtypes = [c.c_void_p, c.c_ulong]
+x.XKeysymToKeycode.restype = c.c_uint
+x.XSync.argtypes = [c.c_void_p, c.c_int]
+x.XCloseDisplay.argtypes = [c.c_void_p]
+t.XTestFakeKeyEvent.argtypes = [c.c_void_p, c.c_uint, c.c_int, c.c_ulong]
+d = x.XOpenDisplay(None)
+assert d
+shift = x.XKeysymToKeycode(d, 0xffe1)
+f10 = x.XKeysymToKeycode(d, 0xffc7)
+assert shift and f10
+for key, pressed in [(shift, 1), (f10, 1), (f10, 0), (shift, 0)]:
+    assert t.XTestFakeKeyEvent(d, key, pressed, 0)
+x.XSync(d, 0)
+x.XCloseDisplay(d)
+"#
+                ])
+                .status()
+                .unwrap()
+                .success()
+        );
+        let until = std::time::Instant::now() + std::time::Duration::from_millis(100);
+        while std::time::Instant::now() < until {
+            gtk::glib::MainContext::default().iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(menu.is_visible(), "Shift+F10 must open message actions");
+        assert!(
+            mseries_pantheon_kit::has_focus_within(&menu),
+            "message actions must receive focus"
+        );
+        close_menu();
+        assert!(!menu.is_visible());
+        assert!(app.state.borrow().selected.is_some());
+        app.window.remove_css_class("pantheon-compact");
         press_key("ctrl+n");
         let dialog = gtk::Window::list_toplevels()
             .into_iter()

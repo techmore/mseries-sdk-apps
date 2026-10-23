@@ -65,6 +65,15 @@ while connecting, hides a zero count, and has no polling timer. Messages uses
 its unread-message total; T3 uses the shared API for its running-thread count
 and progress indicator.
 
+`has_focus_within` handles composite controls such as GTK SearchEntry, whose
+keyboard focus belongs to an internal child. Use it for entry-specific shortcuts.
+`attach_context_menu` gives an accessible, focusable anchor the same right-click,
+long-press, Menu-key and Shift+F10 behavior. Supply the popover actions and name
+its anchor with `set_accessible_label`; the helper owns parenting and removes the
+popover when the anchor is destroyed. Messages uses this shared path for both
+conversation and message actions, replacing duplicated pointer-only handlers.
+These helpers add event handlers only when attached; they start no polling.
+
 `ResumeWatcher` provides a best-effort, asynchronous logind resume signal for
 apps that need to refresh after sleep without a permanent wake-up timer. Rust
 Messages now combines it with a user-controlled 30-second `Polling` fallback;

@@ -2,7 +2,7 @@
 # Exercise real GTK widgets without the owner's display, services or settings.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-for tool in cargo xvfb-run dbus-run-session xdotool; do
+for tool in cargo xvfb-run dbus-run-session xdotool python3; do
   command -v "$tool" >/dev/null || { echo "Missing test tool: $tool" >&2; exit 2; }
 done
 scratch="$(mktemp -d)"

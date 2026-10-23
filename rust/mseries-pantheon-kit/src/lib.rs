@@ -8,6 +8,7 @@ pub use granite;
 pub use gtk;
 
 mod blueferry;
+mod context_menu;
 mod dock_badge;
 mod images;
 mod layout;
@@ -20,6 +21,7 @@ pub mod updates;
 pub use blueferry::{
     BLUEFERRY_MESSAGES_API_VERSION, BlueFerryMessagesClient, BlueFerrySendError, BlueFerryStatus,
 };
+pub use context_menu::attach_context_menu;
 pub use dock_badge::DockBadge;
 pub use images::decode_contact_avatar;
 pub use layout::{
