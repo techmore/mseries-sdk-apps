@@ -28,3 +28,7 @@ unset WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS
 xvfb-run -a dbus-run-session --config-file="$scratch/dbus.conf" -- \
   cargo test --manifest-path "$here/../Cargo.toml" --locked -p mseries-messages \
     --lib offline_gui -- --ignored --test-threads=1
+# Badge wire contracts need a bus but no display or owner dock.
+dbus-run-session --config-file="$scratch/dbus.conf" -- \
+  cargo test --manifest-path "$here/../Cargo.toml" --locked -p mseries-pantheon-kit \
+    --lib dock_badge_private_bus -- --ignored --test-threads=1

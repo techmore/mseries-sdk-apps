@@ -154,3 +154,89 @@ fn launcher_hash(uri: &str) -> u32 {
     }
     hash
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    #[ignore = "requires an explicitly isolated session bus"]
+    fn dock_badge_private_bus_updates() {
+        assert_eq!(
+            std::env::var("MSERIES_MESSAGES_ISOLATED_GUI").as_deref(),
+            Ok("1")
+        );
+        let connection = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE).unwrap();
+        let updates = Rc::new(RefCell::new(
+            Vec::<(String, HashMap<String, glib::Variant>)>::new(),
+        ));
+        let received = updates.clone();
+        let _subscription = connection.subscribe_to_signal(
+            None,
+            Some(INTERFACE),
+            Some("Update"),
+            None,
+            Some("application://io.elementary.mseries.BadgeFixture.desktop"),
+            gio::DBusSignalFlags::NONE,
+            move |signal| received.borrow_mut().push(signal.parameters.get().unwrap()),
+        );
+        let wait_for = |count: usize| {
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while updates.borrow().len() < count && Instant::now() < deadline {
+                glib::MainContext::default().iteration(false);
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            assert_eq!(updates.borrow().len(), count);
+        };
+        let badge = DockBadge::new("io.elementary.mseries.BadgeFixture");
+        badge.set_count(1);
+        badge.set_count(7);
+        wait_for(1);
+        {
+            let updates = updates.borrow();
+            let (uri, properties) = &updates[0];
+            assert_eq!(
+                uri,
+                "application://io.elementary.mseries.BadgeFixture.desktop"
+            );
+            assert_eq!(properties["count"].get::<i64>(), Some(7));
+            assert_eq!(properties["count-visible"].get::<bool>(), Some(true));
+            assert_eq!(properties["progress-visible"].get::<bool>(), Some(false));
+        }
+        badge.update(u64::MAX, Some(1.5));
+        wait_for(2);
+        {
+            let updates = updates.borrow();
+            let properties = &updates[1].1;
+            assert_eq!(properties["count"].get::<i64>(), Some(i64::MAX));
+            assert_eq!(properties["progress"].get::<f64>(), Some(1.0));
+            assert_eq!(properties["progress-visible"].get::<bool>(), Some(true));
+        }
+        badge.set_progress(Some(f64::NAN));
+        wait_for(3);
+        assert_eq!(
+            updates.borrow()[2].1["progress-visible"].get::<bool>(),
+            Some(false)
+        );
+        badge.clear();
+        wait_for(4);
+        assert_eq!(
+            updates.borrow()[3].1["count-visible"].get::<bool>(),
+            Some(false)
+        );
+        assert_eq!(updates.borrow()[3].1["count"].get::<i64>(), Some(0));
+        badge.clear();
+        let deadline = Instant::now() + Duration::from_millis(100);
+        while Instant::now() < deadline {
+            glib::MainContext::default().iteration(false);
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(
+            updates.borrow().len(),
+            4,
+            "unchanged state must not republish"
+        );
+    }
+}

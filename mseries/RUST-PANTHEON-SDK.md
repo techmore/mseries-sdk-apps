@@ -256,3 +256,7 @@ polling on versus off. Repeat those cases before claiming a performance win.
 Each app gets a source/license review, a package and launcher migration plan,
 and its own usability/performance receipt. GTK build success alone does not
 qualify an app for replacement or installation.
+
+DockBadge wire-contract qualification runs with the isolated Messages GUI runner.
+It uses its own session bus and checks URI/count/progress/visibility, preconnection
+coalescing, clamping and clearing; owner dock visual acceptance remains separate.
