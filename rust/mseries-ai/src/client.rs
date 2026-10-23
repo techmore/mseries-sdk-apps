@@ -205,3 +205,78 @@ fn local_model_error(error: &reqwest::Error) -> String {
         format!("The local Qwen request failed: {error}")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reply_draft_requires_recent_incoming_context() {
+        assert_eq!(
+            draft_reply("messages", &[]).unwrap_err(),
+            "There are no recent messages to reply to"
+        );
+        assert_eq!(
+            draft_reply(
+                "messages",
+                &[ChatMessage {
+                    role: ChatRole::User,
+                    sender: "Me".into(),
+                    text: "Already replied".into(),
+                }]
+            )
+            .unwrap_err(),
+            "There is no new incoming message to reply to"
+        );
+    }
+
+    #[test]
+    fn context_keeps_only_recent_messages_and_is_character_bounded() {
+        let context = (0..15)
+            .map(|index| ChatMessage {
+                role: if index == 14 {
+                    ChatRole::Contact
+                } else {
+                    ChatRole::User
+                },
+                sender: format!("sender-{index}"),
+                text: format!("message-{index}"),
+            })
+            .collect::<Vec<_>>();
+
+        let bounded = bounded_context(&context);
+        assert_eq!(bounded.len(), MAX_CONTEXT_MESSAGES);
+        assert!(bounded[0].text.contains("message-3"));
+        assert!(bounded.last().unwrap().text.contains("message-14"));
+
+        let large_context = (0..12)
+            .map(|index| ChatMessage {
+                role: if index == 11 {
+                    ChatRole::Contact
+                } else {
+                    ChatRole::User
+                },
+                sender: format!("sender-{index}"),
+                text: "x".repeat(1_200),
+            })
+            .collect::<Vec<_>>();
+        let bounded = bounded_context(&large_context);
+        assert!(
+            bounded
+                .iter()
+                .map(|message| message.text.chars().count())
+                .sum::<usize>()
+                <= MAX_CONTEXT_CHARS
+        );
+        assert_eq!(bounded.last().unwrap().role, "user");
+    }
+
+    #[test]
+    fn qwen_model_matching_is_case_insensitive_and_does_not_accept_other_models() {
+        assert!(is_qwen_model_id("Qwen3-8B-Instruct"));
+        assert!(is_qwen_model_id(
+            "publisher/938d8919941c6e7efd3c7150eff7fe9d12afa631"
+        ));
+        assert!(!is_qwen_model_id("llama-3.2-3b-instruct"));
+    }
+}

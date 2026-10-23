@@ -96,8 +96,7 @@ impl AiStore {
                      );
                      CREATE TABLE IF NOT EXISTS app_preferences (
                          app_id TEXT PRIMARY KEY NOT NULL,
-                         writing_style TEXT NOT NULL,
-                         CHECK (length(writing_style) <= 600),
+                         writing_style TEXT NOT NULL CHECK (length(writing_style) <= 600),
                          use_shared_memory INTEGER NOT NULL DEFAULT 1 CHECK (use_shared_memory IN (0, 1)),
                          updated_at INTEGER NOT NULL
                      );
@@ -370,4 +369,146 @@ fn set_mode(path: &Path, mode: u32) -> Result<(), String> {
 
 fn storage_error(error: impl std::fmt::Display) -> String {
     format!("AI database error: {error}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    struct TestDatabase {
+        directory: PathBuf,
+        path: PathBuf,
+    }
+
+    impl TestDatabase {
+        fn new() -> Self {
+            let nonce = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            let directory =
+                env::temp_dir().join(format!("mseries-ai-test-{}-{nonce}", std::process::id()));
+            fs::create_dir_all(&directory).expect("create isolated test directory");
+            let path = directory.join("assistant.sqlite3");
+            Self { directory, path }
+        }
+    }
+
+    impl Drop for TestDatabase {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.directory);
+        }
+    }
+
+    #[test]
+    fn database_is_private_and_preferences_round_trip_by_app() {
+        let database = TestDatabase::new();
+        let store = AiStore::open_at(&database.path).expect("open private test database");
+
+        assert_eq!(
+            fs::metadata(&database.directory)
+                .expect("stat database directory")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(&database.path)
+                .expect("stat database file")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+        assert_eq!(
+            store
+                .preferences_for("messages")
+                .expect("default preferences")
+                .writing_style,
+            AiPreferences::default().writing_style
+        );
+
+        let preferences = AiPreferences {
+            writing_style: "Warm, direct, and brief".into(),
+            use_shared_memory: false,
+        };
+        store
+            .save_preferences("messages", &preferences)
+            .expect("save app preferences");
+        let loaded = store
+            .preferences_for("messages")
+            .expect("reload app preferences");
+        assert_eq!(loaded.writing_style, preferences.writing_style);
+        assert!(!loaded.use_shared_memory);
+        assert_eq!(
+            store
+                .preferences_for("other.app")
+                .expect("other app defaults")
+                .writing_style,
+            AiPreferences::default().writing_style
+        );
+    }
+
+    #[test]
+    fn memories_are_filtered_by_app_and_explicit_shared_consent() {
+        let database = TestDatabase::new();
+        let store = AiStore::open_at(&database.path).expect("open test database");
+        let shared = store
+            .save_memory("*", "Use my first name")
+            .expect("save shared");
+        store
+            .save_memory("messages", "Keep replies concise")
+            .expect("save app memory");
+        store
+            .save_memory("other.app", "Unrelated preference")
+            .expect("save other app memory");
+
+        let local_only = store
+            .memories_for("messages", false)
+            .expect("load app-only memories");
+        assert_eq!(local_only.len(), 1);
+        assert_eq!(local_only[0].content, "Keep replies concise");
+
+        let with_shared = store
+            .memories_for("messages", true)
+            .expect("load shared and app memories");
+        assert_eq!(with_shared.len(), 2);
+        assert!(with_shared.iter().any(|memory| memory.scope == "*"));
+        assert!(
+            !with_shared
+                .iter()
+                .any(|memory| memory.content == "Unrelated preference")
+        );
+
+        store.delete_memory(shared).expect("delete saved memory");
+        assert!(
+            !store
+                .memories_for("messages", true)
+                .expect("reload memories")
+                .iter()
+                .any(|memory| memory.scope == "*")
+        );
+    }
+
+    #[test]
+    fn endpoint_requires_http_loopback_without_credentials_or_url_extras() {
+        for endpoint in [
+            "http://localhost:8766/v1",
+            "http://127.0.0.1:8766/v1",
+            "http://[::1]:8766/v1",
+        ] {
+            assert!(validate_local_endpoint(endpoint).is_ok(), "{endpoint}");
+        }
+        for endpoint in [
+            "https://127.0.0.1/v1",
+            "http://example.com/v1",
+            "http://user@127.0.0.1/v1",
+            "http://127.0.0.1/v1?token=secret",
+            "http://127.0.0.1/v1#fragment",
+        ] {
+            assert!(validate_local_endpoint(endpoint).is_err(), "{endpoint}");
+        }
+    }
 }
