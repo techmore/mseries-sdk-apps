@@ -1,3 +1,18 @@
+## Messages refresh viewport parity — 2026-10-22
+
+Conversation refresh preserves the reading position when away from the bottom,
+shows an accessible Latest Messages action when history grows, and follows new
+history when already near the bottom. A render generation cancels stale viewport
+callbacks. Sidebar refresh no longer forces every selected conversation to the
+bottom. Automatic read acknowledgement now requires the app window to be active;
+read errors show a concise recovery message with technical detail in the tooltip.
+The private GTK regression exercises actual sidebar rebuilding, position retention,
+Latest activation and bottom following. Light/dark runs and strict all-target
+Clippy pass; captures in /tmp/messages-refresh-{light,dark} were reviewed.
+The private service now implements MarkThreadRead; live read state is unqualified.
+The optimized ARM64 package rebuilt and was installed via install-user.sh.
+Existing app instances were left running; reopening the preview loads this build.
+
 ## Messages navigation parity — 2026-10-22
 
 Source comparison with the qualified Python client is recorded in MESSAGES-PARITY.md.

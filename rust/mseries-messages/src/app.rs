@@ -492,6 +492,9 @@ pub struct App {
     conversation_title: gtk::Label,
     messages: gtk::Box,
     message_scroll: gtk::ScrolledWindow,
+    latest_button: gtk::Button,
+    rendered_history: RefCell<Option<(u64, String, usize)>>,
+    history_render_generation: Cell<u64>,
     editor: gtk::TextView,
     send_button: gtk::Button,
     copy_addresses_button: gtk::Button,
@@ -771,6 +774,11 @@ impl App {
             .hscrollbar_policy(gtk::PolicyType::Never)
             .build();
 
+        let latest_button = gtk::Button::with_label("Latest Messages");
+        latest_button.set_halign(gtk::Align::Center);
+        latest_button.set_visible(false);
+        mseries_pantheon_kit::set_accessible_label(&latest_button, "Jump to latest messages");
+
         let editor = gtk::TextView::builder()
             .wrap_mode(gtk::WrapMode::WordChar)
             .accepts_tab(false)
@@ -809,6 +817,7 @@ impl App {
         detail.append(&conversation_header);
         detail.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         detail.append(&message_scroll);
+        detail.append(&latest_button);
         detail.append(&feedback);
         detail.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         detail.append(&compose);
@@ -874,6 +883,9 @@ impl App {
             conversation_title,
             messages,
             message_scroll,
+            latest_button,
+            rendered_history: RefCell::new(None),
+            history_render_generation: Cell::new(0),
             editor,
             send_button,
             copy_addresses_button,
@@ -911,6 +923,22 @@ impl App {
         shortcuts: &gtk::Button,
         enter_send_switch: &gtk::Switch,
     ) {
+        let weak = Rc::downgrade(self);
+        self.latest_button.connect_clicked(move |_| {
+            if let Some(app) = weak.upgrade() {
+                app.scroll_messages_to_bottom();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.message_scroll
+            .vadjustment()
+            .connect_value_changed(move |adjustment| {
+                if let Some(app) = weak.upgrade()
+                    && adjustment.value() + adjustment.page_size() >= adjustment.upper() - 80.0
+                {
+                    app.latest_button.set_visible(false);
+                }
+            });
         let weak = Rc::downgrade(self);
         self.window.connect_close_request(move |_| {
             if let Some(app) = weak.upgrade() {
@@ -1761,9 +1789,7 @@ impl App {
                             if let Some(app) = weak_app.upgrade()
                                 && app.pin_load_generation.get() == phone_generation
                             {
-                                app.status.set_text(&format!(
-                                    "Could not mark conversation read: {error}"
-                                ));
+                                app.show_read_error(&error);
                             }
                         }
                     }
@@ -2345,6 +2371,13 @@ impl App {
         }
     }
 
+    fn show_read_error(&self, error: &str) {
+        self.status
+            .set_text("Could not mark conversation as read. Refresh to try again.");
+        self.status.set_tooltip_text(Some(error));
+        self.status.add_css_class("warning");
+    }
+
     fn select_thread(self: &Rc<Self>, key: &str) {
         let thread = {
             let mut state = self.state.borrow_mut();
@@ -2358,8 +2391,9 @@ impl App {
         self.render_conversation(thread.clone());
         self.show_selected_conversation();
         self.sync_favorite_selection();
-        self.scroll_messages_to_bottom();
-        if let Some(thread) = thread.filter(|thread| !thread.local_only && thread.unread() > 0) {
+        if let Some(thread) = thread
+            .filter(|thread| self.window.is_active() && !thread.local_only && thread.unread() > 0)
+        {
             let phone_generation = self.pin_load_generation.get();
             let backend = self.backend.clone();
             let weak = Rc::downgrade(self);
@@ -2369,14 +2403,41 @@ impl App {
                     && let Some(app) = weak.upgrade()
                     && app.pin_load_generation.get() == phone_generation
                 {
-                    app.status
-                        .set_text(&format!("Could not mark conversation read: {error}"));
+                    app.show_read_error(&error);
                 }
             });
         }
     }
 
     fn render_conversation(self: &Rc<Self>, thread: Option<Thread>) {
+        let adjustment = self.message_scroll.vadjustment();
+        let previous_position = adjustment.value();
+        let near_bottom = previous_position + adjustment.page_size() >= adjustment.upper() - 80.0;
+        let previous = self.rendered_history.borrow().clone();
+        let next = thread.as_ref().map(|thread| {
+            (
+                self.pin_load_generation.get(),
+                thread.key.clone(),
+                thread.messages.len()
+                    + self
+                        .state
+                        .borrow()
+                        .outbox
+                        .iter()
+                        .filter(|entry| entry.key == thread.key)
+                        .count(),
+            )
+        });
+        let switching = previous.as_ref().map(|(phone, key, _)| (phone, key))
+            != next.as_ref().map(|(phone, key, _)| (phone, key));
+        let grew = previous
+            .as_ref()
+            .zip(next.as_ref())
+            .is_some_and(|(old, new)| !switching && new.2 > old.2);
+        let show_latest = !switching && !near_bottom && (grew || self.latest_button.is_visible());
+        self.rendered_history.replace(next);
+        self.history_render_generation
+            .set(self.history_render_generation.get().wrapping_add(1));
         while let Some(child) = self.messages.first_child() {
             self.messages.remove(&child);
         }
@@ -2663,6 +2724,18 @@ impl App {
                 });
             }
             self.messages.append(&empty);
+        }
+        if self.rendered_history.borrow().is_some() {
+            self.position_messages(
+                if switching || near_bottom {
+                    None
+                } else {
+                    Some(previous_position)
+                },
+                show_latest,
+            );
+        } else {
+            self.latest_button.set_visible(false);
         }
     }
 
@@ -3165,6 +3238,11 @@ impl App {
     }
 
     fn scroll_messages_to_bottom(self: &Rc<Self>) {
+        self.position_messages(None, false);
+    }
+
+    fn position_messages(self: &Rc<Self>, position: Option<f64>, show_latest: bool) {
+        let render_generation = self.history_render_generation.get();
         let weak = Rc::downgrade(self);
         let selected = self.state.borrow().selected.clone();
         let phone_generation = self.pin_load_generation.get();
@@ -3175,7 +3253,8 @@ impl App {
             let Some(app) = weak.upgrade() else {
                 return glib::ControlFlow::Break;
             };
-            if app.pin_load_generation.get() != phone_generation
+            if app.history_render_generation.get() != render_generation
+                || app.pin_load_generation.get() != phone_generation
                 || app.state.borrow().selected != selected
             {
                 return glib::ControlFlow::Break;
@@ -3186,7 +3265,11 @@ impl App {
             }
             let adjustment = app.message_scroll.vadjustment();
             let bottom = (adjustment.upper() - adjustment.page_size()).max(adjustment.lower());
-            adjustment.set_value(bottom);
+            adjustment.set_value(position.unwrap_or(bottom).clamp(adjustment.lower(), bottom));
+            app.latest_button.set_visible(
+                show_latest
+                    && adjustment.value() + adjustment.page_size() < adjustment.upper() - 80.0,
+            );
             glib::ControlFlow::Break
         });
     }
@@ -3790,6 +3873,7 @@ mod tests {
         .unwrap();
         let node = gtk::gio::DBusNodeInfo::for_xml(r#"<node><interface name="io.weirdware.BlueFerry.Messages1">
           <method name="SendToThreadChecked"><arg type="s" direction="in"/><arg type="s" direction="in"/><arg type="b" direction="in"/><arg type="s" direction="in"/></method>
+          <method name="MarkThreadRead"><arg type="s" direction="in"/></method>
           <method name="GetStatus"><arg type="s" direction="out"/></method>
           <method name="ListThreads"><arg type="u" direction="in"/><arg type="s" direction="out"/></method>
           <method name="ListRecent"><arg type="s" direction="in"/><arg type="u" direction="in"/><arg type="s" direction="out"/></method>
@@ -3809,6 +3893,10 @@ mod tests {
         let registration = bus
             .register_object("/io/weirdware/BlueFerry", &node.interfaces()[0])
             .method_call(move |_, _, _, _, method, _, invocation| {
+                if method == "MarkThreadRead" {
+                    invocation.return_value(Some(&().to_variant()));
+                    return;
+                }
                 if method == "SendToThreadChecked" {
                     if fixture_send_mode.get() == 3 {
                         *fixture_delayed_send.borrow_mut() = Some(invocation);
@@ -4036,6 +4124,7 @@ mod tests {
             .iter_mut()
             .find(|thread| thread.key == "shared-key")
             .unwrap() = long_thread;
+        app.go_back_to_conversations();
         app.select_thread("shared-key");
         capture("regular-latest");
         let adjustment = app.message_scroll.vadjustment();
@@ -4057,6 +4146,46 @@ mod tests {
             adjustment.upper(),
             adjustment.page_size()
         );
+        let append_history = || {
+            app.state
+                .borrow_mut()
+                .threads
+                .iter_mut()
+                .find(|thread| thread.key == "shared-key")
+                .unwrap()
+                .messages
+                .push(super::Message {
+                    body: "A newly received synthetic message".into(),
+                    ..Default::default()
+                });
+            app.rebuild_sidebar();
+        };
+        let settle_until = |ready: &dyn Fn() -> bool| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+            while !ready() && std::time::Instant::now() < deadline {
+                gtk::glib::MainContext::default().iteration(false);
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            assert!(ready(), "history viewport did not settle");
+        };
+        adjustment.set_value(100.0);
+        append_history();
+        settle_until(&|| {
+            app.latest_button.is_visible() && (adjustment.value() - 100.0).abs() < 2.0
+        });
+        capture("regular-new-messages");
+        app.latest_button.emit_clicked();
+        settle_until(&|| {
+            !app.latest_button.is_visible()
+                && (adjustment.value() - (adjustment.upper() - adjustment.page_size())).abs() < 2.0
+        });
+        let previous_upper = adjustment.upper();
+        append_history();
+        settle_until(&|| {
+            adjustment.upper() > previous_upper
+                && (adjustment.value() - (adjustment.upper() - adjustment.page_size())).abs() < 2.0
+        });
+        assert!(!app.latest_button.is_visible());
         *app.state
             .borrow_mut()
             .threads
