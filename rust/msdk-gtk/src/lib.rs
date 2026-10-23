@@ -10,3 +10,5 @@ pub mod autohide;
 pub mod fixture;
 pub mod render;
 pub mod services;
+
+mod panel;
