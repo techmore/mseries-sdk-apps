@@ -1,0 +1,12 @@
+[package]
+name = "mseries-broker"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+description = "Agent broker core: owner grants, consent decisions and an audit trail over SDK agent manifests"
+
+[dependencies]
+msdk = { path = "../msdk" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
