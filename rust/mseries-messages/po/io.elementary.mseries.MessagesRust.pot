@@ -22,7 +22,7 @@ msgstr ""
 msgid "Back"
 msgstr ""
 
-#: src/app.rs:781
+#: src/app.rs:781 src/app.rs:1380
 msgid "Back to conversations"
 msgstr ""
 
@@ -48,6 +48,10 @@ msgstr ""
 
 #: src/app.rs:3578
 msgid "Choose the address you want to message."
+msgstr ""
+
+#: src/app.rs:1382
+msgid "Clear search / back in compact view"
 msgstr ""
 
 #: src/app.rs:539 src/app.rs:600 src/app.rs:2757
@@ -90,7 +94,7 @@ msgstr ""
 msgid "Could not open Connect iPhone: HOME is not set."
 msgstr ""
 
-#: src/bin/mseries-conversations.rs:23
+#: src/bin/mseries-conversations.rs:22
 msgid "Could not open this app. Check its installation and try again."
 msgstr ""
 
@@ -126,7 +130,7 @@ msgstr ""
 msgid "Jump to latest messages"
 msgstr ""
 
-#: src/app.rs:585 src/app.rs:1359
+#: src/app.rs:585 src/app.rs:1359 src/app.rs:1366
 msgid "Keyboard Shortcuts"
 msgstr ""
 
@@ -170,11 +174,11 @@ msgstr ""
 msgid "Message text copied."
 msgstr ""
 
-#: src/app.rs:525 src/app.rs:860
+#: src/app.rs:525 src/app.rs:860 src/bin/mseries-conversations.rs:54
 msgid "Messages"
 msgstr ""
 
-#: src/bin/mseries-conversations.rs:98
+#: src/bin/mseries-conversations.rs:101
 msgid "Messages & Signal"
 msgstr ""
 
@@ -186,7 +190,7 @@ msgstr ""
 msgid "New Message"
 msgstr ""
 
-#: src/app.rs:578 src/app.rs:579
+#: src/app.rs:578 src/app.rs:579 src/app.rs:1377
 msgid "New message"
 msgstr ""
 
@@ -194,7 +198,7 @@ msgstr ""
 msgid "Open Advanced BlueFerry"
 msgstr ""
 
-#: src/bin/mseries-conversations.rs:19
+#: src/bin/mseries-conversations.rs:18
 msgid "Opening the selected app. Reopen this switcher to choose another."
 msgstr ""
 
@@ -206,7 +210,7 @@ msgstr ""
 msgid "Preview unavailable · open the link to view it."
 msgstr ""
 
-#: src/app.rs:582 src/app.rs:583
+#: src/app.rs:582 src/app.rs:583 src/app.rs:1379
 msgid "Refresh conversations"
 msgstr ""
 
@@ -246,7 +250,7 @@ msgstr ""
 msgid "Review imported pins"
 msgstr ""
 
-#: src/app.rs:701 src/app.rs:707
+#: src/app.rs:701 src/app.rs:707 src/app.rs:1378
 msgid "Search conversations"
 msgstr ""
 
@@ -262,7 +266,7 @@ msgstr ""
 msgid "Send"
 msgstr ""
 
-#: src/app.rs:828
+#: src/app.rs:828 src/app.rs:1381
 msgid "Send message"
 msgstr ""
 
@@ -278,12 +282,32 @@ msgstr ""
 msgid "Sending to your iPhone…"
 msgstr ""
 
+#: src/bin/mseries-conversations.rs:57
+msgid "Show Messages"
+msgstr ""
+
+#: src/bin/mseries-conversations.rs:66
+msgid "Show Signal"
+msgstr ""
+
 #: src/app.rs:589
 msgid "Show keyboard shortcuts"
 msgstr ""
 
+#: src/bin/mseries-conversations.rs:63
+msgid "Signal"
+msgstr ""
+
 #: src/app.rs:3371
 msgid "Start Conversation"
+msgstr ""
+
+#: src/bin/mseries-conversations.rs:58
+msgid "Switch to Messages"
+msgstr ""
+
+#: src/bin/mseries-conversations.rs:67
+msgid "Switch to Signal"
 msgstr ""
 
 #: src/app.rs:3437 src/app.rs:3460 src/app.rs:3488 src/app.rs:3545
@@ -292,6 +316,10 @@ msgstr ""
 
 #: src/app.rs:3239
 msgid "The message was transferred to your iPhone."
+msgstr ""
+
+#: src/bin/mseries-conversations.rs:10
+msgid "This app is not installed. Install its desktop integration, then try again."
 msgstr ""
 
 #: src/app.rs:3354
@@ -308,6 +336,14 @@ msgstr ""
 
 #: src/app.rs:3041
 msgid "Write a message before sending."
+msgstr ""
+
+#: src/bin/mseries-conversations.rs:65
+msgid "Your Signal conversations"
+msgstr ""
+
+#: src/bin/mseries-conversations.rs:56
+msgid "Your iPhone conversations"
 msgstr ""
 
 #: src/app.rs:3053

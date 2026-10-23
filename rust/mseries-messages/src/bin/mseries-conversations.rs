@@ -7,8 +7,7 @@ fn launch(desktop: &str, feedback: &gtk::Label) {
         .into_iter()
         .find(|app| app.id().as_deref() == Some(desktop))
         .ok_or_else(|| {
-            "This app is not installed. Install its desktop integration, then try again."
-                .to_string()
+            tr("This app is not installed. Install its desktop integration, then try again.")
         })
         .and_then(|app| {
             let context = gtk::gdk::Display::default().map(|display| display.app_launch_context());
@@ -52,20 +51,24 @@ fn main() -> gtk::glib::ExitCode {
         let targets = [
             (
                 "messages",
-                "Messages",
+                tr("Messages"),
                 "io.elementary.mseries.MessagesRust.desktop",
-                "Warm workspace · iPhone messages",
+                tr("Your iPhone conversations"),
+                tr("Show Messages"),
+                tr("Switch to Messages"),
                 "messaging-channel-messages",
             ),
             (
                 "signal",
-                "Signal",
+                tr("Signal"),
                 "signal-desktop.desktop",
-                "Cool workspace · Signal conversations",
+                tr("Your Signal conversations"),
+                tr("Show Signal"),
+                tr("Switch to Signal"),
                 "messaging-channel-signal",
             ),
         ];
-        for (name, title, desktop, description, class) in targets {
+        for (name, title, desktop, description, action, accessible_name, class) in targets {
             let page = gtk::Box::new(gtk::Orientation::Vertical, 12);
             page.add_css_class(class);
             mseries_pantheon_kit::set_margins_text_units(&page, 1.0, 1.0, 1.0, 1.0);
@@ -76,12 +79,12 @@ fn main() -> gtk::glib::ExitCode {
                 .build();
             heading.add_css_class("heading");
             page.append(&heading);
-            let button = gtk::Button::with_label(&format!("Show {title}"));
-            mseries_pantheon_kit::set_accessible_label(&button, &format!("Switch to {title}"));
+            let button = gtk::Button::with_label(&action);
+            mseries_pantheon_kit::set_accessible_label(&button, &accessible_name);
             let feedback = feedback.clone();
             button.connect_clicked(move |_| launch(desktop, &feedback));
             page.append(&button);
-            stack.add_titled(&page, Some(name), title);
+            stack.add_titled(&page, Some(name), &title);
         }
         let switcher = gtk::StackSwitcher::builder()
             .stack(&stack)

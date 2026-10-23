@@ -1363,7 +1363,7 @@ impl App {
             .default_width(380)
             .build();
         let header = gtk::HeaderBar::new();
-        let title = gtk::Label::new(Some("Keyboard Shortcuts"));
+        let title = gtk::Label::new(Some(&tr("Keyboard Shortcuts")));
         title.add_css_class("title");
         header.set_title_widget(Some(&title));
         dialog.set_titlebar(Some(&header));
@@ -1374,12 +1374,12 @@ impl App {
             "Ctrl+Enter"
         };
         let shortcuts = [
-            ("New message", "Ctrl+N"),
-            ("Search conversations", "Ctrl+F"),
-            ("Refresh conversations", "Ctrl+R or F5"),
-            ("Back to conversations", "Alt+Left"),
-            ("Send message", send_shortcut),
-            ("Clear search / back in compact view", "Escape"),
+            (tr("New message"), "Ctrl+N"),
+            (tr("Search conversations"), "Ctrl+F"),
+            (tr("Refresh conversations"), "Ctrl+R or F5"),
+            (tr("Back to conversations"), "Alt+Left"),
+            (tr("Send message"), send_shortcut),
+            (tr("Clear search / back in compact view"), "Escape"),
         ];
         let rows = gtk::Grid::builder()
             .row_spacing(12)
@@ -1391,7 +1391,7 @@ impl App {
             .build();
         for (index, (description, shortcut)) in shortcuts.iter().enumerate() {
             let description = gtk::Label::builder()
-                .label(*description)
+                .label(description)
                 .xalign(0.0)
                 .hexpand(true)
                 .build();
