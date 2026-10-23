@@ -20,6 +20,90 @@ pub struct ChatMessage {
     pub text: String,
 }
 
+/// How a draft is changed on request. The wording sent to the model comes from this list only: never from conversation
+/// text, and the owner's own words (`AddContext`) are passed separately as a bounded note.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Instruction {
+    Reword,
+    MorePolite,
+    MoreConcise,
+    AddContext,
+}
+
+impl Instruction {
+    pub const ALL: [Instruction; 4] = [
+        Instruction::Reword,
+        Instruction::MorePolite,
+        Instruction::MoreConcise,
+        Instruction::AddContext,
+    ];
+
+    pub fn text(self) -> &'static str {
+        match self {
+            Instruction::Reword => {
+                "Say the same thing in different words, with a different sentence structure."
+            }
+            Instruction::MorePolite => {
+                "Make it more polite and warm without becoming stiff, formal or longer than needed."
+            }
+            Instruction::MoreConcise => {
+                "Make it shorter and more direct. Keep only what the reply needs."
+            }
+            Instruction::AddContext => {
+                "Rewrite it so that it takes the extra context from the user into account."
+            }
+        }
+    }
+}
+
+/// A request to change an earlier draft of the same reply.
+#[derive(Clone, Debug)]
+pub struct Revision {
+    pub instruction: Instruction,
+    pub previous: String,
+    /// The owner's own words for [`Instruction::AddContext`].
+    pub context: Option<String>,
+}
+
+pub const MAX_NOTE_CHARS: usize = 300;
+const MAX_PREVIOUS_CHARS: usize = 2_400;
+
+fn clean(text: &str, limit: usize) -> String {
+    text.chars()
+        .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
+        .take(limit)
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+/// The part of the system prompt that turns "write a reply" into "change this draft".
+fn revision_prompt(revision: &Revision) -> Result<String, String> {
+    let previous = clean(&revision.previous, MAX_PREVIOUS_CHARS);
+    if previous.is_empty() {
+        return Err("There is no draft to change".into());
+    }
+    let mut prompt = format!(
+        "\n\nYou already wrote a draft reply. Revise that draft instead of writing a new one, and keep its meaning and facts. {} Output only the revised message text.\n\nPrevious draft:\n{previous}",
+        revision.instruction.text()
+    );
+    match (
+        revision.instruction,
+        revision
+            .context
+            .as_deref()
+            .map(|note| clean(note, MAX_NOTE_CHARS)),
+    ) {
+        (Instruction::AddContext, Some(note)) if !note.is_empty() => {
+            prompt.push_str("\n\nExtra context from the user, in their own words: ");
+            prompt.push_str(&note);
+        }
+        (Instruction::AddContext, _) => return Err("There is no extra context to add".into()),
+        _ => {}
+    }
+    Ok(prompt)
+}
+
 #[derive(Serialize)]
 struct RequestMessage<'a> {
     role: &'a str,
@@ -27,6 +111,16 @@ struct RequestMessage<'a> {
 }
 
 pub fn draft_reply(app_id: &str, context: &[ChatMessage]) -> Result<String, String> {
+    draft_reply_revised(app_id, context, None)
+}
+
+/// [`draft_reply`], or a changed version of an earlier draft of the same reply.
+pub fn draft_reply_revised(
+    app_id: &str,
+    context: &[ChatMessage],
+    revision: Option<&Revision>,
+) -> Result<String, String> {
+    let revision_prompt = revision.map(revision_prompt).transpose()?;
     if context.is_empty() {
         return Err("There are no recent messages to reply to".into());
     }
@@ -79,7 +173,8 @@ pub fn draft_reply(app_id: &str, context: &[ChatMessage]) -> Result<String, Stri
                 .to_string()
         })?;
 
-    let system_prompt = build_system_prompt(&preferences.writing_style, &memories);
+    let mut system_prompt = build_system_prompt(&preferences.writing_style, &memories);
+    system_prompt.push_str(revision_prompt.as_deref().unwrap_or_default());
     let history = bounded_context(context);
     let mut messages = Vec::with_capacity(history.len() + 1);
     messages.push(RequestMessage {
@@ -228,6 +323,51 @@ mod tests {
             .unwrap_err(),
             "There is no new incoming message to reply to"
         );
+    }
+
+    #[test]
+    fn revisions_use_a_fixed_instruction_and_the_owners_note_only_for_context() {
+        for instruction in Instruction::ALL {
+            let revision = Revision {
+                instruction,
+                previous: "Sounds good, see you at noon.".into(),
+                context: Some("I am running ten minutes late".into()),
+            };
+            let prompt = revision_prompt(&revision).unwrap();
+            assert!(prompt.contains(instruction.text()));
+            assert!(prompt.contains("Previous draft:\nSounds good, see you at noon."));
+            assert_eq!(
+                prompt.contains("running ten minutes late"),
+                instruction == Instruction::AddContext
+            );
+        }
+        let texts: std::collections::HashSet<_> =
+            Instruction::ALL.iter().map(|i| i.text()).collect();
+        assert_eq!(texts.len(), Instruction::ALL.len());
+    }
+
+    #[test]
+    fn a_revision_needs_a_draft_and_context_needs_a_note() {
+        let base = Revision {
+            instruction: Instruction::Reword,
+            previous: " \n".into(),
+            context: None,
+        };
+        assert!(revision_prompt(&base).is_err());
+        let no_note = Revision {
+            instruction: Instruction::AddContext,
+            previous: "ok".into(),
+            context: Some("  \u{1b} ".into()),
+        };
+        assert!(revision_prompt(&no_note).is_err());
+        let long = Revision {
+            instruction: Instruction::AddContext,
+            previous: "ok".into(),
+            context: Some("x\u{7}".repeat(MAX_NOTE_CHARS * 2)),
+        };
+        let prompt = revision_prompt(&long).unwrap();
+        assert!(!prompt.contains('\u{7}'));
+        assert!(prompt.ends_with(&"x".repeat(MAX_NOTE_CHARS)));
     }
 
     #[test]
