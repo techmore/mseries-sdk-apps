@@ -272,7 +272,6 @@ struct State {
 
 #[derive(Clone)]
 struct ReplyContext {
-    app_id: String,
     messages: Vec<ChatMessage>,
     /// The owner's notes the first draft used, so a revision is written with the same knowledge.
     personal: PersonalContext,
@@ -945,7 +944,6 @@ fn set_context(
         return Err("Smart Reply was cancelled".into());
     }
     state.context = Some(ReplyContext {
-        app_id,
         messages: agent::from_wire(lines),
         // Cleaned again here: the method is callable by any process on the session bus.
         personal: PersonalContext::from_wire(notes),
