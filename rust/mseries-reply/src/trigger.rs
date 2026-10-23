@@ -100,6 +100,25 @@ where
     })
 }
 
+/// Refusals about the conversation, not about the app or the field: safe to show through the input method.
+pub fn says_in_field(refusal: &Refusal) -> bool {
+    matches!(
+        refusal,
+        Refusal::NoIncomingMessage
+            | Refusal::EmptyTranscript
+            | Refusal::CapLeavesNoContext
+            | Refusal::NotComposer
+    )
+}
+
+/// Shows `text` in the message box itself for a few seconds. `false` when it could not (the caller notifies instead).
+fn say(text: &str) -> bool {
+    service("Say", &(text,))
+        .ok()
+        .and_then(|reply| reply.body().deserialize::<bool>().ok())
+        .unwrap_or(false)
+}
+
 /// Opens the lease: from here the field shows a timer instead of a notification. `true` means it does.
 fn begin() -> Result<bool, String> {
     service("Begin", &())?
@@ -158,11 +177,15 @@ pub fn run(options: &Options) -> u8 {
                 );
                 return EXIT_NO_WINDOW;
             }
-            notify(
-                "Smart Reply is not available here",
-                &explain(&refusal),
-                8000,
-            );
+            // Where the app is a known, allowed chat app, the reason shows in the message box itself, where the owner
+            // is looking. Anywhere else (blocked or unknown apps, sensitive fields) the input method is not touched.
+            if !(says_in_field(&refusal) && say(&explain(&refusal))) {
+                notify(
+                    "Smart Reply is not available here",
+                    &explain(&refusal),
+                    8000,
+                );
+            }
             return EXIT_BLOCKED;
         }
     };
@@ -255,5 +278,32 @@ fn print_packet(packet: &Packet) {
     );
     for line in &packet.lines {
         println!("{}: {}", line.speaker, line.text);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_conversation_refusals_use_the_input_method() {
+        for refusal in [
+            Refusal::NoIncomingMessage,
+            Refusal::EmptyTranscript,
+            Refusal::CapLeavesNoContext,
+            Refusal::NotComposer,
+        ] {
+            assert!(says_in_field(&refusal), "{refusal:?}");
+        }
+        for refusal in [
+            Refusal::NotChatApp,
+            Refusal::Blocked(BlockReason::BuiltInField),
+            Refusal::Blocked(BlockReason::BuiltInApp),
+            Refusal::Blocked(BlockReason::Rule),
+            Refusal::Blocked(BlockReason::Disabled),
+        ] {
+            assert!(!says_in_field(&refusal), "{refusal:?}");
+        }
+        assert!(explain(&Refusal::NoIncomingMessage).contains("no incoming message"));
     }
 }

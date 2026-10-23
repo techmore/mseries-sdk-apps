@@ -102,6 +102,35 @@ pub fn ibus_preedit(text: &str) -> Value<'static> {
         .expect("static structure")
 }
 
+/// `IBusLookupTable`: `(sa{sv}uubbiavav)` page size, cursor position, cursor visible, round, orientation (0 horizontal),
+/// then the candidates and their labels as `IBusText`. The panel draws it beside the caret as a row of clickable buttons.
+pub fn ibus_lookup_table(items: &[(&str, &str)]) -> Value<'static> {
+    let candidates = items.iter().map(|(label, _)| ibus_text(label)).collect();
+    let labels = items.iter().map(|(_, chord)| ibus_text(chord)).collect();
+    StructureBuilder::new()
+        .add_field("IBusLookupTable".to_string())
+        .append_field(no_attachments())
+        .add_field(items.len().max(1) as u32)
+        .add_field(0_u32)
+        .add_field(false)
+        .add_field(false)
+        .add_field(0_i32)
+        .append_field(variants(candidates))
+        .append_field(variants(labels))
+        .build()
+        .map(Value::Structure)
+        .expect("static structure")
+}
+
+/// The quick-action bar: each button is its name with the chord as its label.
+fn bar_table() -> Value<'static> {
+    let items: Vec<(&str, &str)> = held::BAR
+        .iter()
+        .map(|item| (item.label, item.chord))
+        .collect();
+    ibus_lookup_table(&items)
+}
+
 /// `IBusEngineDesc`: `(sa{sv}` name, longname, description, language, license, author, icon, layout, `u` rank, then
 /// hotkeys, symbol, setup, layout variant, layout option, version, textdomain, icon property key `)`.
 pub fn engine_desc() -> Value<'static> {
@@ -268,6 +297,8 @@ struct State {
     entry: Option<ContextEntry>,
     /// The epoch the field monitor and the expiry task were started for.
     watched: Option<u64>,
+    /// A one-line message (why Smart Reply cannot help here) is showing in the field instead of a draft.
+    notice: bool,
 }
 
 #[derive(Clone)]
@@ -334,9 +365,10 @@ impl Shared {
     fn discard(self: &Arc<Self>) {
         let (had, engine, previous) = {
             let mut state = self.lock();
-            let had = state.held.is_holding() || state.drafting;
+            let had = state.held.is_holding() || state.drafting || state.notice;
             state.held.drop_draft();
             state.drafting = false;
+            state.notice = false;
             state.epoch += 1;
             state.identity = None;
             state.context = None;
@@ -353,6 +385,7 @@ impl Shared {
                         if let Ok(emitter) = SignalEmitter::new(&hint, path) {
                             let _ = Engine::hide_preedit_text(&emitter).await;
                             let _ = Engine::hide_auxiliary_text(&emitter).await;
+                            let _ = Engine::hide_lookup_table(&emitter).await;
                         }
                     },
                     "smart-reply-hide-hint",
@@ -460,6 +493,10 @@ impl Engine {
                         if let Some(draft) = draft {
                             show_with(&emitter, inline, &held::draft_view(&draft, inline, actions))
                                 .await;
+                            if actions {
+                                let _ =
+                                    Self::update_lookup_table(&emitter, bar_table(), true).await;
+                            }
                         }
                     }
                     EntryKey::Ignored => {}
@@ -497,6 +534,7 @@ impl Engine {
                 if let (true, Some(text)) = (safe, text) {
                     let _ = Self::hide_preedit_text(&emitter).await;
                     let _ = Self::hide_auxiliary_text(&emitter).await;
+                    let _ = Self::hide_lookup_table(&emitter).await;
                     let _ = Self::commit_text(&emitter, ibus_text(&text)).await;
                 }
                 self.shared.discard();
@@ -512,28 +550,8 @@ impl Engine {
                 false
             }
             KeyAction::Revise(instruction) => {
-                let (actions, inline, draft) = {
-                    let mut guard = self.shared.lock();
-                    let actions = guard.context.is_some();
-                    if actions {
-                        guard.swallow.insert(keyval);
-                        if instruction == Instruction::AddContext {
-                            guard.entry = Some(ContextEntry::default());
-                            guard.held.extend(now);
-                        }
-                    }
-                    (actions, guard.inline, guard.held.text().is_some())
-                };
-                if !actions || !draft {
-                    // Nothing to ask the model about (a draft handed over without its conversation).
-                    return false;
-                }
-                if instruction == Instruction::AddContext {
-                    show_with(&emitter, inline, &held::entry_view("")).await;
-                } else {
-                    self.revise(&emitter, instruction, None).await;
-                }
-                true
+                self.run_action(&emitter, instruction, Some(keyval), now)
+                    .await
             }
             KeyAction::Swallow => true,
             KeyAction::Ignore => false,
@@ -581,7 +599,25 @@ impl Engine {
     fn property_activate(&self, _name: &str, _state: u32) {}
     fn property_show(&self, _name: &str) {}
     fn property_hide(&self, _name: &str) {}
-    fn candidate_clicked(&self, _index: u32, _button: u32, _state: u32) {}
+    /// A button of the quick-action bar was clicked. The panel's popup never takes keyboard focus, so the draft is still
+    /// held and the click runs the same path as the Alt chord.
+    async fn candidate_clicked(
+        &self,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+        index: u32,
+        button: u32,
+        _state: u32,
+    ) {
+        if button != 1 {
+            return;
+        }
+        let Some(instruction) = held::bar_action(index) else {
+            return;
+        };
+        eprintln!("smart-reply: bar button {index} clicked");
+        self.run_action(&emitter, instruction, None, Instant::now())
+            .await;
+    }
     fn page_up(&self) {}
     fn page_down(&self) {}
     fn cursor_up(&self) {}
@@ -633,6 +669,16 @@ impl Engine {
 
     #[zbus(signal)]
     async fn hide_preedit_text(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn update_lookup_table(
+        emitter: &SignalEmitter<'_>,
+        table: Value<'_>,
+        visible: bool,
+    ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn hide_lookup_table(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 }
 
 impl Engine {
@@ -641,6 +687,19 @@ impl Engine {
         let mut guard = self.shared.lock();
         if released && guard.swallow.remove(&keyval) {
             return Step::Done(true);
+        }
+        if guard.notice {
+            // A one-line message is showing: any typing dismisses it (Esc is consumed, other keys go through).
+            if released || held::is_modifier(keyval) {
+                return Step::Done(false);
+            }
+            let consume = keyval == held::KEY_ESCAPE;
+            if consume {
+                guard.swallow.insert(keyval);
+            }
+            drop(guard);
+            self.shared.discard();
+            return Step::Done(consume);
         }
         if guard.drafting {
             // Still writing the draft: Esc cancels it, typing anything else abandons it and goes through.
@@ -696,6 +755,46 @@ impl Engine {
         ))
     }
 
+    /// A quick action from a key (`key` is its keyval, to be swallowed) or from a click on the bar. `true` when it was
+    /// handled (and the key must be consumed).
+    async fn run_action(
+        &self,
+        emitter: &SignalEmitter<'_>,
+        instruction: Instruction,
+        key: Option<u32>,
+        now: Instant,
+    ) -> bool {
+        let (actions, inline) = {
+            let mut guard = self.shared.lock();
+            // Only a held draft with its conversation, and not while a note is being typed or a redraft is running.
+            let actions = guard.context.is_some()
+                && guard.held.active(now)
+                && !guard.drafting
+                && guard.entry.is_none();
+            if actions {
+                if let Some(key) = key {
+                    guard.swallow.insert(key);
+                }
+                if instruction == Instruction::AddContext {
+                    guard.entry = Some(ContextEntry::default());
+                    guard.held.extend(now);
+                }
+            }
+            (actions, guard.inline)
+        };
+        if !actions {
+            // Nothing to ask the model about (a draft handed over without its conversation).
+            return false;
+        }
+        if instruction == Instruction::AddContext {
+            let _ = Self::hide_lookup_table(emitter).await;
+            show_with(emitter, inline, &held::entry_view("")).await;
+        } else {
+            self.revise(emitter, instruction, None).await;
+        }
+        true
+    }
+
     /// Quick action: takes the held draft, shows the timer again and asks the model for a changed version on a thread of
     /// its own. The result replaces the draft (a failure puts the old one back and says why).
     async fn revise(
@@ -723,6 +822,7 @@ impl Engine {
             return;
         };
         eprintln!("smart-reply: quick action {instruction:?}");
+        let _ = Self::hide_lookup_table(emitter).await;
         if inline {
             show_with(emitter, true, "Drafting… 0s").await;
         }
@@ -776,7 +876,7 @@ impl Engine {
         let discard = {
             let mut state = self.shared.lock();
             state.engine = None;
-            (state.held.is_holding() || state.drafting) && !state.busy
+            (state.held.is_holding() || state.drafting || state.notice) && !state.busy
         };
         if discard {
             eprintln!("smart-reply: draft dropped, the app moved focus away");
@@ -855,6 +955,12 @@ impl SmartReplyInput {
         begin(&self.shared).await.map_err(unavailable)
     }
 
+    /// Shows a one-line message in the field itself (why Smart Reply cannot help here) for a few seconds. Returns false
+    /// when the toolkit cannot show composing text safely, so the caller uses a notification instead.
+    async fn say(&self, text: String) -> zbus::fdo::Result<bool> {
+        say(&self.shared, &text).await.map_err(unavailable)
+    }
+
     /// Hands over the conversation the draft answers, `(from_owner, speaker, text)` per line, so the quick actions can
     /// ask the model again. Kept only while the draft is held. Needs an open `Begin`.
     fn set_context(
@@ -914,6 +1020,19 @@ async fn show_with(emitter: &SignalEmitter<'_>, inline: bool, text: &str) {
         let _ = Engine::update_preedit_text(emitter, ibus_preedit(text), cursor, true, 0).await;
     } else {
         let _ = Engine::update_auxiliary_text(emitter, ibus_text(text), true).await;
+    }
+}
+
+/// The quick-action bar beside the field (an IBus lookup table the panel draws, if one is running).
+async fn show_bar(ibus: &Connection, path: Option<OwnedObjectPath>, visible: bool) {
+    let Some(path) = path else { return };
+    let Ok(emitter) = SignalEmitter::new(ibus, path) else {
+        return;
+    };
+    if visible {
+        let _ = Engine::update_lookup_table(&emitter, bar_table(), true).await;
+    } else {
+        let _ = Engine::hide_lookup_table(&emitter).await;
     }
 }
 
@@ -1044,6 +1163,45 @@ async fn begin(shared: &Share) -> Result<bool, String> {
     Ok(lease.inline)
 }
 
+const NOTICE_SECONDS: u64 = 8;
+
+async fn say(shared: &Share, text: &str) -> Result<bool, String> {
+    let text: String = text.chars().filter(|c| !c.is_control()).take(300).collect();
+    if text.trim().is_empty() {
+        return Err("Nothing to say".into());
+    }
+    let lease = lease(shared).await?;
+    if !lease.inline {
+        shared.discard();
+        return Ok(false);
+    }
+    let ibus = shared.ibus()?.clone();
+    {
+        let mut state = shared.lock();
+        state.notice = true;
+        state.inline = true;
+    }
+    show(&ibus, lease.path, true, &format!("Smart Reply: {text}")).await;
+    let waiting = shared.clone();
+    let epoch = lease.epoch;
+    ibus.executor()
+        .spawn(
+            async move {
+                async_io::Timer::after(Duration::from_secs(NOTICE_SECONDS)).await;
+                let still = {
+                    let state = waiting.lock();
+                    state.epoch == epoch && state.notice
+                };
+                if still {
+                    waiting.discard();
+                }
+            },
+            "smart-reply-notice",
+        )
+        .detach();
+    Ok(true)
+}
+
 /// A timer in the field, so a slow model never looks like nothing happening.
 fn start_timer(shared: &Share, ibus: &Connection, epoch: u64, path: OwnedObjectPath, inline: bool) {
     let ticking = shared.clone();
@@ -1146,6 +1304,10 @@ async fn finish(shared: &Share, text: &str, expect_epoch: Option<u64>) -> Result
         &held::draft_view(text, inline, actions),
     )
     .await;
+    if actions {
+        let engine = shared.lock().engine.clone();
+        show_bar(&ibus, engine, true).await;
+    }
     if first {
         watch_field(shared.clone(), epoch, identity);
         let expiring = shared.clone();
@@ -1386,5 +1548,51 @@ mod tests {
             "Invalid draft"
         );
         assert!(shared.lock().held.text().is_none());
+    }
+
+    #[test]
+    fn the_bar_is_a_horizontal_lookup_table_with_one_button_per_action() {
+        assert_eq!(
+            bar_table().value_signature().to_string(),
+            "(sa{sv}uubbiavav)"
+        );
+        let Value::Structure(table) = bar_table() else {
+            panic!("a structure");
+        };
+        let fields = table.fields();
+        assert_eq!(fields[2], Value::from(held::BAR.len() as u32)); // page size shows every button
+        assert_eq!(fields[6], Value::from(0_i32)); // horizontal
+    }
+
+    #[test]
+    fn a_one_line_notice_is_dismissed_by_typing_and_forgotten_with_the_lease() {
+        let engine = Engine {
+            shared: bare_share(),
+        };
+        let now = Instant::now();
+        engine.shared.lock().notice = true;
+        // A bare modifier changes nothing.
+        assert!(matches!(
+            engine.decide(held::KEY_TAB + 1, 0, false, now),
+            Step::Action(_) | Step::Done(_)
+        ));
+        engine.shared.lock().notice = true;
+        assert!(matches!(
+            engine.decide(0xffe1, 0, false, now),
+            Step::Done(false)
+        ));
+        assert!(engine.shared.lock().notice);
+        // Typing dismisses it and goes through; Esc dismisses it and is consumed.
+        assert!(matches!(
+            engine.decide(0x61, 0, false, now),
+            Step::Done(false)
+        ));
+        assert!(!engine.shared.lock().notice);
+        engine.shared.lock().notice = true;
+        assert!(matches!(
+            engine.decide(held::KEY_ESCAPE, 0, false, now),
+            Step::Done(true)
+        ));
+        assert!(!engine.shared.lock().notice);
     }
 }

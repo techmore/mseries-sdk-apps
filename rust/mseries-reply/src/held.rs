@@ -47,6 +47,47 @@ pub fn hint(actions: bool) -> &'static str {
     }
 }
 
+/// One button of the bar the IBus panel draws beside the field: the same actions as the Alt chords, in the same order as
+/// the hint. Clicking never moves keyboard focus (candidate windows are popups), so the draft stays held.
+pub struct BarItem {
+    pub label: &'static str,
+    pub chord: &'static str,
+    pub instruction: Instruction,
+}
+
+pub const BAR: [BarItem; 5] = [
+    BarItem {
+        label: "Reword",
+        chord: "Alt+R",
+        instruction: Instruction::Reword,
+    },
+    BarItem {
+        label: "More polite",
+        chord: "Alt+P",
+        instruction: Instruction::MorePolite,
+    },
+    BarItem {
+        label: "More concise",
+        chord: "Alt+C",
+        instruction: Instruction::MoreConcise,
+    },
+    BarItem {
+        label: "Think harder (slow)",
+        chord: "Alt+T",
+        instruction: Instruction::ThinkHarder,
+    },
+    BarItem {
+        label: "+ context",
+        chord: "Alt+=",
+        instruction: Instruction::AddContext,
+    },
+];
+
+/// The action behind a clicked bar button (the panel reports the candidate's index).
+pub fn bar_action(index: u32) -> Option<Instruction> {
+    BAR.get(index as usize).map(|item| item.instruction)
+}
+
 /// What the field shows for a held draft: the draft and the keys (inline), or just the keys (beside the field).
 pub fn draft_view(draft: &str, inline: bool, actions: bool) -> String {
     if inline {
@@ -390,6 +431,33 @@ mod tests {
             classify_key(&held, KEY_ESCAPE, MOD_ALT, false, now),
             KeyAction::DiscardConsume
         );
+    }
+
+    #[test]
+    fn every_bar_button_runs_the_action_its_chord_runs() {
+        let now = Instant::now();
+        let mut held = Held::default();
+        held.hold("hello", now).unwrap();
+        assert_eq!(BAR.len(), Instruction::ALL.len());
+        for (index, item) in BAR.iter().enumerate() {
+            assert_eq!(bar_action(index as u32), Some(item.instruction));
+            // The chord printed on the button is the one the keyboard path maps to the same instruction.
+            let key = match item.chord {
+                "Alt+R" => 0x72,
+                "Alt+P" => 0x70,
+                "Alt+C" => 0x63,
+                "Alt+T" => 0x74,
+                "Alt+=" => 0x3d,
+                other => panic!("unknown chord {other}"),
+            };
+            assert_eq!(
+                classify_key(&held, key, MOD_ALT, false, now),
+                KeyAction::Revise(item.instruction)
+            );
+            assert!(hint(true).contains(item.chord));
+        }
+        assert_eq!(bar_action(BAR.len() as u32), None);
+        assert_eq!(bar_action(u32::MAX), None);
     }
 
     #[test]
