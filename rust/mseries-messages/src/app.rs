@@ -2239,7 +2239,14 @@ impl App {
                 choices,
                 &threads,
             ) {
-                Ok(state) => state,
+                Ok(mut state) => {
+                    let previous = app.pin_state.borrow();
+                    state.local_pins.clone_from(&previous.local_pins);
+                    state.hidden_imports = previous.hidden_imports.iter().filter(|identifier| {
+                        snapshot_for_save.pins.iter().any(|pin| &pin.apple_identifier == *identifier)
+                    }).cloned().collect();
+                    state
+                }
                 Err(message) => {
                     error_label.set_text(&message);
                     error_label.set_visible(true);

@@ -1,4 +1,4 @@
-"""Ordered Apple pin snapshots. Private state lives in the desktop keyring."""
+"""Local favorites and ordered Apple pin snapshots live in the desktop keyring."""
 from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
@@ -9,6 +9,7 @@ from messages_model import address_key
 
 MAX_BYTES = 131072
 MAX_PINS = 32
+MAX_LOCAL_PINS = 64
 SCHEMA = 'io.elementary.mseries.apple-message-pins'
 KEYRING_SCHEMA = 'org.freedesktop.Secret.Generic'
 KEYRING_APPLICATION = 'io.elementary.mseries.Messages'
@@ -76,14 +77,68 @@ def suggested_matches(snapshot, threads, previous=None):
     return result
 
 
-def matched_state(snapshot, choices, threads):
+def default_state():
+    return dict(version=2, snapshot=None, choices=[], local_pins=[], hidden_imports=[])
+
+
+def validate_state(value):
+    """Load the bounded local state while retaining v1 Apple-pin imports."""
+    if not isinstance(value, dict) or value.get('version') not in (1, 2):
+        raise ValueError('The saved pin import is unsupported.')
+    snapshot = validate_snapshot(value['snapshot']) if value.get('snapshot') is not None else None
+    choices = value.get('choices', [])
+    if not isinstance(choices, list) or (snapshot is None and choices):
+        raise ValueError('The saved conversation matches are invalid.')
+    if snapshot and len(choices) != len(snapshot['pins']):
+        raise ValueError('The saved conversation matches are invalid.')
+    if any(key is not None and (not isinstance(key, str) or not 0 < len(key) <= 4096) for key in choices):
+        raise ValueError('The saved conversation matches are invalid.')
+    if len(set(key for key in choices if key)) != len([key for key in choices if key]):
+        raise ValueError('The saved conversation matches contain duplicates.')
+
+    local_pins = value.get('local_pins', []) if value.get('version') == 2 else []
+    if not isinstance(local_pins, list) or len(local_pins) > MAX_LOCAL_PINS:
+        raise ValueError('The saved local favorites are invalid.')
+    if any(not isinstance(key, str) or not 0 < len(key) <= 4096 or
+           not key.startswith(('direct:', 'thread:')) or
+           key.endswith(':') for key in local_pins):
+        raise ValueError('The saved local favorites are invalid.')
+    if len(set(local_pins)) != len(local_pins):
+        raise ValueError('The saved local favorites contain duplicates.')
+
+    hidden_imports = value.get('hidden_imports', []) if value.get('version') == 2 else []
+    if not isinstance(hidden_imports, list) or len(hidden_imports) > MAX_PINS:
+        raise ValueError('The saved local pin overrides are invalid.')
+    if any(not isinstance(identifier, str) or not 0 < len(identifier) <= 2048 or
+           re.search(r'[\x00-\x1f\x7f]', identifier) for identifier in hidden_imports):
+        raise ValueError('The saved local pin overrides are invalid.')
+    if len(set(hidden_imports)) != len(hidden_imports):
+        raise ValueError('The saved local pin overrides contain duplicates.')
+    known_ids = {pin['apple_identifier'] for pin in snapshot['pins']} if snapshot else set()
+    if any(identifier not in known_ids for identifier in hidden_imports):
+        raise ValueError('The saved local pin overrides do not match the imported snapshot.')
+    return dict(version=2, snapshot=snapshot, choices=list(choices),
+                local_pins=list(local_pins), hidden_imports=list(hidden_imports))
+
+
+def matched_state(snapshot, choices, threads, previous=None):
     snapshot = validate_snapshot(snapshot)
     if len(choices) != len(snapshot['pins']):
         raise ValueError('Review every imported pin before continuing.')
     nonempty = [key for key in choices if key]
     if len(set(nonempty)) != len(nonempty) or any(key not in threads for key in nonempty):
         raise ValueError('Choose each conversation once. A conversation may have changed; review the matches.')
-    return dict(version=1, snapshot=snapshot, choices=list(choices))
+    prior = validate_state(previous) if previous is not None else default_state()
+    imported_identities = {local_identity(threads[key]) for key in nonempty}
+    local_pins = [identity for identity in prior['local_pins'] if identity not in imported_identities]
+    previous_choices = dict(zip(
+        (pin['apple_identifier'] for pin in (prior['snapshot'] or {}).get('pins', [])),
+        prior['choices']))
+    hidden_imports = [identifier for identifier, choice in zip(
+        (pin['apple_identifier'] for pin in snapshot['pins']), choices)
+        if identifier in prior['hidden_imports'] and previous_choices.get(identifier) == choice]
+    return dict(version=2, snapshot=snapshot, choices=list(choices),
+                local_pins=local_pins, hidden_imports=hidden_imports)
 
 
 def effective_choices(threads, state):
@@ -99,9 +154,100 @@ def effective_choices(threads, state):
 
 
 def ordered_keys(threads, state):
-    selected = [key for key in effective_choices(threads, state) if key in threads]
+    selected = effective_pins(threads, state)
     ranks = {key: len(selected) - index for index, key in enumerate(selected)}
     return sorted(threads, key=lambda key: (ranks.get(key, 0), threads[key].get('last_ts', '')), reverse=True)
+
+
+def effective_pins(threads, state):
+    """Imported Mac pins first, followed by this computer's local favorites."""
+    snapshot = state.get('snapshot')
+    hidden = set(state.get('hidden_imports', []))
+    pinned = []
+    if snapshot:
+        for pin, key in zip(snapshot['pins'], effective_choices(threads, state)):
+            if pin['apple_identifier'] not in hidden and key in threads and key not in pinned:
+                pinned.append(key)
+    for identity in state.get('local_pins', []):
+        key = resolve_local_identity(identity, threads)
+        if key and key not in pinned:
+            pinned.append(key)
+    return pinned
+
+
+def local_identity(thread):
+    """Stable local key: direct chats follow the unique phone address, groups their backend ID."""
+    recipients = thread.get('recipients', [])
+    if not thread.get('is_group') and len(recipients) == 1:
+        address = address_key(recipients[0])
+        if address:
+            return 'direct:' + address
+    key = thread.get('key')
+    if not isinstance(key, str) or not key:
+        raise ValueError('This conversation has no stable identity yet.')
+    return 'thread:' + key
+
+
+def resolve_local_identity(identity, threads):
+    if identity.startswith('thread:'):
+        key = identity[len('thread:'):]
+        return key if key in threads else None
+    if identity.startswith('direct:'):
+        address = identity[len('direct:'):]
+        matches = [key for key, thread in threads.items()
+                   if not thread.get('is_group') and len(thread.get('recipients', [])) == 1
+                   and address_key(thread['recipients'][0]) == address]
+        return matches[0] if len(matches) == 1 else None
+    # v2 was introduced with this format. Refuse to guess from an old opaque ID.
+    return None
+
+
+def unresolved_imports(state, threads):
+    """Count visible imported pins that still need a local conversation match."""
+    snapshot = state.get('snapshot')
+    if not snapshot:
+        return 0
+    hidden = set(state.get('hidden_imports', []))
+    choices = effective_choices(threads, state)
+    return sum(pin['apple_identifier'] not in hidden and key not in threads
+               for pin, key in zip(snapshot['pins'], choices))
+
+
+def toggle_pin_state(key, threads, state):
+    """Toggle a favorite locally without changing the imported Apple snapshot."""
+    if key not in threads or threads[key].get('new'):
+        raise ValueError('This conversation cannot be saved as a favorite yet.')
+    result = validate_state(state)
+    identity = local_identity(threads[key])
+    matching = []
+    if result['snapshot']:
+        matching = [(pin['apple_identifier'], choice)
+                    for pin, choice in zip(result['snapshot']['pins'], effective_choices(threads, result))
+                    if choice == key]
+    hidden = set(result['hidden_imports'])
+    was_pinned = key in effective_pins(threads, result)
+    if identity in result['local_pins']:
+        result['local_pins'].remove(identity)
+        # If the same chat is both locally pinned and imported, remove both
+        # visible sources in one action while keeping the Mac snapshot intact.
+        visible_imports = [identifier for identifier, _choice in matching if identifier not in hidden]
+        if was_pinned and visible_imports:
+            result['hidden_imports'] = list(dict.fromkeys([*result['hidden_imports'], *visible_imports]))
+        return result
+
+    if matching:
+        visible = [identifier for identifier, _choice in matching if identifier not in hidden]
+        if was_pinned and visible:
+            result['hidden_imports'] = list(dict.fromkeys([*result['hidden_imports'], *visible]))
+        else:
+            result['hidden_imports'] = [identifier for identifier in result['hidden_imports']
+                                        if identifier not in {identifier for identifier, _choice in matching}]
+        return result
+
+    if len(result['local_pins']) >= MAX_LOCAL_PINS:
+        raise ValueError('You can save up to 64 favorite conversations.')
+    result['local_pins'].append(identity)
+    return result
 
 
 def profile_key(status):
@@ -149,16 +295,7 @@ class PinStore:
     def _decode(self, text):
         if len(text.encode()) > MAX_BYTES:
             raise ValueError('The saved pin import is too large.')
-        value = json.loads(text)
-        if not isinstance(value, dict) or value.get('version') != 1 or not isinstance(value.get('choices'), list):
-            raise ValueError('The saved pin import is unsupported.')
-        value['snapshot'] = validate_snapshot(value['snapshot'])
-        choices = value['choices']
-        if len(choices) != len(value['snapshot']['pins']) or any(key is not None and (not isinstance(key, str) or not 0 < len(key) <= 4096) for key in choices):
-            raise ValueError('The saved conversation matches are invalid.')
-        if len(set(k for k in choices if k)) != len([k for k in choices if k]):
-            raise ValueError('The saved conversation matches contain duplicates.')
-        return value
+        return validate_state(json.loads(text))
 
     def load(self):
         text = self.secret.password_lookup_sync(self.schema, self.attributes, None)
@@ -170,14 +307,15 @@ class PinStore:
                 state = self._decode(legacy)
                 self.save(state)
                 return state
-        return dict(version=1, snapshot=None, choices=[])
+        return default_state()
 
     def save(self, state):
+        state = validate_state(state)
         text = json.dumps(state, ensure_ascii=True)
         if len(text.encode()) > MAX_BYTES:
             raise ValueError('The saved pin import is too large.')
         if not self.secret.password_store_sync(self.schema, self.attributes, self.secret.COLLECTION_DEFAULT,
-                                               'Messages — imported Apple conversation pins', text, None):
+                                               'Messages — favorites and imported Apple pins', text, None):
             raise RuntimeError('The desktop keyring did not save the imported pins.')
         if self.legacy_attributes:
             try:

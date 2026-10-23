@@ -260,3 +260,8 @@ qualify an app for replacement or installation.
 DockBadge wire-contract qualification runs with the isolated Messages GUI runner.
 It uses its own session bus and checks URI/count/progress/visibility, preconnection
 coalescing, clamping and clearing; owner dock visual acceptance remains separate.
+
+ImportedPinState reads v1/v2 shared Python records. Version 2 retains bounded
+local_pins and hidden_imports and orders visible imported/local pins before the
+remaining history. Clients must preserve those fields when reviewing a new import;
+Rust Messages does so. Local favorite editing parity remains separate.

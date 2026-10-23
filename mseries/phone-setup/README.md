@@ -1,6 +1,6 @@
 # Connect iPhone (experimental)
 
-Native GTK 4 / Granite 7 Messages and onboarding windows over BlueFerry's existing backend.
+Current transition client: GTK 4 / Granite 7 Messages and onboarding windows over BlueFerry's existing backend. The target Messages app is a Rust GTK4/Granite app in `rust/`, using the T3 client as its Pantheon pattern; BlueFerry remains the transport and encrypted-history owner. See [`SIGNAL-PANTHEON-DESIGN.md`](../SIGNAL-PANTHEON-DESIGN.md) for the Signal and Messages Rust-port plan.
 Install with `bash mseries/install-phone-setup.sh` after installing BlueFerry's
 backend and GTK client. Launch `mseries-phone-setup`; optionally pass
 `--ios-version 27.0.1` for diagnostics. The opening page does not ask for an iOS version or require one to continue.
@@ -61,6 +61,13 @@ recipient validation, encrypted history, group checks and phone sessions stay in
 BlueFerry. The new window is a client of that existing daemon, not a competing MAP
 client. Advanced BlueFerry remains accessible from its menu. Setup now opens this
 native client once message access is ready.
+
+The **Favorites** section combines imported Mac pin order with local favorites.
+Use a conversation's right-click or long-press menu to add or remove it. Local
+favorites are stored per connected phone in the desktop keyring; they do not
+change the exported Apple snapshot or the iPhone. Direct-chat favorites follow a
+unique phone address when the backend promotes a recent inbox entry into its
+canonical conversation. Groups retain their backend identity.
 
 Drafts are kept per conversation while the window is open. Sending is explicit,
 shows pending/failure, prevents duplicate clicks, and keeps a failed draft for

@@ -97,14 +97,20 @@ pub struct ImportedPinState {
     pub version: u64,
     pub snapshot: Option<PinSnapshot>,
     pub choices: Vec<Option<String>>,
+    #[serde(default)]
+    pub local_pins: Vec<String>,
+    #[serde(default)]
+    pub hidden_imports: Vec<String>,
 }
 
 impl Default for ImportedPinState {
     fn default() -> Self {
         Self {
-            version: 1,
+            version: 2,
             snapshot: None,
             choices: Vec::new(),
+            local_pins: Vec::new(),
+            hidden_imports: Vec::new(),
         }
     }
 }
@@ -134,15 +140,43 @@ impl ImportedPinState {
             }
         }
         Ok(Self {
-            version: 1,
+            version: 2,
             snapshot: Some(snapshot),
             choices,
+            local_pins: Vec::new(),
+            hidden_imports: Vec::new(),
         })
     }
 
     pub fn validate(&self) -> Result<(), String> {
-        if self.version != 1 {
+        if !matches!(self.version, 1 | 2) {
             return Err("The saved pin import is unsupported.".into());
+        }
+        if self.local_pins.len() > 64 || self.hidden_imports.len() > MAX_PINS {
+            return Err("The saved local favorites are invalid.".into());
+        }
+        let mut local = HashSet::new();
+        for identity in &self.local_pins {
+            if identity.len() > MAX_THREAD_KEY_BYTES
+                || identity.ends_with(':')
+                || !(identity.starts_with("direct:") || identity.starts_with("thread:"))
+                || !local.insert(identity)
+            {
+                return Err("The saved local favorites are invalid.".into());
+            }
+        }
+        let mut hidden = HashSet::new();
+        for identifier in &self.hidden_imports {
+            if !hidden.insert(identifier)
+                || !self.snapshot.as_ref().is_some_and(|snapshot| {
+                    snapshot
+                        .pins
+                        .iter()
+                        .any(|pin| &pin.apple_identifier == identifier)
+                })
+            {
+                return Err("The saved local pin overrides are invalid.".into());
+            }
         }
         let Some(snapshot) = &self.snapshot else {
             return if self.choices.is_empty() {
@@ -184,13 +218,40 @@ impl ImportedPinState {
         let mut ordered = Vec::with_capacity(threads.len());
         let mut included = HashSet::with_capacity(threads.len());
         if let Some(snapshot) = &self.snapshot {
-            for key in effective_choices(self, snapshot, threads)
-                .into_iter()
-                .flatten()
+            for (pin, key) in snapshot
+                .pins
+                .iter()
+                .zip(effective_choices(self, snapshot, threads))
             {
+                if self.hidden_imports.contains(&pin.apple_identifier) {
+                    continue;
+                }
+                let Some(key) = key else { continue };
                 if current.contains(key.as_str()) && included.insert(key.clone()) {
                     ordered.push(key);
                 }
+            }
+        }
+        for identity in &self.local_pins {
+            let key = if let Some(key) = identity.strip_prefix("thread:") {
+                current.contains(key).then(|| key.to_string())
+            } else if let Some(address) = identity.strip_prefix("direct:") {
+                let matches = threads
+                    .iter()
+                    .filter(|thread| {
+                        !thread.is_group
+                            && thread.recipients.len() == 1
+                            && normalized_address(&thread.recipients[0]).as_deref() == Some(address)
+                    })
+                    .collect::<Vec<_>>();
+                (matches.len() == 1).then(|| matches[0].key.clone())
+            } else {
+                None
+            };
+            if let Some(key) = key
+                && included.insert(key.clone())
+            {
+                ordered.push(key);
             }
         }
         let mut remaining = threads
@@ -456,6 +517,48 @@ async fn run_secret_tool(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_v2_state_preserves_local_favorites_and_hidden_imports() {
+        let snapshot = snapshot(&["+12025550123"]);
+        let state: ImportedPinState = serde_json::from_value(serde_json::json!({
+            "version":2, "snapshot":snapshot, "choices":["imported"],
+            "local_pins":["thread:local"], "hidden_imports":["+12025550123"]
+        }))
+        .unwrap();
+        state.validate().unwrap();
+        let threads = vec![
+            Thread {
+                key: "imported".into(),
+                last_ts: "2026-10-22".into(),
+                ..Default::default()
+            },
+            Thread {
+                key: "local".into(),
+                last_ts: "2026-10-20".into(),
+                ..Default::default()
+            },
+        ];
+        assert_eq!(
+            state.ordered_thread_keys(&threads),
+            vec!["local", "imported"]
+        );
+        let decoded: ImportedPinState =
+            serde_json::from_str(&serde_json::to_string(&state).unwrap()).unwrap();
+        assert_eq!(decoded, state);
+        let legacy: ImportedPinState = serde_json::from_value(serde_json::json!({
+            "version":1,"snapshot":null,"choices":[]
+        }))
+        .unwrap();
+        legacy.validate().unwrap();
+        assert!(legacy.local_pins.is_empty());
+        let mut invalid = state.clone();
+        invalid.local_pins.push("thread:local".into());
+        assert!(invalid.validate().is_err());
+        invalid = state;
+        invalid.hidden_imports.push("unknown".into());
+        assert!(invalid.validate().is_err());
+    }
 
     fn snapshot(identifiers: &[&str]) -> PinSnapshot {
         PinSnapshot {
