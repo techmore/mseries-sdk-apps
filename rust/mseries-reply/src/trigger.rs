@@ -184,6 +184,14 @@ pub fn run(options: &Options) -> u8 {
         // This toolkit cannot show composing text safely, so the notification is the only place to say so.
         notify("Smart Reply", "Drafting…", 4000);
     }
+    // The conversation stays with the input service while the draft is held, for the quick actions (reword, polite,
+    // concise, more context). Without it the draft still works; the actions are just not offered.
+    if let Err(error) = service(
+        "SetContext",
+        &(packet.app_id.as_str(), agent::to_wire(&packet)),
+    ) {
+        eprintln!("quick actions unavailable: {error}");
+    }
     let started = std::time::Instant::now();
     let draft = match agent::draft(&packet, &LocalModel) {
         Ok(draft) => draft,
@@ -208,11 +216,7 @@ pub fn run(options: &Options) -> u8 {
         return 0;
     }
     if !inline {
-        notify(
-            "Smart Reply draft — Tab inserts, Esc discards",
-            &draft,
-            60_000,
-        );
+        notify(crate::held::NOTICE_TITLE, &draft, 60_000);
     }
     0
 }
