@@ -50,11 +50,11 @@ jobs:
 
       - name: Rust formatting and lint
         run: |
-          cargo fmt --manifest-path rust/Cargo.toml -p mseries-messages --check
-          cargo clippy --manifest-path rust/Cargo.toml -p mseries-messages --locked -- -D warnings
+          cargo fmt --manifest-path rust/Cargo.toml -p mseries-messages -p mseries-pantheon-kit --check
+          cargo clippy --manifest-path rust/Cargo.toml -p mseries-messages -p mseries-pantheon-kit --all-targets --locked -- -D warnings
 
-      - name: Rust Messages unit tests
-        run: cargo test --manifest-path rust/Cargo.toml -p mseries-messages --locked
+      - name: Rust Messages and shared SDK unit tests
+        run: cargo test --manifest-path rust/Cargo.toml -p mseries-messages -p mseries-pantheon-kit --locked
 
       - name: Isolated Messages GTK recovery test
         run: bash rust/mseries-messages/test-gui.sh
@@ -65,6 +65,7 @@ jobs:
       - name: Validate desktop metadata
         run: |
           desktop-file-validate rust/mseries-messages/data/io.elementary.mseries.MessagesRust.desktop
+          desktop-file-validate rust/mseries-messages/data/io.elementary.mseries.Conversations.desktop
           appstreamcli validate --no-net rust/mseries-messages/data/io.elementary.mseries.MessagesRust.metainfo.xml
 
       - uses: actions/upload-artifact@v7
