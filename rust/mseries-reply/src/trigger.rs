@@ -186,6 +186,19 @@ pub fn run(options: &Options) -> u8 {
         notify("Smart Reply", "Drafting…", 4000);
     }
     let personal = agent::personal_context(&packet, &rules);
+    // The conversation (and the notes the first draft used) stays with the input service while the draft is held, for
+    // the quick actions (reword, polite, concise, more context, think harder). Without it the draft still works; the
+    // actions are just not offered.
+    if let Err(error) = service(
+        "SetContext",
+        &(
+            packet.app_id.as_str(),
+            agent::to_wire(&packet),
+            personal.block(),
+        ),
+    ) {
+        eprintln!("quick actions unavailable: {error}");
+    }
     let started = std::time::Instant::now();
     let draft = match agent::draft(&packet, &personal, &LocalModel) {
         Ok(draft) => draft,
@@ -217,11 +230,7 @@ pub fn run(options: &Options) -> u8 {
         return 0;
     }
     if !inline {
-        notify(
-            "Smart Reply draft — Tab inserts, Esc discards",
-            &draft,
-            60_000,
-        );
+        notify(crate::held::NOTICE_TITLE, &draft, 60_000);
     }
     0
 }
