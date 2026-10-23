@@ -1974,6 +1974,15 @@ name = "mseries-power"
 version = "0.1.0"
 
 [[package]]
+name = "mseries-reply"
+version = "0.1.0"
+dependencies = [
+ "mseries-ai",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mseries-system-monitor"
 version = "0.1.0"
 dependencies = [

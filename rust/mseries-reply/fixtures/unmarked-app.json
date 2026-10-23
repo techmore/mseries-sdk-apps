@@ -1,0 +1,10 @@
+{
+  "app_id": "org.example.Notes",
+  "title": "Shopping list",
+  "marked": false,
+  "field": { "role": "text", "label": "Note", "declared_composer": false },
+  "header": "Shopping list",
+  "transcript": [
+    { "speaker": "Sam", "text": "Buy milk" }
+  ]
+}
