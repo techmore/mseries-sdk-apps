@@ -72,8 +72,11 @@ pub fn explain(refusal: &Refusal) -> String {
     .to_string()
 }
 
-/// Hands the draft to the input service, which holds it until Tab or Esc.
-fn offer(draft: &str) -> Result<(), String> {
+/// One call to the input service. Its error text is passed back as the message.
+fn service<B>(method: &str, body: &B) -> Result<zbus::Message, String>
+where
+    B: serde::Serialize + zbus::zvariant::DynamicType,
+{
     zbus::block_on(async {
         let connection = zbus::connection::Builder::session()
             .map_err(|error| error.to_string())?
@@ -86,16 +89,23 @@ fn offer(draft: &str) -> Result<(), String> {
                 Some(SERVICE_NAME),
                 SERVICE_PATH,
                 Some(SERVICE_NAME),
-                "Offer",
-                &(draft,),
+                method,
+                body,
             )
             .await
-            .map(|_| ())
             .map_err(|error| match error {
                 zbus::Error::MethodError(_, Some(text), _) => text,
                 other => other.to_string(),
             })
     })
+}
+
+/// Opens the lease: from here the field shows a timer instead of a notification. `true` means it does.
+fn begin() -> Result<bool, String> {
+    service("Begin", &())?
+        .body()
+        .deserialize::<bool>()
+        .map_err(|error| error.to_string())
 }
 
 pub fn run(options: &Options) -> u8 {
@@ -162,30 +172,48 @@ pub fn run(options: &Options) -> u8 {
         return 0;
     }
 
-    notify("Smart Reply", "Drafting…", 4000);
+    // Refuses sensitive fields before anything is switched, and starts the timer in the field.
+    let inline = match begin() {
+        Ok(inline) => inline,
+        Err(error) => {
+            notify("Smart Reply is not available here", &error, 8000);
+            return EXIT_HOLD;
+        }
+    };
+    if !inline {
+        // This toolkit cannot show composing text safely, so the notification is the only place to say so.
+        notify("Smart Reply", "Drafting…", 4000);
+    }
     let started = std::time::Instant::now();
     let draft = match agent::draft(&packet, &LocalModel) {
         Ok(draft) => draft,
         Err(error) => {
+            let _ = service("Cancel", &());
             eprintln!("{}", AuditRecord::drafted(&packet, "model-error").to_json());
             notify("Smart Reply could not draft", &error, 10_000);
             return EXIT_MODEL;
         }
     };
     eprintln!(
-        "{} elapsed={:.1}s",
+        "{} elapsed={:.1}s inline={inline}",
         AuditRecord::drafted(&packet, "drafted").to_json(),
         started.elapsed().as_secs_f32()
     );
-    if let Err(error) = offer(&draft) {
-        notify("Smart Reply could not hold the draft", &error, 10_000);
-        return EXIT_HOLD;
+    if let Err(error) = service("Finish", &(draft.as_str(),)) {
+        // The owner typed, switched fields or pressed Esc while the model was working: nothing to show.
+        if !error.contains("cancelled") {
+            notify("Smart Reply could not hold the draft", &error, 10_000);
+            return EXIT_HOLD;
+        }
+        return 0;
     }
-    notify(
-        "Smart Reply draft — Tab inserts, Esc discards",
-        &draft,
-        60_000,
-    );
+    if !inline {
+        notify(
+            "Smart Reply draft — Tab inserts, Esc discards",
+            &draft,
+            60_000,
+        );
+    }
     0
 }
 
