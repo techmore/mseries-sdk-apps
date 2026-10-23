@@ -57,6 +57,15 @@ impl A11y {
         })
     }
 
+    /// The toolkit the application behind `node` reports (`gtk`, `Qt`, `Chromium`...).
+    pub fn toolkit(&self, node: &NodeRef) -> Option<String> {
+        let root = NodeRef {
+            bus: node.bus.clone(),
+            path: ROOT.into(),
+        };
+        String::try_from(self.property(&root, "org.a11y.atspi.Application", "ToolkitName")?).ok()
+    }
+
     async fn call_async<B>(
         &self,
         node: &NodeRef,
@@ -151,21 +160,6 @@ impl Tree for A11y {
             .ok()?
             .to_string();
         Self::reference(bus, path)
-    }
-
-    fn inspect(&self, nodes: &[NodeRef]) -> Vec<Option<(u32, States)>> {
-        block_on(futures_util::future::join_all(nodes.iter().map(
-            |node| async move {
-                let (role, states) = futures_util::future::join(
-                    self.call_async(node, ACCESSIBLE, "GetRole", &()),
-                    self.call_async(node, ACCESSIBLE, "GetState", &()),
-                )
-                .await;
-                let role = role?.body().deserialize::<u32>().ok()?;
-                let words = states?.body().deserialize::<Vec<u32>>().ok()?;
-                Some((role, States::from_words(&words)))
-            },
-        )))
     }
 
     fn name(&self, node: &NodeRef) -> Option<String> {

@@ -10,6 +10,12 @@ pub const MAX_CHARS: usize = 1_500;
 pub const KEY_TAB: u32 = 0xff09;
 pub const KEY_ESCAPE: u32 = 0xff1b;
 
+/// Shift, Control, Caps Lock, Alt, Meta, Super and Hyper on their own. Pressing one is not a reason to drop a draft
+/// (the shortcut's own modifiers are still going up when the draft starts).
+pub fn is_modifier(keyval: u32) -> bool {
+    (0xffe1..=0xffee).contains(&keyval)
+}
+
 /// A draft must be non-empty, bounded and free of control characters other than newline and tab.
 pub fn valid_offer(text: &str) -> bool {
     let length = text.chars().count();
@@ -75,7 +81,7 @@ pub enum KeyAction {
 }
 
 pub fn classify_key(held: &Held, keyval: u32, released: bool, now: Instant) -> KeyAction {
-    if !held.active(now) {
+    if !held.active(now) || is_modifier(keyval) {
         return KeyAction::Ignore;
     }
     if released {
@@ -111,6 +117,19 @@ mod tests {
         assert_eq!(classify_key(&held, A, false, now), KeyAction::DiscardPass);
         assert_eq!(classify_key(&held, A, true, now), KeyAction::Ignore);
         assert_eq!(classify_key(&held, KEY_TAB, true, now), KeyAction::Swallow);
+    }
+
+    #[test]
+    fn bare_modifier_keys_never_drop_a_draft() {
+        let now = Instant::now();
+        let mut held = Held::default();
+        held.hold("hello", now).unwrap();
+        for key in [0xffe1, 0xffe3, 0xffe9, 0xffeb] {
+            assert_eq!(classify_key(&held, key, false, now), KeyAction::Ignore);
+            assert_eq!(classify_key(&held, key, true, now), KeyAction::Ignore);
+        }
+        assert!(is_modifier(0xffe1) && is_modifier(0xffee));
+        assert!(!is_modifier(KEY_TAB) && !is_modifier(0x61));
     }
 
     #[test]

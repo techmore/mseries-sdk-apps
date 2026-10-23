@@ -1989,7 +1989,6 @@ name = "mseries-reply"
 version = "0.1.0"
 dependencies = [
  "async-io",
- "futures-util",
  "mseries-ai",
  "serde",
  "serde_json",

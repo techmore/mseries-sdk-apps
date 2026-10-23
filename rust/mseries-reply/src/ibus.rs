@@ -69,6 +69,34 @@ pub fn ibus_text(text: &str) -> Value<'static> {
         .expect("static structure")
 }
 
+/// `IBusText` whose whole range is underlined, the usual look of text still being composed (a preedit).
+pub fn ibus_preedit(text: &str) -> Value<'static> {
+    let length = text.chars().count() as u32;
+    let underline = StructureBuilder::new()
+        .add_field("IBusAttribute".to_string())
+        .append_field(no_attachments())
+        .add_field(1_u32) // IBUS_ATTR_TYPE_UNDERLINE
+        .add_field(1_u32) // IBUS_ATTR_UNDERLINE_SINGLE
+        .add_field(0_u32)
+        .add_field(length)
+        .build()
+        .expect("static structure");
+    let attributes = StructureBuilder::new()
+        .add_field("IBusAttrList".to_string())
+        .append_field(no_attachments())
+        .append_field(variants(vec![Value::Structure(underline)]))
+        .build()
+        .expect("static structure");
+    StructureBuilder::new()
+        .add_field("IBusText".to_string())
+        .append_field(no_attachments())
+        .add_field(text.to_string())
+        .append_field(Value::Value(Box::new(Value::Structure(attributes))))
+        .build()
+        .map(Value::Structure)
+        .expect("static structure")
+}
+
 /// `IBusEngineDesc`: `(sa{sv}` name, longname, description, language, license, author, icon, layout, `u` rank, then
 /// hotkeys, symbol, setup, layout variant, layout option, version, textdomain, icon property key `)`.
 pub fn engine_desc() -> Value<'static> {
@@ -224,6 +252,11 @@ struct State {
     /// `(purpose, hints)` the app reported for the field.
     content_type: (u32, u32),
     engines: u32,
+    /// The lease is open and a draft is being written (the trigger called `Begin`, not yet `Finish`).
+    drafting: bool,
+    /// The draft is shown in the field itself (as composing text) instead of only by the trigger's notification.
+    inline: bool,
+    started: Option<Instant>,
 }
 
 struct Shared {
@@ -283,8 +316,9 @@ impl Shared {
     fn discard(self: &Arc<Self>) {
         let (had, engine, previous) = {
             let mut state = self.lock();
-            let had = state.held.is_holding();
+            let had = state.held.is_holding() || state.drafting;
             state.held.drop_draft();
+            state.drafting = false;
             state.epoch += 1;
             state.identity = None;
             (had, state.engine.clone(), state.previous.take())
@@ -296,6 +330,7 @@ impl Shared {
                 .spawn(
                     async move {
                         if let Ok(emitter) = SignalEmitter::new(&hint, path) {
+                            let _ = Engine::hide_preedit_text(&emitter).await;
                             let _ = Engine::hide_auxiliary_text(&emitter).await;
                         }
                     },
@@ -372,6 +407,22 @@ impl Engine {
             if released && guard.swallow.remove(&keyval) {
                 return true;
             }
+            if guard.drafting {
+                // Still writing the draft: Esc cancels it, typing anything else abandons it and goes through.
+                if released || held::is_modifier(keyval) {
+                    return false;
+                }
+                if keyval == held::KEY_ESCAPE {
+                    guard.swallow.insert(keyval);
+                    drop(guard);
+                    self.shared.discard();
+                    return true;
+                }
+                drop(guard);
+                eprintln!("smart-reply: draft dropped, a key was typed");
+                self.shared.discard();
+                return false;
+            }
             held::classify_key(&guard.held, keyval, released, now)
         };
         match action {
@@ -396,6 +447,7 @@ impl Engine {
                     eprintln!("smart-reply: Tab ignored; the draft expired or the field changed");
                 }
                 if let (true, Some(text)) = (safe, text) {
+                    let _ = Self::hide_preedit_text(&emitter).await;
                     let _ = Self::hide_auxiliary_text(&emitter).await;
                     let _ = Self::commit_text(&emitter, ibus_text(&text)).await;
                 }
@@ -489,6 +541,18 @@ impl Engine {
 
     #[zbus(signal)]
     async fn hide_auxiliary_text(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn update_preedit_text(
+        emitter: &SignalEmitter<'_>,
+        text: Value<'_>,
+        cursor_pos: u32,
+        visible: bool,
+        mode: u32,
+    ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn hide_preedit_text(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 }
 
 impl Engine {
@@ -497,9 +561,10 @@ impl Engine {
         let discard = {
             let mut state = self.shared.lock();
             state.engine = None;
-            state.held.is_holding() && !state.busy
+            (state.held.is_holding() || state.drafting) && !state.busy
         };
         if discard {
+            eprintln!("smart-reply: draft dropped, the app moved focus away");
             self.shared.discard();
         }
     }
@@ -568,8 +633,24 @@ fn unavailable(message: impl Into<String>) -> zbus::fdo::Error {
 
 #[interface(name = "org.techmore.SmartReplyInput")]
 impl SmartReplyInput {
+    /// Opens the lease and shows that a draft is being written. Returns whether the status and the draft appear in the
+    /// field itself (true) or only in the trigger's notification (false, for toolkits where composing text is unsafe).
+    async fn begin(&self) -> zbus::fdo::Result<bool> {
+        begin(&self.shared).await.map_err(unavailable)
+    }
+
+    /// Replaces the status with the finished draft and holds it for Tab. Needs an open `Begin`.
+    async fn finish(&self, text: String) -> zbus::fdo::Result<()> {
+        finish(&self.shared, &text).await.map_err(unavailable)
+    }
+
+    /// `Begin` and `Finish` in one step, for callers that already have the draft.
     async fn offer(&self, text: String) -> zbus::fdo::Result<()> {
-        offer(&self.shared, &text).await.map_err(unavailable)
+        if !held::valid_offer(&text) {
+            return Err(unavailable("Invalid draft"));
+        }
+        begin(&self.shared).await.map_err(unavailable)?;
+        finish(&self.shared, &text).await.map_err(unavailable)
     }
 
     fn cancel(&self) {
@@ -581,17 +662,48 @@ impl SmartReplyInput {
     }
 }
 
-async fn offer(shared: &Share, text: &str) -> Result<(), String> {
-    if !held::valid_offer(text) {
-        return Err("Invalid draft".into());
+/// Composing text is shown inline only in toolkits known to clear it again when focus moves away. Chromium and Electron
+/// confirm it instead (the dictation work recorded this), which would type the draft into the field unasked.
+fn inline_toolkit(toolkit: Option<&str>) -> bool {
+    toolkit.is_some_and(|name| {
+        let name = name.to_ascii_lowercase();
+        name.contains("gtk") || name.starts_with("qt")
+    })
+}
+
+const MAX_DRAFTING: Duration = Duration::from_secs(125);
+
+async fn show(ibus: &Connection, path: OwnedObjectPath, inline: bool, text: &str) {
+    let Ok(emitter) = SignalEmitter::new(ibus, path) else {
+        return;
+    };
+    if inline {
+        let cursor = text.chars().count() as u32;
+        let _ = Engine::update_preedit_text(&emitter, ibus_preedit(text), cursor, true, 0).await;
+    } else {
+        let _ = Engine::update_auxiliary_text(&emitter, ibus_text(text), true).await;
     }
-    if shared.lock().busy || shared.lock().held.is_holding() {
+}
+
+struct Lease {
+    epoch: u64,
+    path: OwnedObjectPath,
+    inline: bool,
+}
+
+/// Checks the field, switches to our engine and waits for the app to attach to it.
+async fn lease(shared: &Share) -> Result<Lease, String> {
+    if shared.lock().busy || shared.lock().held.is_holding() || shared.lock().drafting {
         shared.discard();
     }
     // Refuse sensitive fields BEFORE switching input methods.
     let identity = shared
         .focused_field()
         .map_err(|_| "Accessible field metadata unavailable or unsafe".to_string())?;
+    let inline = shared
+        .a11y()
+        .ok()
+        .is_some_and(|a11y| inline_toolkit(a11y.toolkit(&identity).as_deref()));
     let ibus = shared.ibus()?.clone();
     let previous = match current_engine(&ibus).await {
         Some(name) => Some(name),
@@ -641,39 +753,111 @@ async fn offer(shared: &Share, text: &str) -> Result<(), String> {
         }
         let engine = shared.lock().engine.clone();
         if let Some(path) = engine {
-            let held = shared.lock().held.hold(text, Instant::now());
-            if held.is_err() {
-                return Err(fail("Invalid draft"));
-            }
             shared.lock().busy = false;
-            if let Ok(emitter) = SignalEmitter::new(&ibus, path) {
-                let _ = Engine::update_auxiliary_text(
-                    &emitter,
-                    ibus_text("Tab inserts the draft, Esc discards it"),
-                    true,
-                )
-                .await;
-            }
-            let expiring = shared.clone();
-            ibus.executor()
-                .spawn(
-                    async move {
-                        async_io::Timer::after(held::HOLD).await;
-                        let still = {
-                            let state = expiring.lock();
-                            state.epoch == epoch && state.held.is_holding()
-                        };
-                        if still {
-                            expiring.discard();
-                        }
-                    },
-                    "smart-reply-expire",
-                )
-                .detach();
-            return Ok(());
+            return Ok(Lease {
+                epoch,
+                path,
+                inline,
+            });
         }
         async_io::Timer::after(Duration::from_millis(25)).await;
     }
+}
+
+async fn begin(shared: &Share) -> Result<bool, String> {
+    let lease = lease(shared).await?;
+    let ibus = shared.ibus()?.clone();
+    {
+        let mut state = shared.lock();
+        state.drafting = true;
+        state.inline = lease.inline;
+        state.started = Some(Instant::now());
+    }
+    if lease.inline {
+        show(&ibus, lease.path.clone(), true, "Drafting… 0s").await;
+    }
+    // A timer in the field, so a slow model never looks like nothing happening.
+    let ticking = shared.clone();
+    let hint = ibus.clone();
+    let (epoch, path, inline) = (lease.epoch, lease.path, lease.inline);
+    ibus.executor()
+        .spawn(
+            async move {
+                loop {
+                    async_io::Timer::after(Duration::from_secs(1)).await;
+                    let seconds = {
+                        let state = ticking.lock();
+                        if state.epoch != epoch || !state.drafting {
+                            return;
+                        }
+                        state
+                            .started
+                            .map_or(0, |started| started.elapsed().as_secs())
+                    };
+                    if Duration::from_secs(seconds) > MAX_DRAFTING {
+                        ticking.discard();
+                        return;
+                    }
+                    if inline {
+                        show(&hint, path.clone(), true, &format!("Drafting… {seconds}s")).await;
+                    }
+                }
+            },
+            "smart-reply-timer",
+        )
+        .detach();
+    Ok(lease.inline)
+}
+
+async fn finish(shared: &Share, text: &str) -> Result<(), String> {
+    if !held::valid_offer(text) {
+        shared.discard();
+        return Err("Invalid draft".into());
+    }
+    let (epoch, identity, path, inline) = {
+        let state = shared.lock();
+        match (state.drafting, state.identity.clone(), state.engine.clone()) {
+            (true, Some(identity), Some(path)) => (state.epoch, identity, path, state.inline),
+            _ => return Err("Smart Reply was cancelled".into()),
+        }
+    };
+    if !shared.field_still_safe(&identity) {
+        shared.discard();
+        return Err("Text-field focus changed".into());
+    }
+    {
+        let mut state = shared.lock();
+        state.drafting = false;
+        if state.held.hold(text, Instant::now()).is_err() {
+            drop(state);
+            shared.discard();
+            return Err("Invalid draft".into());
+        }
+    }
+    let ibus = shared.ibus()?.clone();
+    let shown = if inline {
+        format!("{text}   — Tab inserts, Esc discards")
+    } else {
+        "Tab inserts the draft, Esc discards it".to_string()
+    };
+    show(&ibus, path, inline, &shown).await;
+    let expiring = shared.clone();
+    ibus.executor()
+        .spawn(
+            async move {
+                async_io::Timer::after(held::HOLD).await;
+                let still = {
+                    let state = expiring.lock();
+                    state.epoch == epoch && state.held.is_holding()
+                };
+                if still {
+                    expiring.discard();
+                }
+            },
+            "smart-reply-expire",
+        )
+        .detach();
+    Ok(())
 }
 
 /// Runs the service until IBus goes away (the unit restarts it).
@@ -763,6 +947,25 @@ mod tests {
             component().value_signature().to_string(),
             "(sa{sv}ssssssssavav)"
         );
+    }
+
+    #[test]
+    fn the_preedit_is_an_underlined_ibus_text() {
+        assert_eq!(
+            ibus_preedit("hi").value_signature().to_string(),
+            "(sa{sv}sv)"
+        );
+    }
+
+    #[test]
+    fn only_toolkits_that_clear_composing_text_show_the_draft_inline() {
+        assert!(inline_toolkit(Some("gtk")));
+        assert!(inline_toolkit(Some("GTK")));
+        assert!(inline_toolkit(Some("Qt")));
+        assert!(!inline_toolkit(Some("Chromium")));
+        assert!(!inline_toolkit(Some("Electron")));
+        assert!(!inline_toolkit(Some("")));
+        assert!(!inline_toolkit(None));
     }
 
     #[test]
