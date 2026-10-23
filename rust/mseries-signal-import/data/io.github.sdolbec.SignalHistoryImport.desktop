@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Import Signal History
+Comment=Copy your old Signal Beta chats into Signal Pantheon
+Exec=mseries-signal-import-gui
+Icon=io.github.sdolbec.SignalPantheonClient
+Terminal=false
+Categories=Network;InstantMessaging;GTK;
+StartupNotify=true
