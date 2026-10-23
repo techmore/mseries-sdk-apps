@@ -40,6 +40,9 @@ pub fn css() -> String {
          .msdk-tabs {{ border: 1px solid alpha(currentColor, 0.18); border-radius: 9px; padding: 2px; background: alpha(currentColor, 0.06); }}\n\
          .msdk-tabs > button.toggle {{ border: none; box-shadow: none; background: transparent; border-radius: 7px; min-height: 26px; padding: 0 14px; }}\n\
          .msdk-tabs > button.toggle:checked {{ background: @theme_base_color; box-shadow: 0 1px 2px alpha(black, 0.22); font-weight: 600; }}\n\
+         .msdk-row {{ padding: 6px 8px; border-radius: {control}px; }}\n\
+         .msdk-row:hover {{ background: alpha(currentColor, 0.06); }}\n\
+         .msdk-row.msdk-selected {{ background: alpha(@accent_color, 0.20); }}\n\
          .msdk-title {{ font-size: {title}em; font-weight: 600; }}\n\
          .msdk-heading {{ font-size: {heading}em; font-weight: 600; }}\n\
          .msdk-body {{ font-size: {body}em; }}\n\

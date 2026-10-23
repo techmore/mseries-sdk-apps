@@ -139,7 +139,7 @@ pub const COMPONENTS: &[Component] = &[
     Component {
         name: "Text",
         about: "A line or paragraph of text.",
-        props: &[req("text", Kind::Template), opt("text_style", Kind::Enum("text_style"))],
+        props: &[req("text", Kind::Template), opt("text_style", Kind::Enum("text_style")), opt("lines", Kind::Num)],
     },
     Component {
         name: "Entry",
@@ -210,6 +210,8 @@ pub const COMPONENTS: &[Component] = &[
             opt("on_select", Kind::Msg(Payload::Text)),
             opt("direction", Kind::Enum("direction")),
             opt("group_by", Kind::Field),
+            opt("selected", Kind::Bind(Want::Text)),
+            opt("scroll", Kind::Bool),
         ],
     },
     Component {

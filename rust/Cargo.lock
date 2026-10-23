@@ -420,6 +420,8 @@ dependencies = [
  "futures-util",
  "granite-rs",
  "gtk4",
+ "msdk",
+ "msdk-gtk",
  "mseries-pantheon-kit",
  "pulldown-cmark",
  "rayon",

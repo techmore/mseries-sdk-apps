@@ -134,7 +134,13 @@ fn build(node: &Value, d: &D, row: &Row) -> Built {
             b.upcast()
         }
         "Text" => {
-            let l = gtk::Label::builder().xalign(0.0).wrap(true).build();
+            let lines = node.get("lines").and_then(Value::as_u64).unwrap_or(0) as i32;
+            let l = gtk::Label::builder().xalign(0.0).wrap(lines != 1).build();
+            if lines > 0 {
+                // A fixed number of lines, ending in an ellipsis: titles in rows stay on one line.
+                l.set_lines(lines);
+                l.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            }
             l.add_css_class(&format!("msdk-{}", s(node, "text_style").unwrap_or("body")));
             let (tpl, row) = (s(node, "text").unwrap_or("").to_string(), row.clone());
             let l2 = l.clone();
@@ -718,6 +724,8 @@ fn list(node: &Value, d: &D, row: &Row, refresh: &mut Vec<Refresh>) -> gtk::Widg
         s(node, "on_select").map(String::from),
     );
     let group_by = s(node, "group_by").map(String::from);
+    let selected_key = s(node, "selected").map(String::from);
+    let scroll = node.get("scroll").and_then(Value::as_bool).unwrap_or(true) && !horizontal;
     let last: Rc<RefCell<Option<Value>>> = Rc::new(RefCell::new(None));
     let kids: Rc<RefCell<Vec<Kid>>> = Rc::new(RefCell::new(Vec::new()));
     let d = d.clone();
@@ -766,10 +774,12 @@ fn list(node: &Value, d: &D, row: &Row, refresh: &mut Vec<Refresh>) -> gtk::Widg
                     h.add_css_class("msdk-caption");
                     h.add_css_class("heading");
                     list_box.append(&h);
+                    h.set_widget_name("__section");
                     kids.borrow_mut().push((h.upcast(), Vec::new()));
                     continue;
                 }
                 let key = item.get(&key_field).map(display);
+                let key_name = key.clone();
                 let r = Row {
                     value: Some(item),
                     key: key.clone(),
@@ -780,17 +790,41 @@ fn list(node: &Value, d: &D, row: &Row, refresh: &mut Vec<Refresh>) -> gtk::Widg
                     g.connect_released(move |_, _, _, _| dd.send(&m, Some(json!(k))));
                     built.widget.add_controller(g);
                 }
+                built.widget.add_css_class("msdk-row");
+                built
+                    .widget
+                    .set_widget_name(key_name.as_deref().unwrap_or(""));
                 list_box.append(&built.widget);
                 kids.borrow_mut().push((built.widget, built.refresh));
             }
             *last.borrow_mut() = Some(items);
         }
-        for (_, rs) in kids.borrow().iter() {
+        let sel = selected_key
+            .as_ref()
+            .and_then(|k| st.get(k))
+            .map(display)
+            .unwrap_or_default();
+        for (w, rs) in kids.borrow().iter() {
             for r in rs {
                 r(st);
             }
+            if selected_key.is_some() && w.widget_name() != "__section" {
+                if !sel.is_empty() && w.widget_name() == sel.as_str() {
+                    w.add_css_class("msdk-selected");
+                } else {
+                    w.remove_css_class("msdk-selected");
+                }
+            }
         }
     }));
+    if scroll {
+        let sw = gtk::ScrolledWindow::builder()
+            .child(&holder)
+            .vexpand(true)
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .build();
+        return sw.upcast();
+    }
     holder.upcast()
 }
 

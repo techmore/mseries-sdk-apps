@@ -3,7 +3,7 @@
 app "Claude for elementary OS" id io.github.techmore.ClaudePantheonRs icon claude-pantheon-rs
 needs "network:localhost", "network", "notifications", "filesystem:data"
 
-type Thread { id: Text, title: Text, project: Text, branch: Text, provider: Text, badge: Text }
+type Thread { id: Text, title: Text, project: Text, branch: Text, provider: Text, badge: Text, detail: Text }
 type Line { id: Text, kind: Text, text: Text }
 type Account { id: Text, name: Text, status: Text, session_pct: Number, weekly_pct: Number, session_text: Text, weekly_text: Text }
 type Issue { id: Text, repo: Text, number: Number, title: Text, lane: Text, priority: Text }
@@ -160,16 +160,18 @@ window "Claude for elementary OS" {
     Button("Reconnect", icon: "view-refresh", style: flat) { Reconnect }
     Button("Status", icon: "dialog-information", style: flat) { ShowTray }
   }
-  Split(autohide: true) {
+  Split {
     sidebar {
       VStack(spacing: small) {
         SearchField("Search threads", bind: search, onChange: Search)
-        List(threads, key: id, groupBy: project, onSelect: SelectThread) {
+        List(threads, key: id, groupBy: project, selected: selected, onSelect: SelectThread) {
           row {
-            HStack(spacing: small) {
-              Text("{title}", style: body)
-              Text("{branch}", style: caption)
-              Text("{badge}", style: caption)
+            VStack(spacing: small) {
+              HStack(spacing: small) {
+                Text("{title}", style: body, lines: 1, grow: true)
+                Text("{badge}", style: caption)
+              }
+              Text("{detail}", style: caption, lines: 1)
             }
           }
           empty { EmptyState("No threads yet", description: "Press Ctrl+N to start one.", icon: "mail-message-new") }
