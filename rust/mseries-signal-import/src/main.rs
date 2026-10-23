@@ -1,8 +1,68 @@
 use mseries_signal_import::{
-    import::{self, Config},
+    import::{self, Config, Observer, Progress, Stage},
     keyring::SecretTool,
+    progress,
 };
-use std::{env, path::PathBuf, process::ExitCode};
+use std::{
+    env,
+    io::{IsTerminal, Write},
+    path::PathBuf,
+    process::ExitCode,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
+
+/// Prints the progress line to stderr (rewritten in place on a terminal) and
+/// stops cleanly between conversations on Ctrl-C.
+struct LineProgress {
+    started: Instant,
+    last: Instant,
+    terminal: bool,
+    cancel: Arc<AtomicBool>,
+}
+
+impl Observer for LineProgress {
+    fn progress(&mut self, p: &Progress) {
+        let final_line = matches!(p.stage, Stage::Done | Stage::Cancelled);
+        if !final_line && self.last.elapsed() < Duration::from_millis(500) {
+            return;
+        }
+        self.last = Instant::now();
+        let text = progress::line(p, self.started.elapsed());
+        if self.terminal {
+            eprint!("\r\x1b[2K{text}");
+            if final_line {
+                eprintln!();
+            }
+        } else {
+            eprintln!("{text}");
+        }
+        let _ = std::io::stderr().flush();
+    }
+
+    fn cancelled(&self) -> bool {
+        self.cancel.load(Ordering::Relaxed)
+    }
+}
+
+fn install_ctrl_c(flag: &Arc<AtomicBool>) {
+    // SAFETY-free approach: poll SIGINT through a tiny handler that sets the flag.
+    static FLAG: std::sync::OnceLock<Arc<AtomicBool>> = std::sync::OnceLock::new();
+    let _ = FLAG.set(flag.clone());
+    extern "C" fn handler(_: i32) {
+        if let Some(flag) = FLAG.get() {
+            flag.store(true, Ordering::Relaxed);
+        }
+    }
+    unsafe extern "C" {
+        fn signal(signum: i32, handler: extern "C" fn(i32)) -> usize;
+    }
+    // SAFETY: `handler` only performs an atomic store, which is async-signal-safe.
+    unsafe { signal(2, handler) };
+}
 
 const USAGE: &str = "usage: mseries-signal-import <import|probe> [options]
 
@@ -68,7 +128,15 @@ fn main() -> ExitCode {
     let result = if command == "probe" {
         import::probe(&cfg, &SecretTool)
     } else {
-        import::import(&cfg, &SecretTool).map(|report| report.summary())
+        let cancel = Arc::new(AtomicBool::new(false));
+        install_ctrl_c(&cancel);
+        let mut observer = LineProgress {
+            started: Instant::now(),
+            last: Instant::now() - Duration::from_secs(1),
+            terminal: std::io::stderr().is_terminal(),
+            cancel,
+        };
+        import::import_with(&cfg, &SecretTool, &mut observer).map(|report| report.summary())
     };
     match result {
         Ok(text) => {

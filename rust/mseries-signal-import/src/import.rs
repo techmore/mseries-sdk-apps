@@ -31,8 +31,80 @@ pub struct Config {
     pub account_override: Option<String>,
 }
 
+impl Config {
+    /// The usual locations for the current user.
+    pub fn for_home(home: &Path) -> Config {
+        let history_db = home.join(".local/share/signal-pantheon/message-history.db");
+        Config {
+            signal_dir: home.join(".config/Signal Beta"),
+            app_name: "Signal Beta".into(),
+            accounts_json: history_db.with_file_name("data").join("accounts.json"),
+            history_db,
+            scratch_dir: std::env::var_os("XDG_RUNTIME_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(std::env::temp_dir),
+            dry_run: false,
+            check_running: true,
+            account_override: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stage {
+    Starting,
+    ReadingPantheon,
+    ReadingSignal,
+    Matching,
+    Writing,
+    Done,
+    Cancelled,
+}
+
+impl Stage {
+    pub fn label(self) -> &'static str {
+        match self {
+            Stage::Starting => "starting",
+            Stage::ReadingPantheon => "reading Signal Pantheon",
+            Stage::ReadingSignal => "reading Signal Beta data",
+            Stage::Matching => "matching conversations",
+            Stage::Writing => "writing",
+            Stage::Done => "done",
+            Stage::Cancelled => "cancelled",
+        }
+    }
+}
+
+/// Counts and a stage name only; never any text, name or key.
+#[derive(Clone, Copy, Debug)]
+pub struct Progress {
+    pub stage: Stage,
+    /// Signal chats that have messages to import.
+    pub conversations_found: usize,
+    pub conversations_done: usize,
+    pub messages_total: usize,
+    /// Messages looked at so far (added or already present).
+    pub messages_done: usize,
+    pub messages_added: usize,
+    pub duplicates_skipped: usize,
+}
+
+pub trait Observer {
+    fn progress(&mut self, _progress: &Progress) {}
+    /// Polled between conversations; each conversation is written atomically,
+    /// so stopping there is always safe and the next run continues.
+    fn cancelled(&self) -> bool {
+        false
+    }
+}
+
+pub struct Silent;
+
+impl Observer for Silent {}
+
 #[derive(Debug, Default)]
 pub struct Report {
+    pub cancelled: bool,
     pub account_form: String,
     pub id_preference: &'static str,
     pub signal_conversations: usize,
@@ -52,8 +124,9 @@ impl Report {
     pub fn summary(&self) -> String {
         let mut out = String::new();
         out.push_str(&format!(
-            "{}Signal chats read: {}\n  new in Pantheon: {}\n  merged into existing: {}\n  already complete: {}\n  not importable (no phone number, id or group id): {}\n  failed: {}\nmessages added: {}\nmessages already present: {}\n",
+            "{}{}Signal chats read: {}\n  new in Pantheon: {}\n  merged into existing: {}\n  already complete: {}\n  not importable (no phone number, id or group id): {}\n  failed: {}\nmessages added: {}\nmessages already present: {}\n",
             if self.dry_run { "DRY RUN (nothing written)\n" } else { "" },
+            if self.cancelled { "CANCELLED (run again to continue)\n" } else { "" },
             self.signal_conversations,
             self.conversations_created,
             self.conversations_merged,
@@ -396,6 +469,20 @@ fn open_history(cfg: &Config, secrets: &dyn Secrets) -> Result<HistoryStore, Str
 }
 
 pub fn import(cfg: &Config, secrets: &dyn Secrets) -> Result<Report, String> {
+    import_with(cfg, secrets, &mut Silent)
+}
+
+pub fn import_with(cfg: &Config, secrets: &dyn Secrets, observer: &mut dyn Observer) -> Result<Report, String> {
+    let mut progress = Progress {
+        stage: Stage::Starting,
+        conversations_found: 0,
+        conversations_done: 0,
+        messages_total: 0,
+        messages_done: 0,
+        messages_added: 0,
+        duplicates_skipped: 0,
+    };
+    observer.progress(&progress);
     if cfg.check_running && !cfg.dry_run && pantheon_client_running() {
         return Err(
             "Signal Pantheon is running; close it first (it would overwrite the imported history from memory), then run the import again"
@@ -406,6 +493,8 @@ pub fn import(cfg: &Config, secrets: &dyn Secrets) -> Result<Report, String> {
         dry_run: cfg.dry_run,
         ..Report::default()
     };
+    progress.stage = Stage::ReadingPantheon;
+    observer.progress(&progress);
     let mut store = open_history(cfg, secrets)?;
     let account = read_accounts(&cfg.accounts_json, &cfg.account_override)?;
     let pantheon = load_pantheon(&store, &account)?;
@@ -416,6 +505,8 @@ pub fn import(cfg: &Config, secrets: &dyn Secrets) -> Result<Report, String> {
         .or(account.number.clone())
         .unwrap_or_default();
 
+    progress.stage = Stage::ReadingSignal;
+    observer.progress(&progress);
     let data = {
         let key_hex = signal_database_key(cfg, secrets)?;
         let copy = DatabaseCopy::make(&cfg.signal_dir, &cfg.scratch_dir)?;
@@ -439,82 +530,109 @@ pub fn import(cfg: &Config, secrets: &dyn Secrets) -> Result<Report, String> {
         grouped.entry(message.conversation_id.as_str()).or_default().push(message);
     }
 
+    progress.stage = Stage::Matching;
+    progress.conversations_found = grouped.len();
+    progress.messages_total = grouped.values().map(Vec::len).sum();
+    observer.progress(&progress);
+    if observer.cancelled() {
+        report.cancelled = true;
+        progress.stage = Stage::Cancelled;
+        observer.progress(&progress);
+        return Ok(report);
+    }
+
+    progress.stage = Stage::Writing;
+    observer.progress(&progress);
     let mut catalog = pantheon.catalog.clone();
     let mut backed_up = false;
     for (conversation, messages) in grouped {
-        let Some(conv) = by_id.get(conversation) else { continue };
-        let Some(id) = conversation_id(conv, &catalog, prefer_uuid) else {
-            report.conversations_unmapped += 1;
-            continue;
-        };
-        let records: Vec<Value> = messages
-            .iter()
-            .map(|m| {
-                let author = if m.outgoing {
-                    own_author.clone()
-                } else if !conv.is_group {
-                    id.clone()
-                } else {
-                    let sender = m.sender_service_id.as_deref().and_then(|s| by_service_id.get(s)).copied();
-                    sender
-                        .and_then(|c| conversation_id(c, &catalog, prefer_uuid))
-                        .or_else(|| m.sender_e164.clone())
-                        .or_else(|| m.sender_service_id.clone())
-                        .unwrap_or_default()
-                };
-                record(m, &author, message_text(m, &names_by_service_id))
-            })
-            .collect();
-        let existing = pantheon.snapshots.get(&id);
-        let name = if conv.name.is_empty() { id.as_str() } else { conv.name.as_str() };
-        let (snapshot, added, present) = match merge(existing, &id, name, conv.is_group, records) {
-            Ok(result) => result,
-            Err(_) => {
-                report.conversations_failed += 1;
-                continue;
+        if observer.cancelled() {
+            report.cancelled = true;
+            break;
+        }
+        let message_count = messages.len();
+        'one: {
+            let Some(conv) = by_id.get(conversation) else { break 'one };
+            let Some(id) = conversation_id(conv, &catalog, prefer_uuid) else {
+                report.conversations_unmapped += 1;
+                break 'one;
+            };
+            let records: Vec<Value> = messages
+                .iter()
+                .map(|m| {
+                    let author = if m.outgoing {
+                        own_author.clone()
+                    } else if !conv.is_group {
+                        id.clone()
+                    } else {
+                        let sender = m.sender_service_id.as_deref().and_then(|s| by_service_id.get(s)).copied();
+                        sender
+                            .and_then(|c| conversation_id(c, &catalog, prefer_uuid))
+                            .or_else(|| m.sender_e164.clone())
+                            .or_else(|| m.sender_service_id.clone())
+                            .unwrap_or_default()
+                    };
+                    record(m, &author, message_text(m, &names_by_service_id))
+                })
+                .collect();
+            let existing = pantheon.snapshots.get(&id);
+            let name = if conv.name.is_empty() { id.as_str() } else { conv.name.as_str() };
+            let (snapshot, added, present) = match merge(existing, &id, name, conv.is_group, records) {
+                Ok(result) => result,
+                Err(_) => {
+                    report.conversations_failed += 1;
+                    break 'one;
+                }
+            };
+            report.messages_added += added;
+            report.messages_already_present += present;
+            let in_catalog = catalog.contains(&id);
+            if added == 0 && existing.is_some() && in_catalog {
+                report.conversations_unchanged += 1;
+                break 'one;
             }
-        };
-        report.messages_added += added;
-        report.messages_already_present += present;
-        let in_catalog = catalog.contains(&id);
-        if added == 0 && existing.is_some() && in_catalog {
-            report.conversations_unchanged += 1;
-            continue;
-        }
-        if existing.is_some() {
-            report.conversations_merged += 1
-        } else {
-            report.conversations_created += 1
-        }
-        if cfg.dry_run {
+            if existing.is_some() {
+                report.conversations_merged += 1
+            } else {
+                report.conversations_created += 1
+            }
+            if cfg.dry_run {
+                if !in_catalog {
+                    catalog.push(id);
+                }
+                break 'one;
+            }
+            if !backed_up {
+                let backup = backup_path(&cfg.history_db);
+                if !backup.exists() {
+                    store.backup_to(&backup)?;
+                    report.backup = Some(backup);
+                }
+                backed_up = true;
+            }
+            let snapshot_text = serde_json::to_string(&snapshot).map_err(|e| e.to_string())?;
+            let mut items = vec![(conversation_key(&pantheon.account, &id), snapshot_text.clone())];
             if !in_catalog {
-                catalog.push(id);
+                catalog.push(id.clone());
+                items.push((
+                    catalog_key(&pantheon.account),
+                    serde_json::to_string(&catalog).map_err(|e| e.to_string())?,
+                ));
             }
-            continue;
-        }
-        if !backed_up {
-            let backup = backup_path(&cfg.history_db);
-            if !backup.exists() {
-                store.backup_to(&backup)?;
-                report.backup = Some(backup);
+            store.replace_snapshots(&items)?;
+            // Read it back through the same path the client uses before moving on.
+            if store.read_snapshot(&items[0].0)?.as_deref() != Some(snapshot_text.as_str()) {
+                return Err("a written conversation did not read back identically; stopping".into());
             }
-            backed_up = true;
         }
-        let snapshot_text = serde_json::to_string(&snapshot).map_err(|e| e.to_string())?;
-        let mut items = vec![(conversation_key(&pantheon.account, &id), snapshot_text.clone())];
-        if !in_catalog {
-            catalog.push(id.clone());
-            items.push((
-                catalog_key(&pantheon.account),
-                serde_json::to_string(&catalog).map_err(|e| e.to_string())?,
-            ));
-        }
-        store.replace_snapshots(&items)?;
-        // Read it back through the same path the client uses before moving on.
-        if store.read_snapshot(&items[0].0)?.as_deref() != Some(snapshot_text.as_str()) {
-            return Err("a written conversation did not read back identically; stopping".into());
-        }
+        progress.conversations_done += 1;
+        progress.messages_done += message_count;
+        progress.messages_added = report.messages_added;
+        progress.duplicates_skipped = report.messages_already_present;
+        observer.progress(&progress);
     }
+    progress.stage = if report.cancelled { Stage::Cancelled } else { Stage::Done };
+    observer.progress(&progress);
     Ok(report)
 }
 

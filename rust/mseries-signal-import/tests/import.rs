@@ -449,3 +449,75 @@ fn probe_reports_structure_without_content() {
     assert!(text.contains("\"clockFloor\""));
     assert!(!text.contains("Hello from Alice") && !text.contains(ALICE.0) && !text.contains("Alice"));
 }
+
+struct Recorder {
+    seen: Vec<import::Progress>,
+    cancel_after_conversations: Option<usize>,
+}
+
+impl import::Observer for Recorder {
+    fn progress(&mut self, p: &import::Progress) {
+        self.seen.push(*p);
+    }
+    fn cancelled(&self) -> bool {
+        self.cancel_after_conversations
+            .is_some_and(|n| self.seen.last().is_some_and(|p| p.conversations_done >= n))
+    }
+}
+
+#[test]
+fn progress_reports_stages_and_counts_only() {
+    let signal = scratch("prog-signal");
+    let pantheon = scratch("prog-pantheon");
+    build_signal(&signal, default_messages());
+    build_pantheon(&pantheon, Some((ALICE.0, existing_alice())));
+    let mut recorder = Recorder {
+        seen: vec![],
+        cancel_after_conversations: None,
+    };
+    import::import_with(&config("prog", &signal, &pantheon), &secrets(), &mut recorder).unwrap();
+
+    let stages: Vec<_> = recorder.seen.iter().map(|p| p.stage).collect();
+    let first = |s| stages.iter().position(|x| *x == s).unwrap();
+    assert!(first(import::Stage::ReadingPantheon) < first(import::Stage::ReadingSignal));
+    assert!(first(import::Stage::ReadingSignal) < first(import::Stage::Matching));
+    assert!(first(import::Stage::Matching) < first(import::Stage::Writing));
+    assert_eq!(stages.last(), Some(&import::Stage::Done));
+    let last = recorder.seen.last().unwrap();
+    assert_eq!((last.conversations_found, last.conversations_done), (3, 3));
+    assert_eq!((last.messages_total, last.messages_done), (6, 6));
+    assert_eq!((last.messages_added, last.duplicates_skipped), (5, 1));
+    let counts: Vec<_> = recorder.seen.iter().map(|p| p.messages_done).collect();
+    assert!(counts.windows(2).all(|w| w[0] <= w[1]), "progress never goes backwards");
+    let text = mseries_signal_import::progress::line(last, std::time::Duration::from_secs(75));
+    assert_eq!(text, "[done] chats 3/3 · messages 6/6 · added 5 · already there 1 · 1:15");
+    assert_eq!(mseries_signal_import::progress::fraction(last), Some(1.0));
+}
+
+#[test]
+fn cancel_stops_between_conversations_and_the_next_run_finishes() {
+    let signal = scratch("cancel-signal");
+    let pantheon = scratch("cancel-pantheon");
+    build_signal(&signal, default_messages());
+    build_pantheon(&pantheon, Some((ALICE.0, existing_alice())));
+    let cfg = config("cancel", &signal, &pantheon);
+
+    let mut recorder = Recorder {
+        seen: vec![],
+        cancel_after_conversations: Some(1),
+    };
+    let report = import::import_with(&cfg, &secrets(), &mut recorder).unwrap();
+    assert!(report.cancelled);
+    assert_eq!(recorder.seen.last().unwrap().stage, import::Stage::Cancelled);
+    assert_eq!(
+        catalog(&pantheon).len(),
+        1,
+        "stopped after one whole conversation; the rest not started"
+    );
+    assert_eq!(snapshot(&pantheon, ALICE.0).unwrap()["messages"].as_array().unwrap().len(), 3);
+
+    let finished = import::import(&cfg, &secrets()).unwrap();
+    assert!(!finished.cancelled);
+    assert_eq!(finished.messages_added, 3, "only what the cancelled run had not written");
+    assert_eq!(catalog(&pantheon), vec![ALICE.0, BOB.0, GROUP]);
+}

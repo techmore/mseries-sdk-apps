@@ -23,6 +23,22 @@ history in `~/.local/share/signal-pantheon/message-history.db`. See `--help` sty
 usage by running the binary with no arguments. Needs `secret-tool`
 (`libsecret-tools`) and an unlocked login keyring.
 
+## The progress window
+
+`mseries-signal-import-gui` (build with `--features gui`, or run `./install-user.sh`)
+shows the import as it runs: stage (reading Signal Pantheon, reading Signal Beta
+data, matching conversations, writing), chats found and done, messages done out of
+total, messages added, messages already there, elapsed time, and at the end a plain
+`Done: N messages in M chats` or a plain-language error, plus a desktop notification.
+**Preview** counts what would be imported without writing; **Import** does it;
+**Cancel** stops after the current chat (each chat is written atomically, so the next
+run simply continues). **Open Signal Pantheon** appears when messages were added.
+The window shows counts and stage names only. The command line prints the same
+numbers as a progress line on stderr and stops cleanly on Ctrl-C.
+
+Signal Pantheon reads its conversations at start-up, so close it before importing
+and open it afterwards; no other step is needed.
+
 ## Data flow and safety rules
 
 1. The Signal database key is `encryptedKey` in Signal's `config.json`, protected the

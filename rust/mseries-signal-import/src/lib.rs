@@ -5,5 +5,6 @@ pub mod chromium;
 pub mod history;
 pub mod import;
 pub mod keyring;
+pub mod progress;
 pub mod secret;
 pub mod signal_db;

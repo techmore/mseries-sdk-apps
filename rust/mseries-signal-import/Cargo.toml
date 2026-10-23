@@ -16,6 +16,18 @@ openssl = "0.10"
 rusqlite = { version = "0.32", features = ["bundled-sqlcipher", "backup"] }
 serde_json = "1"
 
+# The progress window is optional so the command-line tool and its CI stay
+# free of GTK: `cargo build --release --features gui`.
+gtk = { package = "gtk4", version = "0.11", features = ["v4_20"], optional = true }
+
+[features]
+gui = ["dep:gtk"]
+
 [[bin]]
 name = "mseries-signal-import"
 path = "src/main.rs"
+
+[[bin]]
+name = "mseries-signal-import-gui"
+path = "src/gui.rs"
+required-features = ["gui"]
