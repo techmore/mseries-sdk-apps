@@ -23,7 +23,7 @@ pub const MOD_ALT: u32 = 1 << 3;
 pub const MOD_SUPER: u32 = 1 << 26 | 1 << 6;
 
 /// The quick action a chord asks for. Only Alt chords count, so they never collide with typing: Alt+R reword, Alt+P more
-/// polite, Alt+C more concise, Alt+= (or Alt++) more context. Ctrl or Super in the chord make it somebody else's shortcut.
+/// polite, Alt+C more concise, Alt+T think harder (slow), Alt+= (or Alt++) more context. Ctrl or Super in the chord make it somebody else's shortcut.
 pub fn chord(keyval: u32, modifiers: u32) -> Option<Instruction> {
     if modifiers & MOD_ALT == 0 || modifiers & (MOD_CONTROL | MOD_SUPER) != 0 {
         return None;
@@ -32,6 +32,7 @@ pub fn chord(keyval: u32, modifiers: u32) -> Option<Instruction> {
         0x72 | 0x52 => Some(Instruction::Reword),
         0x70 | 0x50 => Some(Instruction::MorePolite),
         0x63 | 0x43 => Some(Instruction::MoreConcise),
+        0x74 | 0x54 => Some(Instruction::ThinkHarder),
         0x3d | 0x2b | KEY_KP_ADD => Some(Instruction::AddContext),
         _ => None,
     }
@@ -40,7 +41,7 @@ pub fn chord(keyval: u32, modifiers: u32) -> Option<Instruction> {
 /// The line under or after the draft that names the keys, so they are never a secret.
 pub fn hint(actions: bool) -> &'static str {
     if actions {
-        "Tab insert · Alt+R reword · Alt+P polite · Alt+C concise · Alt+= more context · Esc discard"
+        "Tab insert · Alt+R reword · Alt+P polite · Alt+C concise · Alt+T think harder (slow) · Alt+= more context · Esc discard"
     } else {
         "Tab inserts the draft, Esc discards it"
     }
@@ -62,7 +63,7 @@ pub fn entry_view(note: &str) -> String {
 
 /// Title of the notification that carries the draft where it cannot be shown in the field.
 pub const NOTICE_TITLE: &str =
-    "Smart Reply draft — Tab inserts · Alt+R/P/C/= revises · Esc discards";
+    "Smart Reply draft — Tab inserts · Alt+R/P/C/T/= revises · Esc discards";
 
 /// Keys that accept the draft. Enter only inserts it (the key is consumed), so it can never send the message.
 pub fn accepts(keyval: u32) -> bool {
@@ -350,6 +351,8 @@ mod tests {
             (0x52, Instruction::Reword),
             (0x70, Instruction::MorePolite),
             (0x63, Instruction::MoreConcise),
+            (0x74, Instruction::ThinkHarder),
+            (0x54, Instruction::ThinkHarder),
             (0x3d, Instruction::AddContext),
             (0x2b, Instruction::AddContext),
             (KEY_KP_ADD, Instruction::AddContext),
@@ -367,7 +370,7 @@ mod tests {
             );
         }
         // The same letters without Alt are typing: they abandon the draft and go through.
-        for key in [0x72, 0x70, 0x63, 0x3d] {
+        for key in [0x72, 0x70, 0x63, 0x74, 0x3d] {
             assert_eq!(
                 classify_key(&held, key, 0, false, now),
                 KeyAction::DiscardPass
@@ -392,7 +395,9 @@ mod tests {
     #[test]
     fn the_hint_names_every_action_key() {
         let hint = hint(true);
-        for needle in ["Tab", "Alt+R", "Alt+P", "Alt+C", "Alt+=", "Esc"] {
+        for needle in [
+            "Tab", "Alt+R", "Alt+P", "Alt+C", "Alt+T", "slow", "Alt+=", "Esc",
+        ] {
             assert!(hint.contains(needle), "{needle}");
         }
         assert!(!super::hint(false).contains("Alt"));

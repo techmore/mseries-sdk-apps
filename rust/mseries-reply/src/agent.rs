@@ -77,6 +77,8 @@ pub fn from_wire(lines: &[WireLine]) -> Vec<ChatMessage> {
 /// Bounds a model answer: no control characters (newlines and tabs aside), no runs of blank lines, trimmed, not empty,
 /// not longer than [`MAX_DRAFT_CHARS`].
 pub fn sanitize_draft(raw: &str) -> Result<String, String> {
+    // Reasoning from a thinking run is never part of a draft, whatever the model client already removed.
+    let raw = mseries_ai::strip_thinking(raw);
     let cleaned: String = raw
         .chars()
         .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
@@ -204,6 +206,18 @@ mod tests {
     }
 
     #[test]
+    fn reasoning_blocks_never_become_part_of_a_draft() {
+        assert_eq!(
+            sanitize_draft(
+                "<think>The user wants Thai.\nSecret plan.</think>\n\nThai works for me."
+            )
+            .unwrap(),
+            "Thai works for me."
+        );
+        assert!(sanitize_draft("<think>still thinking when the budget ended").is_err());
+    }
+
+    #[test]
     fn drafts_are_bounded_and_never_empty() {
         assert!(sanitize_draft("   \n ").is_err());
         assert!(sanitize_draft(&"a".repeat(MAX_DRAFT_CHARS + 1)).is_err());
@@ -263,9 +277,9 @@ mod tests {
             // The conversation reaches the model the same way as for the first draft.
             assert_eq!(drafter.seen.borrow().len(), 3);
         }
-        // The first call had no revision; the four quick actions each had one.
+        // The first call had no revision; each quick action had one.
         let revisions = drafter.revisions.borrow();
         assert!(revisions[0].is_none());
-        assert_eq!(revisions.iter().flatten().count(), 4);
+        assert_eq!(revisions.iter().flatten().count(), Instruction::ALL.len());
     }
 }

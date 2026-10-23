@@ -3,5 +3,6 @@ mod store;
 
 pub use client::{
     ChatMessage, ChatRole, Instruction, MAX_NOTE_CHARS, Revision, draft_reply, draft_reply_revised,
+    strip_thinking,
 };
 pub use store::{AiMemory, AiPreferences, AiStore, LocalModelSettings};

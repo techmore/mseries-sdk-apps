@@ -28,14 +28,17 @@ pub enum Instruction {
     MorePolite,
     MoreConcise,
     AddContext,
+    /// The slow one: the model reasons first (thinking on, a larger token budget), then writes a better version.
+    ThinkHarder,
 }
 
 impl Instruction {
-    pub const ALL: [Instruction; 4] = [
+    pub const ALL: [Instruction; 5] = [
         Instruction::Reword,
         Instruction::MorePolite,
         Instruction::MoreConcise,
         Instruction::AddContext,
+        Instruction::ThinkHarder,
     ];
 
     pub fn text(self) -> &'static str {
@@ -52,6 +55,22 @@ impl Instruction {
             Instruction::AddContext => {
                 "Rewrite it so that it takes the extra context from the user into account."
             }
+            Instruction::ThinkHarder => {
+                "Think carefully about the conversation and the draft, then write the best version of the reply: fix anything weak, off in tone, unclear or missing."
+            }
+        }
+    }
+
+    /// Whether the model reasons before answering (only this action; normal drafts never do).
+    pub fn thinks(self) -> bool {
+        self == Instruction::ThinkHarder
+    }
+
+    fn max_tokens(self) -> u32 {
+        if self.thinks() {
+            THINKING_MAX_TOKENS
+        } else {
+            220
         }
     }
 }
@@ -66,6 +85,7 @@ pub struct Revision {
 }
 
 pub const MAX_NOTE_CHARS: usize = 300;
+const THINKING_MAX_TOKENS: u32 = 1_200;
 const MAX_PREVIOUS_CHARS: usize = 2_400;
 
 fn clean(text: &str, limit: usize) -> String {
@@ -148,7 +168,13 @@ pub fn draft_reply_revised(
     let client = reqwest::blocking::Client::builder()
         .no_proxy()
         .connect_timeout(Duration::from_secs(3))
-        .timeout(Duration::from_secs(120))
+        .timeout(Duration::from_secs(
+            if revision.is_some_and(|revision| revision.instruction.thinks()) {
+                170 // about 1,200 tokens at the local model's speed
+            } else {
+                120
+            },
+        ))
         .build()
         .map_err(|error| format!("Could not prepare the local AI connection: {error}"))?;
 
@@ -192,20 +218,24 @@ pub fn draft_reply_revised(
             "model": model,
             "messages": messages,
             "temperature": 0.35,
-            "max_tokens": 220,
+            "max_tokens": revision.map_or(220, |revision| revision.instruction.max_tokens()),
             "stream": false,
-            "chat_template_kwargs": { "enable_thinking": false }
+            "chat_template_kwargs": {
+                "enable_thinking": revision.is_some_and(|revision| revision.instruction.thinks())
+            }
         }))
         .send()
         .and_then(reqwest::blocking::Response::error_for_status)
         .map_err(|error| local_model_error(&error))?
         .json::<Value>()
         .map_err(|error| format!("The local model returned an invalid draft: {error}"))?;
-    let result = response
-        .pointer("/choices/0/message/content")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .trim();
+    let answer = strip_thinking(
+        response
+            .pointer("/choices/0/message/content")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+    );
+    let result = answer.trim();
     if result.is_empty() {
         return Err("The local model returned an empty draft. Try again.".into());
     }
@@ -213,6 +243,26 @@ pub fn draft_reply_revised(
         return Err("The local model returned an unexpectedly long draft. Try again.".into());
     }
     Ok(result.to_string())
+}
+
+/// Removes `<think>…</think>` reasoning from a model answer. An opening tag that never closes (the budget ran out while
+/// thinking) drops everything after it, so reasoning never becomes a draft.
+pub fn strip_thinking(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("<think>") {
+        out.push_str(&rest[..start]);
+        match rest[start..].find("</think>") {
+            Some(end) => rest = &rest[start + end + "</think>".len()..],
+            None => return out,
+        }
+    }
+    out.push_str(rest);
+    // A template that opens the block itself leaves only the closing tag in the answer.
+    match out.rfind("</think>") {
+        Some(end) => out[end + "</think>".len()..].to_string(),
+        None => out,
+    }
 }
 
 fn build_system_prompt(style: &str, memories: &[crate::AiMemory]) -> String {
@@ -344,6 +394,38 @@ mod tests {
         let texts: std::collections::HashSet<_> =
             Instruction::ALL.iter().map(|i| i.text()).collect();
         assert_eq!(texts.len(), Instruction::ALL.len());
+    }
+
+    #[test]
+    fn reasoning_never_reaches_the_answer() {
+        assert_eq!(
+            strip_thinking("<think>\nhmm\n</think>\n\nSounds good."),
+            "\n\nSounds good."
+        );
+        assert_eq!(strip_thinking("hmm\n</think>Sounds good."), "Sounds good.");
+        assert_eq!(
+            strip_thinking("Hi <think>a</think>there<think>b</think>!"),
+            "Hi there!"
+        );
+        assert_eq!(
+            strip_thinking("Hi <think>never closed, so all of this is reasoning"),
+            "Hi "
+        );
+        assert_eq!(strip_thinking("plain"), "plain");
+    }
+
+    #[test]
+    fn only_think_harder_thinks_and_gets_the_big_budget() {
+        for instruction in Instruction::ALL {
+            assert_eq!(
+                instruction.thinks(),
+                instruction == Instruction::ThinkHarder
+            );
+            assert_eq!(
+                instruction.max_tokens(),
+                if instruction.thinks() { 1_200 } else { 220 }
+            );
+        }
     }
 
     #[test]

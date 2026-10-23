@@ -731,7 +731,12 @@ impl Engine {
         start_timer(&shared, &ibus, epoch, path, inline);
         std::thread::spawn(move || {
             if !inline {
-                crate::trigger::notify("Smart Reply", "Revising…", 4000);
+                let wording = if instruction.thinks() {
+                    "Thinking harder… this can take a minute."
+                } else {
+                    "Revising…"
+                };
+                crate::trigger::notify("Smart Reply", wording, 4000);
             }
             let revision = Revision {
                 instruction,
@@ -886,7 +891,8 @@ fn inline_toolkit(toolkit: Option<&str>) -> bool {
     })
 }
 
-const MAX_DRAFTING: Duration = Duration::from_secs(125);
+/// Longer than the model client's own timeout (170 s for "think harder"), so the client's error is what the owner sees.
+const MAX_DRAFTING: Duration = Duration::from_secs(185);
 
 async fn show(ibus: &Connection, path: OwnedObjectPath, inline: bool, text: &str) {
     if let Ok(emitter) = SignalEmitter::new(ibus, path) {
