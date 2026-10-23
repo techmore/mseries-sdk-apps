@@ -455,6 +455,7 @@ impl MediaState {
 pub struct App {
     backend: Backend,
     dock_badge: DockBadge,
+    read_markers: RefCell<HashMap<String, (String, usize)>>,
     history_subscription: RefCell<Option<gio::SignalSubscription>>,
     window: gtk::ApplicationWindow,
     status: gtk::Label,
@@ -866,6 +867,7 @@ impl App {
         let app = Rc::new(Self {
             backend,
             dock_badge,
+            read_markers: RefCell::new(HashMap::new()),
             history_subscription: RefCell::new(None),
             window,
             status,
@@ -1504,6 +1506,7 @@ impl App {
                         let phone_changed = app.pin_profile_id.borrow().as_ref()
                             != status.phone_profile_id.as_ref();
                         if phone_changed {
+                            app.read_markers.borrow_mut().clear();
                             // Revisions are scoped to a phone, not globally unique.
                             // Force the existing cache/generation invalidation below.
                             app.contact_photo_revision.replace(None);
@@ -1647,6 +1650,9 @@ impl App {
                         } else {
                             server_threads
                         };
+                        app.read_markers.borrow_mut().retain(|key, _| {
+                            state.threads.iter().any(|thread| &thread.key == key)
+                        });
                         let unread_count = state.threads.iter().fold(0_u64, |total, thread| {
                             total.saturating_add(thread.unread() as u64)
                         });
@@ -2423,19 +2429,41 @@ impl App {
         if let Some(thread) = thread
             .filter(|thread| self.window.is_active() && !thread.local_only && thread.unread() > 0)
         {
-            let phone_generation = self.pin_load_generation.get();
-            let backend = self.backend.clone();
-            let weak = Rc::downgrade(self);
-            let key = thread.key.clone();
-            glib::MainContext::default().spawn_local(async move {
-                if let Err(error) = backend.mark_read(&key).await
-                    && let Some(app) = weak.upgrade()
-                    && app.pin_load_generation.get() == phone_generation
-                {
-                    app.show_read_error(&error);
-                }
-            });
+            self.mark_thread_read_once(&thread);
         }
+    }
+
+    fn mark_thread_read_once(self: &Rc<Self>, thread: &Thread) {
+        let marker = (
+            thread
+                .messages
+                .last()
+                .map(|message| message.handle.clone())
+                .unwrap_or_default(),
+            thread.unread(),
+        );
+        if self.read_markers.borrow().get(&thread.key) == Some(&marker) {
+            return;
+        }
+        self.read_markers
+            .borrow_mut()
+            .insert(thread.key.clone(), marker.clone());
+        let phone_generation = self.pin_load_generation.get();
+        let backend = self.backend.clone();
+        let weak = Rc::downgrade(self);
+        let key = thread.key.clone();
+        glib::MainContext::default().spawn_local(async move {
+            if let Err(error) = backend.mark_read(&key).await
+                && let Some(app) = weak.upgrade()
+                && app.pin_load_generation.get() == phone_generation
+            {
+                // An older failure cannot erase a newer message's marker.
+                if app.read_markers.borrow().get(&key) == Some(&marker) {
+                    app.read_markers.borrow_mut().remove(&key);
+                }
+                app.show_read_error(&error);
+            }
+        });
     }
 
     fn render_conversation(self: &Rc<Self>, thread: Option<Thread>) {
@@ -3945,10 +3973,19 @@ mod tests {
         let fixture_delayed_send = delayed_send.clone();
         let switch_during_inbox = std::rc::Rc::new(std::cell::Cell::new(false));
         let switch_request = switch_during_inbox.clone();
+        let read_calls = Rc::new(Cell::new(0_u32));
+        let fixture_read_calls = read_calls.clone();
+        let fail_read = Rc::new(Cell::new(false));
+        let fixture_fail_read = fail_read.clone();
         let registration = bus
             .register_object("/io/weirdware/BlueFerry", &node.interfaces()[0])
             .method_call(move |_, _, _, _, method, _, invocation| {
                 if method == "MarkThreadRead" {
+                    fixture_read_calls.set(fixture_read_calls.get() + 1);
+                    if fixture_fail_read.get() {
+                        invocation.return_dbus_error("io.weirdware.BlueFerry.Error.Failed", "Synthetic read failure");
+                        return;
+                    }
                     invocation.return_value(Some(&().to_variant()));
                     return;
                 }
@@ -4082,6 +4119,59 @@ mod tests {
         assert!(
             app.search.text().is_empty(),
             "Escape must clear focused conversation search"
+        );
+        let mut unread_thread = app.state.borrow().threads[0].clone();
+        unread_thread.messages[0].read = false;
+        let baseline_reads = read_calls.get();
+        app.mark_thread_read_once(&unread_thread);
+        app.mark_thread_read_once(&unread_thread);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while read_calls.get() == baseline_reads && std::time::Instant::now() < deadline {
+            gtk::glib::MainContext::default().iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(
+            read_calls.get(),
+            baseline_reads + 1,
+            "repeated selection must coalesce automatic read requests"
+        );
+        unread_thread.messages[0].handle = "fixture-new-message".into();
+        app.mark_thread_read_once(&unread_thread);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while read_calls.get() < baseline_reads + 2 && std::time::Instant::now() < deadline {
+            gtk::glib::MainContext::default().iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(
+            read_calls.get(),
+            baseline_reads + 2,
+            "a new message must permit another read request"
+        );
+        fail_read.set(true);
+        unread_thread.messages[0].handle = "fixture-failed-read".into();
+        app.mark_thread_read_once(&unread_thread);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while app.read_markers.borrow().contains_key(&unread_thread.key)
+            && std::time::Instant::now() < deadline
+        {
+            gtk::glib::MainContext::default().iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(
+            !app.read_markers.borrow().contains_key(&unread_thread.key),
+            "failed read request must release its marker for retry"
+        );
+        fail_read.set(false);
+        app.mark_thread_read_once(&unread_thread);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while read_calls.get() < baseline_reads + 4 && std::time::Instant::now() < deadline {
+            gtk::glib::MainContext::default().iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(
+            read_calls.get(),
+            baseline_reads + 4,
+            "retry must issue a new request after failure"
         );
         let focused_row = app.list.row_at_index(0).unwrap();
         assert!(focused_row.grab_focus());
