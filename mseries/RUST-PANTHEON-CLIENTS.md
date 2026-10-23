@@ -1,3 +1,18 @@
+## User-level native client installation — 2026-10-22
+
+Installed the verified Messages release as Messages (Rust Preview), alongside
+the qualified Python app, using the new rust/mseries-messages/install-user.sh
+--deb command. The launcher uses an absolute quoted executable path and passes
+desktop-file-validate. Installed binary SHA256:
+7991e9a1020b7c3e5921deec2d963476d710df27ed22d80c299cac54ba5e4f94,
+matching the release artifact. This is installation evidence, not live-phone
+or owner-session UI acceptance.
+
+Also installed/restarted only the PR #525 screenshot shelf helper. Source and
+installed SHA256 e87fd98e4a2247939444311d8d4146045b7c458e96253d02e35aed4db3d22c47;
+PID 1427825 watches Downloads/Screenshots. The running compositor was not
+restarted or replaced. Its privileged installation/next-login gate remains.
+
 ## Native screenshot shelf backend capability — 2026-10-22
 
 Pantheon-R now advertises ScreenshotShelfPlacementVersion=1 on its existing
