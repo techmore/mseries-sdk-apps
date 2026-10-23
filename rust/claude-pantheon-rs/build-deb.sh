@@ -59,7 +59,7 @@ find "$stage/usr/share" -type f -exec chmod 0644 {} +
 # ---- control -----------------------------------------------------------------------------------
 installed_kb="$(du -sk "$stage" | cut -f1)"
 install -d "$stage/DEBIAN"
-depends="libgtk-4-1 (>= 4.12), libgranite-7-7 | libgranite7, libglib2.0-0, libgtksourceview-5-0, libvte-2.91-gtk4-0, libwebkitgtk-6.0-4, librsvg2-common, secret-tool | libsecret-tools, gh"
+depends="libgtk-4-1 (>= 4.20), libgranite-7-7 (>= 7.8) | libgranite7 (>= 7.8), libglib2.0-0, libgtksourceview-5-0, libvte-2.91-gtk4-0, libwebkitgtk-6.0-4, librsvg2-common, secret-tool | libsecret-tools, gh"
 if ((with_indicator)); then
   depends="$depends, libjson-glib-1.0-0, libgee-0.8-2, wingpanel | io.elementary.wingpanel"
 fi

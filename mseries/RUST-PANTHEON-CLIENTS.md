@@ -1,0 +1,695 @@
+## Native capture handoff and desktop activation — 2026-10-22
+
+## Status: INCOMPLETE — deferred by owner (2026-10-22)
+
+Both the Signal Pantheon integration and Rust Messages experience are incomplete.
+The owner rejected the current Messages & Signal launcher experience and deferred
+further app work. Automated checks and installed previews do not constitute owner
+acceptance. Resume only on an explicit request. Remaining work includes the
+visible integration design, live client/phone acceptance, screenshot acceptance
+after a new login, and the open parity/accessibility/localization/release gates.
+Preserve the existing clients and source; do not mark these apps finished.
+
+Added mseries/stage-native-capture.sh and the user command
+mseries-stage-native-capture. --verify checks the exact tested package SHA256,
+package identity and architecture; --install delegates the explicit privileged
+stage operation to the existing installer. Verification passes. No install or
+session restart was performed. The executor still has NoNewPrivs=1 and the
+old compositor is installed; owner installation/next-login acceptance is pending.
+
+The messaging switcher now passes GDK's desktop launch context to GIO, supporting
+normal Wayland activation rather than launching without context. Its status says
+Opening rather than claiming observed window focus. Strict Clippy, optimized
+package build and private fake-client tab activation pass. The updated switcher
+is installed; actual owner-window focus remains unverified. The acceptance ledger
+now includes the switcher and current keyboard/reading-size evidence.
+
+## Merged BlueFerry phone-ID build prepared — 2026-10-22
+
+Live public GetStatus reports API v2 with MAP available, but no phone_profile_id;
+no message history or contacts were read for this check. A local wheel from the
+exact upstream merge ff418298e3e9b71b650e0d72b4b1ba61576cf29f is staged at
+build/blueferry-phone-profile/blueferry-0.8.1+phoneprofile.ff418298-py3-none-any.whl.
+Only version labels differ from upstream. SHA256:
+6b50435d466aa8018ca6d6a44660274e8224bf3d806d126341f9a06682453144.
+187 focused upstream tests pass on a private bus; direct wheel import verifies
+new phone-ID parsing and missing-field compatibility. License/metadata payloads
+were checked. Full provenance is in phone-setup/blueferry-profile-build-20261022.json.
+This development build was not installed into or used to restart the active
+owner backend. Pin import still awaits a qualified backend upgrade and live test.
+
+## New-message picker keyboard parity — 2026-10-22
+
+Actual Ctrl+N/Down/Escape input found the same composite-entry focus bug in the
+new-message To field. Shared SDK has_focus_within now handles widgets with an
+internal focused child; both main search Escape and contact-result Down use it.
+The regression opens the actual modal dialog, selects/focuses a synthetic recent
+contact with Down, and closes with Escape without starting or sending a message.
+Full isolated GTK scenario, 30 SDK/Messages library tests and strict all-target
+Clippy pass. The ARM64 package rebuilt and was installed through install-user.sh.
+No running client or compositor was restarted. Signal must be fully Quit and
+relaunched (not merely have its tray window closed) to load its recent styling.
+
+## Larger reading text and Messages/Signal switcher — 2026-10-22
+
+Owner requested larger text, distinct channel backgrounds and approved a tab-style
+switcher between the existing clients. Messages uses 1.12em root text and a warm
+theme-relative tint; both the Rust preview and installed qualified Python client
+received the scoped styling (the latter only the two requested style edits, with
+backups). Signal now increases legacy 12–16px UI text by 2px, modern body tokens
+by about 11–13%, and uses cool primary surfaces (#eef3fa light / #202936 dark).
+Display pixel scaling is unchanged. The installed Signal archive matches the
+expected selective transform; its other 1503 packed files remain unchanged.
+
+The new Rust SDK-based mseries-conversations binary installs as Messages & Signal.
+Its tab bar uses normal desktop-app activation for the two existing windows and
+changes its own warm/cool surface with the selected tab. Initial display does not
+launch either client until a tab or Show button is used. This is a switcher, not
+an embedded or combined Signal conversation view. Default cargo run still opens
+Messages. Debian/user installation includes and validates both launchers.
+
+Validation: strict all-target Clippy; full Messages light/dark GUI runs; two Python
+stylesheet tests; ten Signal palette/typography/cache tests. Warm Messages and cool
+switcher captures were reviewed. A private Xvfb/D-Bus probe with fake desktop apps
+verified both actual tab clicks launched only their respective fixture commands
+(receipt /tmp/messaging-switcher-probe). Installed clients were not restarted.
+Reopening them loads the text/background changes; actual owner-window activation
+and visual preference still require acceptance. Other existing live gates remain.
+
+## GTK accessibility contract checks — 2026-10-22
+
+The private Messages GUI harness now enables GTK_A11Y=test rather than disabling
+accessibility. Eight critical controls (search, conversation list, editor, Send,
+Back, Latest Messages, favorite and recipient-copy) are asserted to expose explicit
+accessible Label properties; Send and Latest expose Button roles. The complete
+GTK scenario and strict all-target Clippy pass with this backend. This verifies
+GTK accessibility metadata, not screen-reader narration or complete keyboard order.
+No production binary changed in this batch. The compositor remains the old
+installed version and requires privileged installation/next login. Messages CI
+run 39876315164 was confirmed pending with no assigned jobs at inspection.
+
+## Signal elementary palette deployment verified — 2026-10-22
+
+The installed accent helper was older than the reviewed PR #525 version. Ran
+install-signal-integration.sh against the existing legacy official ARM64 install.
+Source/installed helper SHA256 now both:
+86f78748a12bf4a515f82822bd451a8d491a5ca25ef3d1a3f3d7ad880c6619f4.
+All six accent tests pass. Installed app.asar was compared entry-by-entry with
+the preserved app.asar.orig and expected selective transformation: 201 matches
+in main.js (1), preload/main.js (24), manifest.css (149), tailwind.css (27);
+all 1503 other packed files are byte-identical. Modified entry integrity hashes
+match recomputed SHA256 blocks. The desktop launcher validates. Signal was not
+restarted; reopening is required for owner visual acceptance. This does not
+qualify actual compose attachments, tray behavior or atomic-update deployment.
+
+## Messages refresh viewport parity — 2026-10-22
+
+Conversation refresh preserves the reading position when away from the bottom,
+shows an accessible Latest Messages action when history grows, and follows new
+history when already near the bottom. A render generation cancels stale viewport
+callbacks. Sidebar refresh no longer forces every selected conversation to the
+bottom. Automatic read acknowledgement now requires the app window to be active;
+read errors show a concise recovery message with technical detail in the tooltip.
+The private GTK regression exercises actual sidebar rebuilding, position retention,
+Latest activation and bottom following. Light/dark runs and strict all-target
+Clippy pass; captures in /tmp/messages-refresh-{light,dark} were reviewed.
+The private service now implements MarkThreadRead; live read state is unqualified.
+The optimized ARM64 package rebuilt and was installed via install-user.sh.
+Existing app instances were left running; reopening the preview loads this build.
+
+## Messages navigation parity — 2026-10-22
+
+Source comparison with the qualified Python client is recorded in MESSAGES-PARITY.md.
+Rust selection now scrolls to newest history after allocation, using a bounded
+two-frame callback guarded by phone generation and selected conversation. Back
+restores focus to search instead of leaving it in hidden/destroyed content.
+A 30-item synthetic history regression exposed the previous idle-before-layout
+race and now passes, together with the full private GTK scenario and strict
+all-target Messages Clippy. Refresh-follow/jump behavior, gettext integration,
+assistive technology and live acceptance remain open. The optimized ARM64 package
+rebuilt successfully and was installed through install-user.sh; existing running
+app instances were not restarted.
+
+## User-level native client installation — 2026-10-22
+
+Installed the verified Messages release as Messages (Rust Preview), alongside
+the qualified Python app, using the new rust/mseries-messages/install-user.sh
+--deb command. The launcher uses an absolute quoted executable path and passes
+desktop-file-validate. Installed binary SHA256:
+7991e9a1020b7c3e5921deec2d963476d710df27ed22d80c299cac54ba5e4f94,
+matching the release artifact. This is installation evidence, not live-phone
+or owner-session UI acceptance.
+
+Also installed/restarted only the PR #525 screenshot shelf helper. Source and
+installed SHA256 e87fd98e4a2247939444311d8d4146045b7c458e96253d02e35aed4db3d22c47;
+PID 1427825 watches Downloads/Screenshots. The running compositor was not
+restarted or replaced. Its privileged installation/next-login gate remains.
+
+## Native screenshot shelf backend capability — 2026-10-22
+
+Pantheon-R now advertises ScreenshotShelfPlacementVersion=1 on its existing
+DesktopIntegration D-Bus interface. The shelf queries the running service with
+NO_AUTO_START and a 500 ms bound, selects native Wayland when supported, and
+retains the Gala/XWayland fallback and explicit backend override. This closes
+an integration gap: the old detector recognized only patched Gala. Native-DRM
+cargo check and both shelf regression suites pass, including capability absence,
+invalid versions and explicit override. The PR #525 suite has 13 tests.
+The optimized release and full nested screenshot/shelf workflow pass without
+forcing the shelf backend; capability selection is asserted explicitly. Receipt:
+/tmp/pantheon-capture-probe.Q3z0AQ. New package:
+build/screenshot-native-capability/pantheon-rust-compositor_0.1.0+gitb2887485_arm64.deb
+(package revision was selected before the capability source commit 427aebae).
+Package SHA256: 4ef4a735610980e0d67085a6577ef9ddcc7969d5e29e02e8d0cb0d03e4d520a7.
+Binary SHA256: 321a7371e6f72cc242f0634141f5e6439a1c3d914d5f60f28f58e7f11bfe571e.
+Live loading/DRM/Signal attachment acceptance remains open.
+
+## Messages keyboard acceptance — 2026-10-22
+
+Actual X11 Ctrl+F/Escape input exposed GTK SearchEntry child-focus handling.
+The window shortcut controller now handles capture phase and recognizes focus
+inside the search widget; Ctrl+F focuses search and Escape clears its text.
+The full isolated GTK regression passes, as do 30 SDK/Messages library tests
+and strict all-target Clippy. The latest ARM64 Debian package rebuilt successfully
+at build/mseries-messages-rs-deb/mseries-messages-rs_0.1.0-1~mseries1_arm64.deb.
+This does not prove screen-reader or live-phone
+acceptance. Keep SDK expansion and other app ports outside the current client
+release gates. Preserve unrelated updater changes.
+
+## Messages long-content layout correction — 2026-10-22
+
+Long/unbroken message text initially expanded the compact fixture to 2308 pixels
+and clipped regular content. Message labels now wrap by word or character. The
+updated real GTK regression renders long names, multiline text, accented text and
+unbroken tokens, asserts compact window width <=520 and editor horizontal bounds,
+and settles layout even when PNG capture is disabled. Light/dark captures in
+/tmp/messages-long-{light,dark}-fixed were inspected: text wraps, title ellipsizes,
+and composer/actions remain visible. The fixture and strict Messages Clippy pass.
+This batch also adds the explicit acceptance ledger; live/assistive-technology
+acceptance remains open. Unrelated updater edits are preserved.
+
+## Native-client acceptance ledger — 2026-10-22
+
+See NATIVE-CLIENT-ACCEPTANCE.md for explicit remaining gates instead of subjective
+completion percentages. The private Messages GTK test passes under elementary
+blueberry light and dark themes; regular/compact captures were inspected at
+/tmp/messages-review-light and /tmp/messages-review-dark. The short synthetic
+conversation and composer are unclipped/readable in these four captures; long
+content, broader state coverage and assistive technology remain open. This
+local evidence batch is retained without another CI-cancelling push.
+
+## Screenshot release package ready; privileged install blocked — 2026-10-22
+
+Built build/screenshot-native-release/pantheon-rust-compositor_0.1.0+git0de7b82e_arm64.deb.
+Its embedded binary exactly matches the tested native release SHA-256
+0401af12e75e9d406cc5f6b78e8f7ca4a8adb224ad336c30bda50830db264ad6;
+package SHA-256 2310fdce7418bfd2206210e178fdf821e059c95841d4ea762a9a17a9023831c4.
+Installed package is 0.1.0+git75c2c3df, unmodified according to dpkg -V, with
+75c2c3df confirmed an ancestor of this source. The existing session is active.
+The package has not been installed: sudo -n is denied by the process’s no-new-privileges
+flag. This is a privilege boundary, not a failed build or automatic review rejection.
+Owner must run the installer from their terminal; it stages the new package without
+restarting the running compositor. A later login and live acceptance are required.
+
+## Native release screenshot regression passes — 2026-10-22
+
+The optimized native-drm binary now passes the complete nested screenshot/shelf
+batch, including a failing canberra stub and successful pw-play fallback request.
+Receipt /tmp/pantheon-capture-probe.WSwBbB. The host has pw-play and the freedesktop
+camera-shutter asset; audible playback remains unverified. Session lock now clears
+selection/pending region requests (source/build checked, not lock integration).
+Packaging now honors Cargo metadata’s configured target directory and uses locked
+resolution; runtime dependencies include pipewire-bin and sound-theme-freedesktop.
+Native release rebuilt after these fixes; no running compositor was restarted.
+Next: package and stage the exact binary, then owner-session acceptance after login.
+
+## Screenshot workflow milestone: nested batch passes — 2026-10-22
+
+Implemented modal selection-key handling, Space capture of the hovered window,
+blue region/window outlines, and native Wayland shelf placement at bottom-right
+with a 16-logical-pixel margin. Shelf windows do not activate/steal keyboard focus.
+The combined private-Xvfb test passes on the rebuilt compositor: actual +3 key,
+upright/channel-checked pixels, +4 200x150 drag, 400x300 hovered-window Space
+capture, Escape cancellation, private PNG publication, stubbed shutter request,
+real shelf appearance, retained app active state, three-second expiry and all four
+originals retained. Receipt /tmp/pantheon-capture-probe.e8GfBR; shelf-visible.png
+is synthetic. Native-drm check passes. An earlier test accidentally started before
+the new binary finished building and failed; the fresh-binary repeats pass.
+No live compositor installation/restart. Remaining: native-session capture and
+audio, multi-output/rotated/scaled capture, input/grab/lock edge cases, shelf drag
+into actual Signal, and release/install qualification. Earlier source-only and
+unwired notes are historical and superseded only by these scoped results.
+
+## Command+Shift+4 region source wiring — 2026-10-22
+
+Added selection state to the compositor, +4 entry, crosshair cursor override,
+pointer drag tracking, consumed selection buttons, Escape cancellation and
+selected-region cropping before the existing PNG worker. +3 clears region mode.
+The native-drm check passes. This has not yet passed an end-to-end drag test;
+selection/hover overlays, Space/window capture, complete modal-input handling,
+lock/grab interruption and transformed/multi-output crop acceptance remain open.
+No live binary installed; owner shortcuts are not fixed in the running session.
+
+## Screenshot region-to-pixel crop mapping — 2026-10-22
+
+Added crop mapping from global logical selection bounds to an upright output
+image, using actual image/logical-size ratios for fractional scales and clipping
+at output boundaries. A compositor regression verifies negative output origins,
+1.5x pixel scale, clipped selections and nonintersecting outputs; all three pixel
+tests pass. This is a prerequisite for +4, not completed input wiring. Selection
+input interception, crosshair/blue overlay, window capture and region end-to-end
+qualification remain open. Nothing installed or restarted.
+
+## Screenshot orientation regression fixed — 2026-10-22
+
+An asymmetric Wayland fixture exposed vertically inverted nested captures despite
+valid PNG dimensions. Corrected the mapping.flipped interpretation. A fresh
+capture was visually inspected upright; the harness now decodes pixels with
+system Pillow and asserts substantial red/blue regions with red above blue,
+catching orientation and channel errors. The updated end-to-end test passes;
+receipt /tmp/pantheon-capture-probe.eg5Psc (earlier inverted receipt TgefcJ retained).
+The fixture is synthetic and no live desktop was captured. Requires system
+python3-gi/GTK4/Cairo and python3-pil. Native DRM orientation, multiple outputs,
+selection/+4 and shelf behavior remain unqualified. No compositor installed.
+
+## Nested full-screen screenshot acceptance — 2026-10-22
+
+`SCREENSHOT_TEST_BIN=/path/to/pantheon-compositor bash
+mseries/pantheon-rust-compositor/screenshot-tests/run.sh` now runs a private
+Xvfb/D-Bus compositor with temporary HOME/XDG directories. It sends the actual
+Super+Shift+3 key chord and verifies one complete 1280x800 PNG with 0600 permissions
+and a shutter-sound request (sound player stubbed). This passes on the newly built
+binary; receipt: /tmp/pantheon-capture-probe.X7Zvgz. The first probe exited before
+the nested X11 window was visible; explicit window readiness fixed that harness
+race. No live desktop screenshot was taken. Pixel/transform review, native DRM
+capture, shelf observation and +4 selection remain open; nothing installed.
+
+## Command+Shift+3 source wiring — 2026-10-22
+
+The full-screen shortcut now queues a compositor-owned capture request. Native
+and nested render paths compose active outputs offscreen, perform bounded readback,
+and save PNGs on a single guarded worker to ~/Downloads/Screenshots; successful
+saves request the camera-shutter sound. Locked sessions reject capture, and busy
+requests are dropped rather than spawning concurrent encoding work. The native-drm
+build check passes, including concrete multi-GPU renderer trait instantiation.
+This is source wiring only: no nested end-to-end render/capture test, GPU orientation
+qualification, sound or shelf observation has passed yet. No live binary installed
+or compositor restart. Command+Shift+4 input/selection overlays remain unwired.
+
+## Screenshot PNG publication — 2026-10-22
+
+Added bounded PNG saving for the capture worker: private 0600 files, completed
+encoding/flush/sync before atomic same-directory publication, unique names,
+no replacement of existing captures, and cleanup of temporary files. The real
+compositor test decodes saved synthetic pixels, checks permissions, distinct
+paths and absence of leftover temporary files; it passes. Native-drm check also
+passes. This helper has no render-loop caller yet. Capture requests/shortcuts,
+worker lifecycle, selection overlays, sound and shelf handoff remain unwired;
+Command+Shift+3/4 are still unfixed in the live session. No desktop restart.
+
+## Screenshot offscreen output composition — 2026-10-22
+
+Added a generic renderer path that composes desktop elements into an owned
+ABGR8888 texture, waits for rendering completion and reads it through the bounded
+pixel adapter. It rejects locked sessions and invalid/oversized output modes.
+The native-drm build check passes. No caller is wired yet, so this does not prove
+actual GPU capture, transform/color correctness or direct-scanout coverage.
+Next: save publication, capture requests and nested-renderer acceptance, followed
+by native renderer/selection integration. No live compositor changes.
+
+## Native screenshot framebuffer readback core — 2026-10-22
+
+Added bounded renderer-owned framebuffer readback in ABGR8888/RGBA byte layout,
+with returned format/dimension checks and row-orientation conversion. The five
+screenshot selection/pixel tests pass in the actual compositor test executable;
+the native-drm build check passes. These are synthetic conversion tests, not
+GPU readback/image-orientation acceptance. Test linking completed in 6m30s under
+heavy host memory pressure (swap full); no duplicate build was started. Input,
+selection overlays, offscreen composition/native frame integration, PNG saving,
+sound and shelf publication remain to be wired. Nothing installed or restarted.
+
+## Pantheon-R screenshot selection core — 2026-10-22
+
+Added the compositor screenshot selection model: normalized drag regions in
+logical desktop coordinates (including negative output positions), zero-area
+rejection, cancellation and hovered-window bounds. Three standalone Rust tests
+pass via `rustc --edition 2024 --test rust/pantheon-compositor/src/screenshot.rs`.
+The module is included in the compositor but input routing, crosshair/highlight
+rendering, framebuffer readback, sound and saved-image publication are not yet
+wired. Command+Shift+3/4 remain unfixed in the live session. No compositor restart.
+
+## Live screenshot shelf repair — 2026-10-22
+
+Owner reports screenshot capture is not working. Read-only session inspection
+finds pantheon-compositor running, no Gala process, and no screenshot/screencopy
+implementation in this branch’s compositor source. The installed October 18
+shelf was also stale. PR #525’s shelf passes all ten retention regressions and
+was installed/restarted alone; installed/source SHA-256 match
+`ccd40eeba0531eab67e54bc0d70f8398eddb88203fc4a77f68a89e38a79213ec`.
+The new process is running and logs the correct watch directory. Originals now
+remain saved after drags. No compositor/panel restart or live capture occurred.
+The installer’s broad pkill matched the invoking shell command (exit 143), but
+independent checks confirm successful installation/start. Narrow that process
+match next. Native compositor capture/keybinding integration remains missing;
+updating the shelf alone does not fix capture. Owner symptom clarification is
+pending.
+
+## Reproducible Messages GTK test harness — 2026-10-22
+
+Run `bash rust/mseries-messages/test-gui.sh` to exercise the offline widget test
+under Xvfb/Cairo, temporary XDG directories and a private D-Bus with no service
+activation directories. The script cleans its temporary files and passes locally;
+the Messages CI workflow now installs Xvfb/xauth/D-Bus and runs it explicitly.
+The GTK test now awaits the actual failed startup refresh and Retry completion,
+asserts the warning/recovery state and disabled sending, and verifies the draft
+survives retry. No offline flags are forced by the test. This extended test passes
+locally. Expected missing-portal/software-display warnings do not affect this
+widget-state check. The same passing test now publishes a synthetic
+Messages1 service on the private bus and verifies Retry transitions to connected,
+clears the warning, retains the draft and keeps Send disabled without a selection.
+The fixture uses one synthetic read conversation
+and an empty inbox. The passing GTK test selects that conversation, checks
+composer readiness and message-widget creation, edits the actual text buffer,
+and verifies its draft survives Back and re-selection.
+The same passing GTK/private-D-Bus test now switches valid phone UUIDs A → B → A
+and verifies drafts with identical thread keys stay separate and restore correctly.
+It also switches identity inside ListRecent: the mixed refresh is rejected, send
+readiness is cleared, the old draft/profile remain intact, and a clean retry
+loads the new profile and its draft. This private-service GTK regression passes.
+The fixture now handles checked sends locally with success, known-failure and
+unknown-outcome responses. The passing test verifies Transferred outbox state
+and cleared draft on success, removal of the failed bubble with draft retention,
+and retention of the uncertain bubble and draft. No real phone or recipient is
+reachable through this private-bus fixture.
+The passing GTK fixture also advertises unsupported API v99, verifies the API-v2
+error, disabled sending and preserved draft, then restores v2 and verifies recovery.
+Strict combined SDK/Messages Clippy across all targets passes.
+A delayed-send GTK scenario also passes: the fixture holds a response, the app
+switches phones, and the old success response leaves the active phone’s same-key,
+same-body draft/outbox untouched. The parked send remains OutcomeUnknown. The
+post-response check now waits for a test-only completion counter incremented
+inside the real send callback, with a five-second failure deadline. It proves
+the response was processed before asserting isolation; the fixed delay has been
+removed. The GTK scenario and strict all-target Messages Clippy pass.
+The GTK scenario also passes compact list/detail/Back visibility and regular
+two-pane restoration while retaining the composer draft. It also resizes the visible X11 app window to 520 and 1040 pixels and awaits
+the SDK’s compact/regular classes and matching pane visibility. The test passes
+on bare private Xvfb; xdotool is now a harness/CI dependency. An initial probe
+selected an auxiliary title-matching X11 window; restricting the search to
+visible windows resolved the false failure. Both Paned children now preserve their minimum widths rather than shrinking
+visible controls below their usable size. Compact navigation still hides the
+inactive child explicitly. The same private-Xvfb resize test passes without
+the prior zero-width GtkBox warnings. The same test increases GTK’s font to
+Sans 18 at a 1040-pixel window, verifies increased text metrics and automatic
+compact navigation, restores the prior font, and verifies regular two-pane
+layout returns. This private-session font-change regression passes.
+Set `MSERIES_MESSAGES_GUI_CAPTURE_DIR` when running the GUI script to save
+regular/compact GTK render snapshots. The fixture now installs SDK CSS as main
+does. Captures in /tmp/messages-fixture-review were inspected: the dark fixture
+shows conversation, history, Back, composer and Send without clipping at
+1040/520 pixels. This is one short synthetic conversation, not light/dark,
+long-content or owner-theme qualification. Comprehensive
+allocated content bounds, visual review and assistive technology remain unqualified. CI execution, visual/accessibility and connected-phone acceptance remain
+unverified. The locally built Debian package remains uninstalled under build/.
+
+## Messages isolated GTK recovery regression — 2026-10-22
+
+An opt-in ignored GTK test now constructs the real App, verifies offline compose
+controls are disabled and confirms Back clears selection while retaining a draft.
+It passes under Xvfb/Cairo with a private D-Bus configuration containing no service
+activation directories and temporary config/cache/data paths. This checks widget
+state, not visual rendering, accessibility or a connected phone. An initial run
+using the standard private-session configuration activated host-installed portal
+helpers; the retained validation was rerun with activation disabled. Next: make
+this isolated harness reproducible in CI and add synthetic connected-service cases.
+
+## SDK phone identity validation — 2026-10-22
+
+The public status parser now rejects malformed supplied phone UUIDs before any
+app can use them for session/cache keys. Missing IDs remain compatible with
+released BlueFerry. A focused SDK regression checks valid/missing IDs, malformed
+values, API version rejection and omission of invalid identity values from the
+error. The focused test passes; live service acceptance remains open.
+
+## Messages avatar cache isolation — 2026-10-22
+
+A reported phone change invalidates the stored photo revision before the normal
+revision update clears cached avatars/requested addresses and increments the
+photo generation. Matching revision numbers on different phones can no longer
+retain old photos or accept old-generation results. Strict Messages Clippy,
+formatting and diff checks pass; delayed-photo GUI acceptance remains open.
+
+## Messages contact-picker phone guard — 2026-10-22
+
+New-message dialogs capture the phone generation. Activating a contact, starting
+a direct conversation or searching after an observed switch is rejected with
+reopen guidance; in-flight contact search results from the previous generation
+are discarded. Strict locked Clippy across all Messages targets, formatting
+and diff checks pass. GTK interaction/delayed-service tests remain open.
+
+## Messages refresh identity consistency — 2026-10-22
+
+Refresh now rereads public status after inbox/history calls and rejects results
+when phone identity or MAP readiness changed during the request. Failed refresh
+also clears send readiness, preventing keyboard sends from bypassing the disabled
+button. All 17 Messages library tests pass, including identity/disconnect rejection.
+Formatting and diff checks pass. Endpoint checks cannot detect an A-to-B-to-A
+switch or distinguish phones on old releases without UUIDs; a backend snapshot
+identity/generation contract is still needed for that guarantee. Delayed D-Bus
+integration and live phone acceptance remain open.
+
+## Messages phone-state regression coverage — 2026-10-22
+
+The production phone-state transition is now exercised by tests covering A/B
+phones with identical thread keys, separate draft restoration, cleared selection
+and pending flags, and unresolved sends restored as OutcomeUnknown. A second
+case verifies unidentified drafts are never assigned to a newly identified phone.
+All 16 Messages library tests pass. GTK callback/delayed-service interaction and
+live acceptance remain open; these tests qualify the state transition only.
+
+## Messages per-phone session state — 2026-10-22
+
+On an observed phone change, Messages parks identified phones' in-memory drafts
+and outbox separately and restores them when that UUID returns. Selection is
+cleared, old inbox-only rows are removed, and unresolved Sending entries become
+OutcomeUnknown; no retry is dispatched. Unknown-identity state is not assigned
+to a newly identified phone. Existing 14 library tests pass; dedicated synthetic
+switch/delayed-response tests remain required. Released BlueFerry without phone
+UUIDs cannot provide this isolation. Live phone qualification remains open.
+
+## Messages confirmation and read callback guards — 2026-10-22
+
+Group confirmation refuses to dispatch after an observed phone-profile change
+and asks the user to review the conversation again. Retained Mark as Read row
+actions reject a changed profile; both read callback paths ignore old-phone
+results. The existing 14 Messages library tests pass, with formatting and diff
+checks clean; they do not exercise these GTK callbacks. Synthetic delayed-response
+and dialog interaction coverage, per-phone draft/outbox retention and live
+phone acceptance remain open. No messages were sent during validation.
+
+## Messages stale send/favorite responses — 2026-10-22
+
+Send and favorite completion callbacks now capture the phone-profile generation
+and ignore results after an observed profile change. An old send response can
+no longer clear a new profile's matching-key draft or edit its outbox/UI.
+This does not cancel an already dispatched backend operation. Locked Messages
+check, formatting and diff checks pass. Remaining phone-switch work includes
+per-profile draft/outbox retention, confirmation dialogs, contact searches,
+history/read callbacks and synthetic delayed-response regressions.
+
+## Messages inbox cache on phone changes — 2026-10-22
+
+A reported phone-profile change now forces a recent-inbox fetch and discards
+the previous inbox snapshot, timestamp, warning and synthesized inbox-only
+rows before merging the new phone data. A failed new inbox read cannot reuse
+the old snapshot. Locked `cargo check -p mseries-messages`, formatting and
+diff checks pass. This is a partial phone-switch correction: draft/outbox,
+in-flight operations and backend identity changes during requests still need
+a dedicated review and synthetic-service regression coverage before live
+phone-switch acceptance. No owner conversations were accessed.
+
+## Rust app package runtime requirements — 2026-10-22
+
+Messages, System Monitor and T3 Debian packages now require GTK 4.20 and
+Granite 7.8, matching the enabled Cargo API features and shared SDK. Previously
+the package metadata allowed GTK 4.12 and unversioned Granite, which could
+permit installation on unsupported runtimes. Both Granite package-name
+alternatives retain the same minimum version. Shell syntax and dependency
+version comparisons pass; this metadata correction does not qualify a live
+phone or desktop. Next: finish current build/package CI and the outstanding
+visual, keyboard/accessibility and owner-phone acceptance.
+
+# Rust Pantheon clients: T3, Signal and Messages
+
+## Direction
+
+The owner wants the first-party desktop app layer to use a shared Rust SDK,
+GTK 4 and Granite on Pantheon. `rust/claude-pantheon-rs` is the reference
+implementation: it is
+the T3 Code client for Claude Code, Codex, OpenCode and Grok. Signal and Messages
+are separate apps in the same native app family; this does not imply replacing
+Gala, Wingpanel or Dock.
+
+The broader SDK design and app-by-app port inventory are in
+[`RUST-PANTHEON-SDK.md`](RUST-PANTHEON-SDK.md).
+
+## Messages
+
+`rust/mseries-messages` is the native client prototype. It uses the shared SDK's
+typed BlueFerry client for the versioned session D-Bus `Messages1` API
+(currently API v2) for status, history, favorites, read state and checked
+sends. BlueFerry remains the only owner of the
+iPhone MAP session, recipient/group validation and encrypted message history.
+The Rust client never opens BlueFerry's private database or starts a competing
+MAP connection.
+
+If BlueFerry's Messages API cannot be reached, the main pane explains the
+connection state and offers inline Connect iPhone, Advanced BlueFerry and Retry
+actions. Retry checks the service again without leaving the recovery screen. The
+running app menu also exposes both setup tools, preserving the existing client's
+recovery and group-participant flows.
+
+The preview searches conversation names, recipients, latest previews and loaded
+message bodies with Unicode case folding. It shows message history, keeps
+per-thread drafts editable offline, supports favorites and read state, and
+offers checked replies and a starred-conversation strip. Group sends show a
+participant-review dialog. Message bubbles offer Reply and Copy actions, render
+safe clickable web
+links, format message times in the local calendar, show Bluetooth attachment
+placeholders, and disclose text shortened by the phone. The Rust app also has
+a new-message picker that searches contacts through BlueFerry's supported
+`FindContacts` API, validates direct phone/email destinations, and sends
+through BlueFerry's supported `Send` method. New
+conversations stay local to the app until BlueFerry reports the resulting
+thread. When BlueFerry's existing contact-photo opt-in is enabled, it requests
+photos through the supported `GetContactPhoto` method, validates bounded JPEG/PNG
+headers in the shared SDK, decodes small in-memory avatars, and drops its cache
+when the service photo revision changes. It never enables the preference or
+writes photos to disk. It installs beside the existing
+Python GTK/Granite Messages app. The Python app remains the qualified client
+until the Rust app reaches feature and accessibility parity and passes the
+owner's live phone acceptance.
+
+Link previews are now implemented for public HTTPS images (including GIF and
+WebP) and YouTube links. Incoming previews require an explicit Load Preview
+action; sent links can load automatically. Requests pin DNS validation to
+public addresses, limit response bytes, dimensions, animation frames and
+in-memory cache, and never save previews to disk or retrieve MAP attachments.
+
+The main window now supports Ctrl+F to focus conversation search, Ctrl+R to
+refresh, Ctrl+N to start a message, and a Send with Enter preference matching
+the existing Python client. Its automatic-refresh switch also survives app
+restarts in a separate owner-only `~/.config/mseries/messages-rust.json` file;
+it does not change the qualified Python client's settings schema. It reads and
+writes the shared
+`~/.config/mseries/messages.json` `enter_sends` setting. When enabled, Enter
+sends, Shift+Enter inserts a newline, and Ctrl+Enter remains an alternative;
+when disabled, Ctrl+Enter sends and Enter inserts a newline. The GTK text
+insertion hook distinguishes a literal newline from an input-method composition
+commit, so confirming composed text does not send it. Escape clears a focused
+search or returns from a selected conversation to the compact conversation list. Search,
+conversation list, favorite control and composer expose accessible names
+through the SDK. The conversation header can explicitly copy its recipient
+addresses to the clipboard. Conversation rows also provide right-click and
+long-press actions to mark an unread thread as read or copy its recipient
+address(es), matching the qualified client's quick actions. The Send button
+remains available, and Ctrl+Enter is its keyboard equivalent when sending is
+enabled. Full keyboard and assistive-technology review is still required.
+
+The SDK also folds text-form iPhone Tapbacks onto the earlier message they
+quote, including reaction changes and removals. Unmatched Tapbacks stay visible
+as messages. Rust Messages presents reaction symbols with accessible names and
+hover descriptions. It preserves BlueFerry's uncertain-transfer error so the
+app tells the user to check the iPhone before trying again; a completed MAP
+transfer is not represented as a recipient delivery receipt. Live phone
+coverage remains part of acceptance.
+
+Outgoing messages appear immediately with a Sending state. After a confirmed
+MAP transfer they remain in the timeline until BlueFerry history echoes them;
+matching uses the outgoing body count captured at send time to avoid duplicate
+bubbles. A known failure removes the optimistic bubble but keeps the draft. An
+unknown outcome keeps the bubble and draft, tells the user to check the iPhone,
+and does not claim delivery. The in-memory outbox is capped at 128 unresolved
+entries per app session.
+
+The application menu exposes a keyboard-shortcuts sheet that reflects the
+selected send preference. Ctrl+N starts a message, Ctrl+F searches, Ctrl+R or
+F5 refreshes, Alt+Left returns to the conversation list, and Escape clears
+search or returns from a compact conversation. Returning to the list clears the
+selected conversation and retains its draft. The list starts without an
+automatic selection, so a refresh cannot open or mark the first conversation
+read without user action.
+The SDK also sends the aggregate unread-message count to the Pantheon dock badge
+through its shared nonblocking LauncherEntry client.
+
+Rust Messages now imports and reviews bounded Apple pin snapshots, and scopes
+the saved order and conversation matches in Secret Service by BlueFerry's
+optional stable phone UUID. The Python GTK client reads the same status field
+and keyring item, migrating its prior custom-schema/MAC-hash item locally when
+it first sees the UUID. BlueFerry PR [#277](https://github.com/erikwb/blueferry/pull/277)
+merged at `ff418298e3e9b71b650e0d72b4b1ba61576cf29f`. The latest public
+release remains v0.8.1 from 2026-09-15, before the merge, so released packages
+still omit the ID. Both clients keep pin import unavailable until a release
+with the field is available. A direct switch to Rust before running the updated
+Python client leaves the old private keyring item in place; the user can
+re-import the snapshot if needed.
+
+The Rust client now fetches the phone's bounded recent inbox through the
+released `Messages1.ListRecent` contract using the shared SDK. It requests a
+snapshot at startup, manual refresh, reconnect and resume, then every five
+minutes while connected if auto-refresh is enabled. Failed inbox reads retain
+the last snapshot and show a warning. The in-memory merge matches only one
+direct recipient by typed address identity, leaves ambiguous senders in
+phone-only conversations, never
+guesses group routes, and deduplicates by message handle. No private database or
+second MAP session is used.
+
+Full accessibility and keyboard review, narrow-window qualification,
+localization, package/launcher handoff, private GUI review and owner-phone
+acceptance also remain. Imported pins need the merged BlueFerry API change to
+ship in a release and pass live acceptance; MAP does not expose recipient
+delivery receipts. The contact picker, Reply/Copy actions, shared
+Enter-to-send preference and recent-inbox behavior still need owner-session
+interaction review.
+
+## Signal
+
+The selected path is the official signed Signal client with Pantheon
+integration. Ready PR [#525](https://github.com/techmore/ElementaryOS_MSeries/pull/525)
+keeps Signal's official Electron client and adds system-accent refresh for the
+mutable install, desktop launcher identity, and a Wingpanel tray host. Atomic
+releases retain upstream colors. All applicable checks for current head
+`b6ca6d24` pass. A throwaway, network-blocked Xvfb launch of Signal Desktop
+8.32.0-beta.1 showed its onboarding screen in light and dark modes after the
+Pantheon palette patch; the installed client was checked read-only and no
+account was opened. This verifies only onboarding, not composer or message
+states. The PR does not replace Signal's UI with Rust or GTK.
+
+The screenshot shelf's actual compose preview, multiple images, paste fallback,
+and XWayland-to-Wayland acceptance remain open under
+[issue #227](https://github.com/techmore/ElementaryOS_MSeries/issues/227).
+The shelf's source-level retention and portal checks do not prove Signal
+attached the image.
+
+Signal Desktop is officially distributed as an Electron/TypeScript application.
+Signal's `libsignal` repository says its client APIs are for Signal's own use
+and external use is unsupported. A Rust GTK shell alone would not provide
+supported access to Signal conversations, encrypted storage, attachments or
+sends.
+
+Do not inspect or modify Signal's private profile/database, reimplement its
+protocol, or present a shell around the existing client as a native Signal
+replacement. A Rust Signal app needs a supported upstream API or an explicit
+upstream-supported integration boundary, plus separate security review and
+owner acceptance. Until then, keep the official signed app as the transition
+path and label any theme, tray or launcher integration as transitional.
+
+## Acceptance boundaries
+
+- T3: the existing Rust GTK/Granite app and its T3 Code server are the pattern;
+  this client work does not requalify all T3 features.
+- Messages: source/build success is not phone delivery, feature parity or an
+  owner desktop installation.
+- Signal: no Rust replacement is accepted until the supported transport and
+  encrypted-data boundary exist.
+- All three apps: Pantheon-native app work does not authorize replacing the
+  operating-system shell or restarting the owner's session.

@@ -18,7 +18,6 @@ window.csd:backdrop decoration { box-shadow: 0 0 0 1px alpha(black, 0.18); }
 .user-bubble {
   background: @accent_color;
   color: white;
-  border-radius: 16px 16px 4px 16px;
   padding: 10px 14px;
 }
 .user-bubble label { color: white; }

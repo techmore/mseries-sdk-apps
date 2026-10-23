@@ -1,9 +1,9 @@
 """Scoped CSS for the native Messages window.
 
 Colours come from the active elementary stylesheet, so the user's accent
-colour and the light/dark preference apply without extra code. The only fixed
-colours are the avatar tones, whose white-initial contrast is asserted in the
-tests. Every selector starts with an ms- class so nothing leaks to other apps.
+colour and the light/dark preference apply without extra code. A warm ambient
+tint distinguishes Messages from Signal. Avatar tones have tested white-initial
+contrast. Every selector starts with an ms- class so nothing leaks to other apps.
 """
 from messages_model import AVATAR_TONES
 
@@ -15,6 +15,7 @@ from messages_model import AVATAR_TONES
 _STRONG = 'shade(@accent_bg_color, .75)'
 
 STYLE = '''
+.ms-window { font-size: 1.12em; background: mix(@theme_bg_color, #dba96b, .10); }
 /* Sidebar */
 .ms-sidebar { background: @theme_base_color; }
 .ms-search { margin: 10px 12px 6px; }

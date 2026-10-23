@@ -126,8 +126,10 @@ pub fn thread_row(t: &ThreadShell, title: &str, accent: &str, now: i64) -> gtk::
         b.set_tooltip_text(Some("Needs your answer"));
         head.append(&b);
     } else if is_unread(t) {
-        let b = dot("#3689e6");
+        let b = gtk::Label::new(None);
+        b.add_css_class("sb-unread");
         b.set_tooltip_text(Some("New activity"));
+        b.update_property(&[gtk::accessible::Property::Label("New activity")]);
         head.append(&b);
     }
     if is_pinned(t) {

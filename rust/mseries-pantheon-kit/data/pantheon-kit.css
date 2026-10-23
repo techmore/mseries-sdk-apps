@@ -1,0 +1,85 @@
+/* Shared geometry classes: GTK and Granite continue to provide colors and controls. */
+.pantheon-surface {
+    border-radius: 12px;
+}
+
+.pantheon-inset {
+    padding: 1em;
+}
+
+.pantheon-row {
+    padding: 0.5em 0.75em;
+}
+
+:dir(ltr) .pantheon-message-incoming {
+    margin-right: 4.5em;
+}
+
+:dir(ltr) .pantheon-message-outgoing {
+    margin-left: 4.5em;
+}
+
+:dir(rtl) .pantheon-message-incoming {
+    margin-left: 4.5em;
+}
+
+:dir(rtl) .pantheon-message-outgoing {
+    margin-right: 4.5em;
+}
+
+.pantheon-message-stamp {
+    margin-top: 0.65em;
+    margin-bottom: 0.25em;
+}
+
+.pantheon-message-run-single {
+    margin-top: 0.4em;
+    margin-bottom: 0.4em;
+}
+
+.pantheon-message-run-first {
+    margin-top: 0.4em;
+    margin-bottom: 0;
+}
+
+.pantheon-message-run-middle {
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.pantheon-message-run-last {
+    margin-top: 0;
+    margin-bottom: 0.4em;
+}
+
+.pantheon-link-preview {
+    margin-top: 0.25em;
+    margin-bottom: 0.4em;
+}
+
+.pantheon-section-gap {
+    margin-bottom: 1em;
+}
+
+.pantheon-caption {
+    font-size: 0.9em;
+}
+
+.pantheon-avatar {
+    border-radius: 50%;
+}
+
+/* Messages keeps desktop font scaling and adds a modest reading-size increase. */
+.mseries-messages {
+    font-size: 1.12em;
+    background: mix(@theme_bg_color, #dba96b, 0.10);
+}
+.mseries-messages .pantheon-history {
+    background: mix(@theme_base_color, #dba96b, 0.12);
+}
+.messaging-channel-messages {
+    background: mix(@theme_bg_color, #dba96b, 0.12);
+}
+.messaging-channel-signal {
+    background: mix(@theme_bg_color, #6b96ca, 0.15);
+}

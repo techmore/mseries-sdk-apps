@@ -202,6 +202,7 @@ impl UsagePage {
         }
         let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
         card.add_css_class("card");
+        card.add_css_class("pantheon-surface");
         card.add_css_class("usage-card");
         let head = gtk::Box::new(gtk::Orientation::Horizontal, 10);
         let t = label("Plan windows", &["title-4"]);
@@ -309,6 +310,7 @@ impl UsagePage {
         // Totals strip.
         let strip = gtk::Box::new(gtk::Orientation::Horizontal, 24);
         strip.add_css_class("card");
+        strip.add_css_class("pantheon-surface");
         strip.add_css_class("usage-card");
         strip.append(&stat("tokens, 30 days", &tokens_text(total_tokens.total())));
         strip.append(&stat("output", &tokens_text(total_tokens.output)));
@@ -320,6 +322,7 @@ impl UsagePage {
         for p in &providers {
             let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
             card.add_css_class("card");
+            card.add_css_class("pantheon-surface");
             card.add_css_class("usage-card");
             let head = gtk::Box::new(gtk::Orientation::Horizontal, 10);
             let mark = label(

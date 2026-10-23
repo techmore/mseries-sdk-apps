@@ -40,13 +40,32 @@ pub fn html_render_of(tool_name: Option<&str>, output: Option<&Value>) -> Option
     })
 }
 
-/// Granite's palette as CSS variables plus sensible defaults for a page that did not style itself.
-pub fn theme_css(dark: bool) -> String {
-    let (bg, fg, accent, muted) =
-        if dark { ("#1e1e1e", "#eeeeee", "#64baff", "#a0a0a0") } else { ("#ffffff", "#333333", "#3689e6", "#666666") };
+/// Reads a named color from the active GTK theme, with fallbacks for themes that expose only the
+/// older GTK color names. This is queried only when a visual reply is opened.
+// GTK 4.10 deprecated named-color lookup without providing a replacement API.
+#[allow(deprecated)]
+fn theme_color(widget: &gtk::Widget, names: &[&str], fallback: &str) -> String {
+    let context = widget.style_context();
+    names
+        .iter()
+        .find_map(|name| context.lookup_color(name))
+        .map(|color| {
+            format!(
+                "rgba({:.0}, {:.0}, {:.0}, {:.3})",
+                color.red() * 255.0,
+                color.green() * 255.0,
+                color.blue() * 255.0,
+                color.alpha()
+            )
+        })
+        .unwrap_or_else(|| fallback.to_string())
+}
+
+/// CSS variables for visual replies, using colors resolved from Pantheon's active GTK theme.
+pub fn theme_css(dark: bool, bg: &str, fg: &str, accent: &str) -> String {
     format!(
-        ":root {{ color-scheme: {scheme}; --bg: {bg}; --fg: {fg}; --accent: {accent}; --muted: {muted}; }}\n\
-         body {{ background: var(--bg); color: var(--fg); font-family: Inter, 'Open Sans', sans-serif; margin: 12px; }}\n\
+        ":root {{ color-scheme: {scheme}; --bg: {bg}; --fg: {fg}; --accent: {accent}; }}\n\
+         body {{ background: var(--bg); color: var(--fg); font-family: system-ui, sans-serif; margin: 12px; }}\n\
          a {{ color: var(--accent); }}",
         scheme = if dark { "dark" } else { "light" }
     )
@@ -67,6 +86,7 @@ impl PageView {
     pub fn new(render: &HtmlRender, resolve: Resolve) -> Rc<PageView> {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
         root.add_css_class("card");
+        root.add_css_class("pantheon-surface");
         root.add_css_class("page-card");
         let head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         head.append(&gtk::Image::from_icon_name("web-browser-symbolic"));
@@ -126,12 +146,23 @@ impl PageView {
         page
     }
 
-    fn make_view() -> webkit6::WebView {
+    fn make_view(theme_source: &gtk::Widget) -> webkit6::WebView {
         let manager = webkit6::UserContentManager::new();
         #[allow(deprecated)]
         let dark = gtk::Settings::default().map(|s| s.is_gtk_application_prefer_dark_theme()).unwrap_or(false);
+        let bg = theme_color(
+            theme_source,
+            &["window_bg_color", "view_bg_color", "theme_bg_color"],
+            if dark { "#1e1e1e" } else { "#ffffff" },
+        );
+        let fg = theme_color(
+            theme_source,
+            &["window_fg_color", "view_fg_color", "theme_fg_color"],
+            if dark { "#eeeeee" } else { "#333333" },
+        );
+        let accent = theme_color(theme_source, &["accent_color", "theme_selected_bg_color"], "#3689e6");
         let sheet = webkit6::UserStyleSheet::new(
-            &theme_css(dark),
+            &theme_css(dark, &bg, &fg, &accent),
             webkit6::UserContentInjectedFrames::AllFrames,
             webkit6::UserStyleLevel::User,
             &[],
@@ -168,7 +199,7 @@ impl PageView {
     }
 
     pub fn open(&self, url: &str, height: i32) {
-        let view = Self::make_view();
+        let view = Self::make_view(self.root.upcast_ref());
         view.set_size_request(-1, height.clamp(80, 2000));
         view.set_vexpand(false);
         view.load_uri(url);
@@ -193,7 +224,7 @@ impl PageView {
 
     fn open_fullscreen(&self, title: &str) {
         let Some(url) = self.view.borrow().as_ref().and_then(|v| v.uri()).map(|u| u.to_string()) else { return };
-        let view = Self::make_view();
+        let view = Self::make_view(self.root.upcast_ref());
         view.load_uri(&url);
         let window = gtk::Window::builder().title(title).default_width(1100).default_height(760).child(&view).build();
         let keys = gtk::EventControllerKey::new();
@@ -224,6 +255,6 @@ mod tests {
         assert!(html_render_of(Some("Bash"), Some(&out)).is_none());
         let err = serde_json::json!({"isError": true, "htmlRender": {"attachmentId": "x", "title": "t", "height": 1}});
         assert!(html_render_of(Some("html_render"), Some(&err)).is_none());
-        assert!(theme_css(true).contains("color-scheme: dark"));
+        assert!(theme_css(true, "#111", "#eee", "#3689e6").contains("color-scheme: dark"));
     }
 }

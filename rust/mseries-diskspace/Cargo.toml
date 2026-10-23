@@ -8,6 +8,7 @@ publish = false
 description = "Disk space analyzer for elementary OS: filesystems on the left, cards or a sunburst to find and recover space"
 
 [dependencies]
+mseries-pantheon-kit = { path = "../mseries-pantheon-kit" }
 # Same GTK/Granite pins as granite-smoke (see mseries/RUST-UPSTREAM-MAINTENANCE.md).
 gtk = { package = "gtk4", version = "0.11", features = ["v4_20"] }
 granite = { package = "granite-rs", version = "3.3", features = ["v7_8", "gtk_v4_20"] }

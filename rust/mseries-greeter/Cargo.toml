@@ -20,4 +20,3 @@ gtk = { package = "gtk4", version = "0.11", features = ["v4_20"] }
 futures-channel = "0.3"
 msdk = { path = "../msdk" }
 msdk-gtk = { path = "../msdk-gtk" }
-

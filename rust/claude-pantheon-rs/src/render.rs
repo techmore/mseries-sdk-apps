@@ -390,6 +390,7 @@ pub fn code_widget(lang: &str, code: &str) -> gtk::Widget {
     let frame = gtk::Box::new(gtk::Orientation::Vertical, 0);
     frame.add_css_class("code-block");
     frame.add_css_class("card");
+    frame.add_css_class("pantheon-surface");
     frame.append(&bar);
     frame.append(&scroll);
     frame.upcast()

@@ -20,6 +20,7 @@ if not SAFE:
 gui_safety.force_x11(os.environ)
 from messages import Messages, Gtk, GLib, Gdk
 from messages_widgets import photo_frame
+from message_pins import default_state, local_identity, SCHEMA as PIN_SCHEMA
 from unittest.mock import patch
 
 
@@ -104,7 +105,8 @@ class MessagesUI(unittest.TestCase):
         app.populate()
         parent,avatar=app.avatars['demo']
         self.assertTrue(avatar.get_prev_sibling().get_first_child().get_visible())
-        app.pin_state=dict(version=1,snapshot=None,choices=['demo'])
+        app.pin_state=default_state()
+        app.pin_state['local_pins']=[local_identity(app.threads['demo'])]
         app.populate()
         parent,avatar=app.favorite_avatars['demo']
         self.assertTrue(avatar.get_prev_sibling().get_first_child().get_visible())
@@ -302,7 +304,11 @@ class MessagesUI(unittest.TestCase):
         from unittest.mock import patch
         app = self.app
         app.threads = {str(i): dict(key=str(i), name='Fixture contact', recipients=['+1555010%04d' % i], messages=[], last_ts='%04d' % i) for i in range(41)}
-        app.pin_state['choices'] = ['0']
+        app.pin_state = dict(version=2,
+                             snapshot=dict(schema=PIN_SCHEMA, version=1, source='macos-imcore',
+                                           captured_at='2026-10-20T16:00:00Z',
+                                           pins=[dict(apple_identifier='+15550100000')]),
+                             choices=['0'], local_pins=[], hidden_imports=[])
         app.status['contact_photos'] = True
         app.task = lambda work, completed: completed(work(), None)
         with patch('messages.BackendClient') as backend:
@@ -348,9 +354,11 @@ class MessagesUI(unittest.TestCase):
         keys=['demo']
         for index in range(4):
             key=f'fixture-favorite-{index}'
-            app.threads[key]=dict(app.threads['demo'],key=key,name=f'Favorite {index}',messages=[])
+            app.threads[key]=dict(app.threads['demo'],key=key,name=f'Favorite {index}',
+                                  recipients=[f'+1555010{index+100:04d}'],messages=[])
             keys.append(key)
-        app.pin_state=dict(version=1,snapshot=None,choices=keys)
+        app.pin_state=default_state()
+        app.pin_state['local_pins']=[local_identity(app.threads[key]) for key in keys]
         app.populate();settle()
         self.assertTrue(app.favorite_separator.get_visible())
         self.assertEqual(tuple(app.favorite_grid.query_child(app.favorite_buttons[keys[3]])), (3,0,1,1))
@@ -811,9 +819,9 @@ class MessagesUI(unittest.TestCase):
         app = self.app
         unread = [text for text, _cb in app.row_actions(app.threads['jordan'])]
         read = [text for text, _cb in app.row_actions(app.threads['sam'])]
-        self.assertEqual(unread, ['Mark as Read', 'Copy Number or Address'])
-        self.assertEqual(read, ['Copy Number or Address'])
-        self.assertEqual([t for t, _c in app.row_actions(app.threads['family'])], ['Copy Numbers'])
+        self.assertEqual(unread, ['Mark as Read', 'Add to Favorites', 'Copy Number or Address'])
+        self.assertEqual(read, ['Add to Favorites', 'Copy Number or Address'])
+        self.assertEqual([t for t, _c in app.row_actions(app.threads['family'])], ['Add to Favorites', 'Copy Numbers'])
         row = app.rows['jordan']
         click = next(c for c in row.observe_controllers() if isinstance(c, Gtk.GestureClick))
         click.emit('pressed', 1, 12.0, 12.0);settle(.3)

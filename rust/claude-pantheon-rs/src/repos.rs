@@ -170,6 +170,7 @@ impl ReposPage {
         for r in all {
             let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
             card.add_css_class("card");
+            card.add_css_class("pantheon-surface");
             card.add_css_class("repo-card");
             let head = gtk::Box::new(gtk::Orientation::Horizontal, 10);
             let pin = gtk::CheckButton::with_label("Pinned");
