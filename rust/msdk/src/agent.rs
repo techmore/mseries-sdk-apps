@@ -359,7 +359,7 @@ pub fn explain(code: &str) -> Option<&'static str> {
         }
         "too-deep" => "Nesting is more than 8 levels. Group content in a Card or split it.",
         "bad-action" => {
-            "An update action has exactly one verb (set, toggle, append, patch, remove, clear, call, toast, open, close, quit, when) plus its modifiers."
+            "An update action has exactly one verb (set, toggle, add, append, patch, remove, clear, call, toast, open, close, quit, when) plus its modifiers."
         }
         "no-payload" => {
             "$payload was used in a rule for a message with payload none. Declare the message with text or bool."

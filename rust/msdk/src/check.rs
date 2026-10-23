@@ -115,6 +115,7 @@ pub fn check(doc: &Value) -> Vec<Diagnostic> {
         "types",
         "state",
         "persist",
+        "initial",
         "messages",
         "feeds",
         "update",
@@ -150,6 +151,7 @@ pub fn check(doc: &Value) -> Vec<Diagnostic> {
     check_feeds(root.get("feeds"), root.get("capabilities"), &mut cx);
     check_logic(root, &mut cx);
     check_persist(root.get("persist"), &mut cx);
+    check_initial(root.get("initial"), &mut cx);
     match root.get("surfaces").and_then(Value::as_object) {
         Some(s) if !s.is_empty() => {
             for (name, v) in s {
@@ -873,6 +875,7 @@ fn check_actions(v: &Value, path: &str, payload: Payload, cx: &mut Cx) {
             matches!(
                 (verb.as_str(), k),
                 ("set", "to")
+                    | ("add", "by")
                     | ("append", "record")
                     | ("patch", "where" | "fields")
                     | ("remove", "where")
@@ -922,6 +925,22 @@ fn check_actions(v: &Value, path: &str, payload: Payload, cx: &mut Cx) {
                     None => {
                         cx.err(&ap, "missing-property", "`set` needs `to`".into(), Some("add \"to\": value".into()))
                     }
+                }
+            }
+            "add" => {
+                if let Some(key) = target
+                    && let Some(t) = state_ty(cx, key)
+                    && t != "number"
+                {
+                    cx.err(
+                        &format!("{ap}/add"),
+                        "state-type-mismatch",
+                        format!("`add` needs a number but `{key}` is `{t}`"),
+                        None,
+                    );
+                }
+                if obj.get("by").is_some_and(|b| !b.is_number()) {
+                    cx.err(&format!("{ap}/by"), "wrong-type", "`by` must be a number".into(), None);
                 }
             }
             "toggle" => {
@@ -1233,6 +1252,51 @@ fn check_persist(p: Option<&Value>, cx: &mut Cx) {
                 );
             }
             None => cx.err(&format!("/persist/{i}"), "wrong-type", "a state key name".into(), None),
+        }
+    }
+}
+
+/// `initial`: starting values for state keys (settings defaults, pinned items).
+fn check_initial(v: Option<&Value>, cx: &mut Cx) {
+    let Some(v) = v else { return };
+    let Some(obj) = v.as_object() else {
+        cx.err("/initial", "wrong-type", "`initial` is an object of stateKey: value".into(), None);
+        return;
+    };
+    for (k, val) in obj {
+        let path = format!("/initial/{k}");
+        let Some(t) = cx.state.get(k).cloned() else {
+            let names: Vec<&str> = cx.state.keys().map(String::as_str).collect();
+            cx.err(&path, "unknown-state", format!("`{k}` is not in `state`"), suggest(k, &names));
+            continue;
+        };
+        cx.used_state.insert(k.clone());
+        let ok = match t.as_str() {
+            "text" => val.is_string(),
+            "bool" => val.is_boolean(),
+            "number" => val.is_number(),
+            _ => val.is_array(),
+        };
+        if !ok {
+            cx.err(&path, "state-type-mismatch", format!("`{k}` is `{t}` but the initial value is {val}"), None);
+            continue;
+        }
+        if let (Some(rec), Some(items)) = (t.strip_prefix("list<").and_then(|r| r.strip_suffix('>')), val.as_array()) {
+            let fields = cx.types.get(rec).cloned().unwrap_or_default();
+            for (i, item) in items.iter().enumerate() {
+                let Some(o) = item.as_object() else {
+                    cx.err(&format!("{path}/{i}"), "wrong-type", format!("a `{rec}` record is an object"), None);
+                    continue;
+                };
+                for f in o.keys().filter(|f| !fields.contains_key(*f)) {
+                    cx.err(
+                        &format!("{path}/{i}/{f}"),
+                        "unknown-field",
+                        format!("record `{rec}` has no field `{f}`"),
+                        None,
+                    );
+                }
+            }
         }
     }
 }

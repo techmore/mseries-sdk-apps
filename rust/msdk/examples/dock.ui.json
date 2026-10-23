@@ -3,7 +3,7 @@
   "app": { "id": "io.github.techmore.Dock", "name": "Dock", "icon": "preferences-desktop" },
   "capabilities": ["windows"],
   "types": {
-    "Win": { "id": "text", "app_id": "text", "title": "text", "focused": "bool", "minimized": "bool" },
+    "Win": { "id": "text", "app_id": "text", "title": "text", "focused": "bool", "attention": "bool" },
     "Item": { "id": "text", "name": "text", "icon": "text", "indicator": "text", "badge": "text" }
   },
   "state": { "windows": "list<Win>", "items": "list<Item>" },

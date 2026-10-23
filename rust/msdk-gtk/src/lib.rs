@@ -7,3 +7,4 @@
 pub mod host;
 pub use msdk::logic;
 pub mod render;
+pub mod services;

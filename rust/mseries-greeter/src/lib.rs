@@ -2,4 +2,5 @@
 //! No GUI types here, so the same logic can sit behind the SDK renderer later.
 
 pub mod greetd;
+pub mod logic;
 pub mod state;

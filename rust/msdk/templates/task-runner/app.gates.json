@@ -1,0 +1,5 @@
+{ "gates": [
+  { "name": "run starts the command and blocks a second run", "steps": [{ "send": "Start" }], "expect": [{ "state": "running", "equals": true }, { "state": "idle", "equals": false }, { "call": "process.run" }] },
+  { "name": "success shows the output and allows another run", "steps": [{ "send": "Start" }, { "send": "Done", "payload": "ok" }], "expect": [{ "state": "log", "equals": "ok" }, { "state": "idle", "equals": true }, { "toast": "Finished" }] },
+  { "name": "failure is visible and recoverable", "steps": [{ "send": "Start" }, { "send": "Failed", "payload": "boom" }], "expect": [{ "state": "failed", "equals": true }, { "state": "idle", "equals": true }, { "state": "log", "equals": "boom" }] }
+] }

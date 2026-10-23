@@ -12,10 +12,14 @@ use gtk::prelude::*;
 use gtk::{gdk, glib};
 use serde_json::{Value, json};
 
-use crate::logic::{Effect, Logic, RulesLogic, Store, default_for};
+use crate::logic::{Effect, Logic, RulesLogic, Store};
 use crate::render::{self, D, Dispatcher, Refresh};
 
-type Event = (String, Option<Value>);
+/// A message from outside the widgets (a worker thread, a service): name and payload.
+pub type Event = (String, Option<Value>);
+
+/// Builds the app's Rust logic once the host exists; it gets a sender for events from its own threads.
+pub type LogicFactory = Box<dyn FnOnce(UnboundedSender<Event>) -> Box<dyn Logic>>;
 
 pub struct Host {
     doc: RefCell<Value>,
@@ -28,7 +32,7 @@ pub struct Host {
     toast: gtk::Label,
     banner: gtk::Label,
     tx: UnboundedSender<Event>,
-    path: PathBuf,
+    path: Option<PathBuf>,
     surface: String,
     mtime: Cell<Option<SystemTime>>,
     me: RefCell<Weak<Host>>,
@@ -52,15 +56,7 @@ fn state_file(doc: &Value) -> Option<PathBuf> {
 }
 
 fn initial_store(doc: &Value) -> Store {
-    let mut st = Store::new();
-    for (k, t) in doc
-        .get("state")
-        .and_then(Value::as_object)
-        .into_iter()
-        .flatten()
-    {
-        st.insert(k.clone(), default_for(t.as_str().unwrap_or("text")));
-    }
+    let mut st = msdk::logic::initial_store(doc);
     if let Some(f) = state_file(doc)
         && let Ok(text) = std::fs::read_to_string(f)
         && let Ok(Value::Object(saved)) = serde_json::from_str(&text)
@@ -93,7 +89,7 @@ impl Host {
         app: &gtk::Application,
         path: &Path,
         surface: &str,
-        logic: Option<Box<dyn Logic>>,
+        logic: Option<LogicFactory>,
         watch: bool,
     ) -> Option<Rc<Host>> {
         let doc = match read_doc(path) {
@@ -103,11 +99,23 @@ impl Host {
                 return None;
             }
         };
+        Host::open_doc(app, doc, Some(path), surface, logic, watch)
+    }
+
+    /// Opens a window for `surface` of an in-memory description (for example one embedded in the binary).
+    pub fn open_doc(
+        app: &gtk::Application,
+        doc: Value,
+        path: Option<&Path>,
+        surface: &str,
+        logic: Option<LogicFactory>,
+        watch: bool,
+    ) -> Option<Rc<Host>> {
         if report(&msdk::check(&doc)) {
             return None;
         }
         if doc["surfaces"].get(surface).is_none() {
-            eprintln!("{}: no surface `{surface}`", path.display());
+            eprintln!("no surface `{surface}`");
             return None;
         }
         if let Some(display) = gdk::Display::default() {
@@ -121,7 +129,10 @@ impl Host {
         }
         let (tx, mut rx) = unbounded::<Event>();
         let custom_logic = logic.is_some();
-        let logic: Box<dyn Logic> = logic.unwrap_or_else(|| Box::new(RulesLogic::new(&doc)));
+        let logic: Box<dyn Logic> = match logic {
+            Some(make) => make(tx.clone()),
+            None => Box::new(RulesLogic::new(&doc)),
+        };
         let window = gtk::ApplicationWindow::builder()
             .application(app)
             .default_width(900)
@@ -161,9 +172,9 @@ impl Host {
             toast,
             banner,
             tx,
-            path: path.to_path_buf(),
+            path: path.map(Path::to_path_buf),
             surface: surface.to_string(),
-            mtime: Cell::new(mtime(path)),
+            mtime: Cell::new(path.and_then(mtime)),
             me: RefCell::new(Weak::new()),
         });
         *host.me.borrow_mut() = Rc::downgrade(&host);
@@ -174,10 +185,11 @@ impl Host {
                 h.send(&msg, payload);
             }
         });
-        if watch {
+        host.start_feeds();
+        if watch && host.path.is_some() {
             let h = host.clone();
             glib::timeout_add_local(std::time::Duration::from_millis(400), move || {
-                let now = mtime(&h.path);
+                let now = h.path.as_deref().and_then(mtime);
                 if now != h.mtime.get() {
                     h.mtime.set(now);
                     h.reload();
@@ -187,6 +199,37 @@ impl Host {
         }
         host.window.present();
         Some(host)
+    }
+
+    pub fn window(&self) -> &gtk::ApplicationWindow {
+        &self.window
+    }
+
+    /// Sends a message as if a control had (used for start-up messages and feeds).
+    pub fn post(&self, msg: &str, payload: Option<Value>) {
+        Dispatcher::send(self, msg, payload);
+    }
+
+    /// Starts the live lists the description declares under `feeds`.
+    fn start_feeds(&self) {
+        let feeds = self
+            .doc
+            .borrow()
+            .get("feeds")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        for (key, name) in feeds {
+            if name.as_str() == Some("windows.list") {
+                let weak = self.me.borrow().clone();
+                crate::services::watch_windows(move |list| {
+                    if let Some(h) = weak.upgrade() {
+                        h.set(&key, list);
+                        h.post("_feed", Some(json!(key)));
+                    }
+                });
+            }
+        }
     }
 
     fn dispatcher(&self) -> D {
@@ -227,6 +270,7 @@ impl Host {
             }
             "fullscreen" => {
                 self.window.set_decorated(false);
+                self.window.add_css_class("msdk-kiosk");
                 self.window.fullscreen();
             }
             _ => {
@@ -240,6 +284,13 @@ impl Host {
         }
         if let Some(body) = surf.get("body") {
             let b = render::build_node(body, &d);
+            if kind == "fullscreen" {
+                // A centred card, the shape of a login or lock screen.
+                b.widget.set_halign(gtk::Align::Center);
+                b.widget.set_valign(gtk::Align::Center);
+                b.widget.set_size_request(360, -1);
+                b.widget.add_css_class("msdk-card");
+            }
             b.widget.set_vexpand(true);
             self.holder.append(&b.widget);
             refreshers.extend(b.refresh);
@@ -258,7 +309,8 @@ impl Host {
 
     /// Re-reads the file. A description with errors keeps the previous UI and shows the first error in a banner.
     pub fn reload(&self) {
-        let doc = match read_doc(&self.path) {
+        let Some(path) = &self.path else { return };
+        let doc = match read_doc(path) {
             Ok(d) => d,
             Err(e) => return self.show_error(&e),
         };
@@ -388,6 +440,16 @@ impl Host {
                             "reboot"
                         };
                         let _ = std::process::Command::new("systemctl").arg(verb).spawn();
+                    }
+                    "windows.activate" => crate::services::focus_window(
+                        args.get("id").and_then(Value::as_str).unwrap_or(""),
+                    ),
+                    "windows.launch" => {
+                        if let Err(e) = crate::services::launch(
+                            args.get("app").and_then(Value::as_str).unwrap_or(""),
+                        ) {
+                            fail(&tx, &error, e);
+                        }
                     }
                     other => fail(
                         &tx,

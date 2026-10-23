@@ -1,0 +1,5 @@
+{ "gates": [
+  { "name": "refresh asks the system for both readings", "steps": [{ "send": "Refresh" }], "expect": [{ "state": "refreshes", "equals": 1 }, { "call": "process.run" }] },
+  { "name": "a reading replaces the previous one", "steps": [{ "send": "GotLoad", "payload": "0.10 0.20 0.30" }, { "send": "GotLoad", "payload": "1.00 1.00 1.00" }], "expect": [{ "list": "readings", "length": 1 }, { "list": "readings", "item": { "value": "1.00 1.00 1.00" } }] },
+  { "name": "a failure is shown, not hidden", "steps": [{ "send": "Failed", "payload": "no such command" }], "expect": [{ "state": "has_error", "equals": true }, { "state": "error", "equals": "no such command" }] }
+] }

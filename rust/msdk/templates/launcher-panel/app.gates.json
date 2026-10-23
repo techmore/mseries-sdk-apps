@@ -1,0 +1,4 @@
+{ "gates": [
+  { "name": "starts with its items", "steps": [], "expect": [{ "list": "items", "length": 2 }, { "list": "items", "item": { "name": "Files" } }] },
+  { "name": "clicking an item launches it", "steps": [{ "send": "Launch", "payload": "io.elementary.files.desktop" }], "expect": [{ "call": "windows.launch" }] }
+] }

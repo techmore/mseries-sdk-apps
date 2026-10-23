@@ -74,6 +74,21 @@ pub fn default_for(ty: &str) -> Value {
     }
 }
 
+/// Starting store: type defaults, then the document's `initial` values.
+pub fn initial_store(doc: &Value) -> Store {
+    let mut st: Store = doc
+        .get("state")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .map(|(k, t)| (k.clone(), default_for(t.as_str().unwrap_or("text"))))
+        .collect();
+    for (k, v) in doc.get("initial").and_then(Value::as_object).into_iter().flatten() {
+        st.insert(k.clone(), v.clone());
+    }
+    st
+}
+
 pub struct RulesLogic {
     rules: Map<String, Value>,
     counter: u64,
@@ -109,6 +124,11 @@ impl RulesLogic {
             if let Some(key) = text("set") {
                 let v = self.eval(obj.get("to").unwrap_or(&Value::Null), store, payload);
                 store.insert(key, v);
+            } else if let Some(key) = text("add") {
+                let by = obj.get("by").and_then(Value::as_f64).unwrap_or(1.0);
+                let cur = store.get(&key).and_then(Value::as_f64).unwrap_or(0.0);
+                let sum = cur + by;
+                store.insert(key, if sum.fract() == 0.0 { json!(sum as i64) } else { json!(sum) });
             } else if let Some(key) = text("toggle") {
                 let cur = truthy(store, &key);
                 store.insert(key, json!(!cur));

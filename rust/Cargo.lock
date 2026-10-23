@@ -1622,13 +1622,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "mseries-dock"
+version = "0.1.0"
+dependencies = [
+ "gtk4",
+ "msdk",
+ "msdk-gtk",
+ "serde_json",
+]
+
+[[package]]
 name = "mseries-greeter"
 version = "0.1.0"
 dependencies = [
  "futures-channel",
- "futures-util",
  "gtk4",
  "msdk",
+ "msdk-gtk",
  "serde",
  "serde_json",
 ]

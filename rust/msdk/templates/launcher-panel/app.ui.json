@@ -1,0 +1,23 @@
+{
+  "sdk": 1,
+  "app": { "id": "io.github.techmore.Template", "name": "Template Launcher", "icon": "applications-all" },
+  "capabilities": ["windows"],
+  "types": { "Item": { "id": "text", "name": "text", "icon": "text", "indicator": "text", "badge": "text" } },
+  "state": { "items": "list<Item>" },
+  "initial": { "items": [
+    { "id": "io.elementary.files.desktop", "name": "Files", "icon": "system-file-manager", "indicator": "none", "badge": "" },
+    { "id": "io.elementary.terminal.desktop", "name": "Terminal", "icon": "utilities-terminal", "indicator": "none", "badge": "" }
+  ] },
+  "messages": { "Launch": "text" },
+  "update": { "Launch": [{ "call": "windows.launch", "args": { "app": "$payload" } }] },
+  "surfaces": {
+    "dock": {
+      "kind": "panel", "anchor": "bottom", "size": 64, "hide_mode": "overlapping_focus_window",
+      "body": {
+        "type": "List", "items": "items", "key": "id", "direction": "row",
+        "row": { "type": "IconButton", "label": "{name}", "icon": "{icon}", "on": "Launch", "indicator": "{indicator}", "badge": "{badge}" },
+        "empty": { "type": "EmptyState", "title": "Nothing here yet" }
+      }
+    }
+  }
+}

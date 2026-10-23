@@ -7,7 +7,7 @@
 
 use serde_json::{Value, json};
 
-use crate::logic::{Effect, Logic, RulesLogic, Store, default_for};
+use crate::logic::{Effect, Logic, RulesLogic, Store};
 use crate::{Severity, check};
 
 #[derive(Debug, Clone)]
@@ -48,12 +48,7 @@ fn builtin(doc: &Value) -> Vec<GateResult> {
 }
 
 fn initial(doc: &Value) -> Store {
-    doc.get("state")
-        .and_then(Value::as_object)
-        .into_iter()
-        .flatten()
-        .map(|(k, t)| (k.clone(), default_for(t.as_str().unwrap_or("text"))))
-        .collect()
+    crate::logic::initial_store(doc)
 }
 
 fn scenario(doc: &Value, g: &Value) -> GateResult {
@@ -81,7 +76,7 @@ fn scenario(doc: &Value, g: &Value) -> GateResult {
         let at = |msg: String| format!("expect {i}: {msg}");
         if let Some(k) = e["state"].as_str() {
             let got = store.get(k).cloned().unwrap_or(Value::Null);
-            if got != e["equals"] {
+            if !same(&got, &e["equals"]) {
                 details.push(at(format!("state `{k}` is {got}, expected {}", e["equals"])));
             }
         } else if let Some(k) = e["list"].as_str() {
@@ -117,4 +112,12 @@ pub fn run(doc: &Value, gates: Option<&Value>) -> Vec<GateResult> {
         out.push(scenario(doc, g));
     }
     out
+}
+
+/// Equality that treats 1 and 1.0 as the same number.
+fn same(a: &Value, b: &Value) -> bool {
+    match (a.as_f64(), b.as_f64()) {
+        (Some(x), Some(y)) => x == y,
+        _ => a == b,
+    }
 }
