@@ -3,7 +3,7 @@
 set -euo pipefail
 here=$(cd -- "$(dirname -- "$0")" && pwd)
 repo=$(cd -- "$here/../.." && pwd)
-for tool in cargo dbus-run-session gnome-keyring-daemon secret-tool python3; do
+for tool in cargo dbus-run-session gnome-keyring-daemon secret-tool python3 xvfb-run; do
   command -v "$tool" >/dev/null || { echo "Missing test tool: $tool" >&2; exit 2; }
 done
 private=$(mktemp -d)
@@ -18,6 +18,10 @@ env HOME="$private/home" XDG_CONFIG_HOME="$private/config" XDG_DATA_HOME="$priva
     set -euo pipefail
     eval "$(printf %s fixture-only-password | gnome-keyring-daemon --unlock --components=secrets)"
     eval "$(printf %s fixture-only-password | gnome-keyring-daemon --replace --unlock --components=secrets)"
-    exec cargo test --manifest-path "$1/rust/Cargo.toml" --locked -p mseries-pantheon-kit \
+    cargo test --manifest-path "$1/rust/Cargo.toml" --locked -p mseries-pantheon-kit \
       --lib phone_pin_private_keyring -- --ignored --test-threads=1
+    export MSERIES_MESSAGES_ISOLATED_GUI=1 GDK_BACKEND=x11 GSK_RENDERER=cairo GTK_A11Y=none GIO_USE_VFS=local
+    unset WAYLAND_DISPLAY
+    exec xvfb-run -a cargo test --manifest-path "$1/rust/Cargo.toml" --locked -p mseries-messages \
+      --lib favorites_private_keyring_gui -- --ignored --test-threads=1
   ' bash "$repo"

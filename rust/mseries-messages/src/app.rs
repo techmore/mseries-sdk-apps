@@ -4014,6 +4014,109 @@ fn normalize_recipient(input: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     #[test]
+    #[ignore = "requires test-keyring.sh private encrypted keyring and Xvfb"]
+    fn favorites_private_keyring_gui() {
+        use super::*;
+        assert_eq!(
+            std::env::var("MSERIES_PRIVATE_PIN_TEST").as_deref(),
+            Ok("1")
+        );
+        assert_eq!(
+            std::env::var("MSERIES_MESSAGES_ISOLATED_GUI").as_deref(),
+            Ok("1")
+        );
+        gtk::init().unwrap();
+        granite::init();
+        let bus = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE).unwrap();
+        bus.call_sync(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            "RequestName",
+            Some(&("io.weirdware.BlueFerry", 0_u32).to_variant()),
+            None,
+            gio::DBusCallFlags::NONE,
+            1000,
+            gio::Cancellable::NONE,
+        )
+        .unwrap();
+        let node = gio::DBusNodeInfo::for_xml(r#"<node><interface name="io.weirdware.BlueFerry.Messages1">
+          <method name="GetStatus"><arg type="s" direction="out"/></method>
+          <method name="ListThreads"><arg type="u" direction="in"/><arg type="s" direction="out"/></method>
+          <method name="ListRecent"><arg type="s" direction="in"/><arg type="u" direction="in"/><arg type="s" direction="out"/></method>
+        </interface></node>"#).unwrap();
+        let profile = "11111111-2222-4333-8444-555555555555";
+        let registration = bus.register_object("/io/weirdware/BlueFerry", &node.interfaces()[0])
+            .method_call(move |_, _, _, _, method, _, invocation| {
+                let json = match method {
+                    "GetStatus" => serde_json::json!({"api_version":2,"map":true,"phone_profile_id":profile}).to_string(),
+                    "ListThreads" => serde_json::json!([{
+                        "key":"favorite-route","name":"Favorite Fixture","recipients":["+12025550123"],
+                        "reply_ready":true,"messages":[{"handle":"fixture-read","body":"Synthetic message","read":true}]
+                    }]).to_string(),
+                    "ListRecent" => "[]".to_string(),
+                    _ => panic!("unexpected fixture method: {method}"),
+                };
+                invocation.return_value(Some(&(json,).to_variant()));
+            }).build().unwrap();
+        let wait = |ready: &dyn Fn() -> bool| {
+            let deadline = std::time::Instant::now() + Duration::from_secs(6);
+            while !ready() && std::time::Instant::now() < deadline {
+                glib::MainContext::default().iteration(false);
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            assert!(ready(), "favorite UI/keyring operation did not settle");
+        };
+        let application = gtk::Application::builder()
+            .application_id("io.elementary.mseries.MessagesRust.FavoriteTest")
+            .build();
+        application.register(gio::Cancellable::NONE).unwrap();
+        let app = App::build(&application).unwrap();
+        wait(&|| app.pin_ready.get() && !app.refresh_gate.in_flight.get());
+        app.select_thread("favorite-route");
+        assert!(app.star_button.is_sensitive());
+        assert!(!app.star_button.is_active());
+        app.star_button.set_active(true);
+        wait(&|| {
+            !app.pin_io_pending.get()
+                && app.favorite_buttons.borrow().contains_key("favorite-route")
+        });
+        assert!(app.star_button.is_active());
+        app.window.close();
+        drop(app);
+        let reopened = App::build(&application).unwrap();
+        wait(&|| reopened.pin_ready.get() && !reopened.refresh_gate.in_flight.get());
+        reopened.select_thread("favorite-route");
+        assert!(
+            reopened.star_button.is_active(),
+            "reopened header must restore persisted favorite"
+        );
+        assert!(
+            reopened
+                .favorite_buttons
+                .borrow()
+                .contains_key("favorite-route")
+        );
+        reopened.star_button.set_active(false);
+        wait(&|| {
+            !reopened.pin_io_pending.get()
+                && !reopened
+                    .favorite_buttons
+                    .borrow()
+                    .contains_key("favorite-route")
+        });
+        let stored = glib::MainContext::default()
+            .block_on(PhonePinStore::load(profile))
+            .unwrap();
+        assert!(
+            stored.local_pins.is_empty(),
+            "removing the favorite must persist"
+        );
+        reopened.window.close();
+        bus.unregister_object(registration).unwrap();
+    }
+
+    #[test]
     #[ignore = "requires an isolated Xvfb display, D-Bus session and config directories"]
     fn offline_gui_disables_sending_and_preserves_drafts_on_back() {
         use gtk::prelude::*;

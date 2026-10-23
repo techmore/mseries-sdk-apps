@@ -271,3 +271,6 @@ the imported snapshot. Rust Messages persists that state after phone checks.
 `bash rust/mseries-messages/test-keyring.sh` qualifies encrypted v2 preferences
 across Python and Rust, including another-phone isolation and clear/reload. It
 creates its own bus/home/keyring and requires libsecret tools and GNOME Keyring.
+
+The private keyring runner also exercises the Rust Messages star/strip through
+save, app close/rebuild and removal on Xvfb with a synthetic public BlueFerry API.
