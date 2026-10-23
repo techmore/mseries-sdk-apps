@@ -61,6 +61,21 @@ pub fn schema() -> Value {
             "types": { "type": "object", "additionalProperties": { "type": "object", "additionalProperties": { "enum": vocab::SCALARS } } },
             "state": { "type": "object", "additionalProperties": { "type": "string", "pattern": state_type } },
             "messages": { "type": "object", "additionalProperties": { "enum": vocab::PAYLOADS } },
+            "agent": {
+                "type": "object", "additionalProperties": false,
+                "properties": {
+                    "scopes": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1 } },
+                    "entities": { "type": "object", "additionalProperties": { "type": "object", "required": ["scope", "expose"], "additionalProperties": false,
+                        "properties": { "scope": { "type": "string" }, "expose": { "type": "array", "minItems": 1, "items": { "type": "string" } } } } },
+                    "intents": { "type": "object", "additionalProperties": { "type": "object", "required": ["scope", "risk", "about"], "additionalProperties": false,
+                        "properties": {
+                            "message": { "type": "string" },
+                            "param": { "type": "object", "required": ["name", "type"], "additionalProperties": false, "properties": { "name": { "type": "string" }, "type": { "enum": ["text", "bool"] } } },
+                            "scope": { "type": "string" }, "risk": { "enum": crate::intents::RISKS },
+                            "confirm": { "type": "boolean" }, "shows": { "type": "array", "items": { "type": "string" } }, "verify": { "type": "string" }, "about": { "type": "string" }
+                        } } }
+                }
+            },
             "surfaces": { "type": "object", "minProperties": 1, "additionalProperties": { "oneOf": surfaces } }
         },
         "$defs": { "node": { "oneOf": nodes } }

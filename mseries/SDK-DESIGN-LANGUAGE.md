@@ -86,6 +86,12 @@ as `SplitView`) and from QML where it is closer (`ListView` semantics for `List`
 The vocabulary table in `vocab.rs` gets an `aliases` column so `Toggle` and `Switch` are one component; `msdk complete` offers
 the preferred spelling.
 
+### 3b. Agent surface statements (2026-10-23)
+
+Three more top-level statements declare what an AI agent may ask the app for: `scope "name" "sentence"`, `entity Record scope "name" { fields }`
+and `intent Name(param: Text) { via, scope, risk, confirm, show, verify, about }`. They compile to a top-level `agent` object and are
+checked by `msdk check`; see [SDK-AGENT-SURFACE.md](SDK-AGENT-SURFACE.md) section 7.
+
 ## 4. Size and accuracy
 
 - The text form of Quick Notes is about 45 lines against 80 of JSON, with no punctuation noise for the model to get wrong.

@@ -1,6 +1,6 @@
 # SDK agent surface: app intents, entitlements and consent (design, 2026-10-23)
 
-**Status: design only. Nothing in this note is built or installed.** It joins two things that are already on `dev` but do not yet
+**Status: grammar, `msdk check` rules, `msdk agent-manifest` and the T3 port's agent block are built (section 7); the broker, grants and Settings page are not. Nothing is installed.** It joins two things that are already on `dev` but do not yet
 know about each other: the SDK ([RUST-PANTHEON-SDK.md](RUST-PANTHEON-SDK.md), [SDK-INTROSPECTION-AND-STREAMING.md](SDK-INTROSPECTION-AND-STREAMING.md))
 and the agent broker ([local-ai/PANTHEON-MCP-DESIGN.md](local-ai/PANTHEON-MCP-DESIGN.md)). Owner direction: this should work like Apple's
 API permissions and scopes. An app says what it can do and what it needs, the system checks it, and the user (not the model)
@@ -145,3 +145,54 @@ ask-first default.
 - How long may "always" last before it asks again?
 - Do you want an app-level "agents may never use this app" switch visible in the dock or the app's own settings?
 - Should the manifest be shipped inside the package and also published in the repo for review (the Apple-notarisation analogue)?
+
+## 7. As built, slice 1 (2026-10-23)
+
+Implemented in `rust/msdk` (`src/intents.rs`, the text parser/printer, the checker, the gate runner) and exercised on the T3 port
+(`rust/claude-pantheon-rs/sdk/t3.msdk`, the hardest SDK app so far) with `quick-notes` as a small cross-check. 56 `msdk` tests pass,
+including one that fires every checker rule.
+
+**Grammar** (text form; the JSON form is a top-level `agent` object with `scopes`, `entities`, `intents`):
+
+```
+scope "chat.send" "Send the drafted message to the selected thread"
+entity Thread scope "chat.read" { title, project, branch }
+intent SelectThread(thread: Text) {
+  via SelectThread                  // optional; default is the intent's own name
+  scope "chat.navigate"
+  risk reversible                   // read | reversible | external | privileged
+  confirm                           // required for external and privileged
+  show selected, draft              // state keys the confirmation displays
+  verify "the selected thread is the one requested"
+  about "Open the thread with the given id in the window."
+}
+```
+
+**What building it taught** (changes to the design above):
+
+- **One parameter, not many.** An SDK message carries at most one payload (`none`, `Text` or `Bool`), and an intent can only trigger a
+  message, so an intent has at most one parameter and its type is the payload's. Richer intents need structured message payloads in
+  the SDK first. T3's Send is therefore two steps: `EditDraft(text)` then `Send`.
+- **`show`.** Because `Send` carries no parameter, the confirmation would be blind. An intent can name state keys to display
+  (`show selected, draft`); the checker warns when a confirmed intent has neither a parameter nor `show`.
+- **Risk floors from the app's own rules.** The checker reads the intent's update rule and refuses a risk below what its service
+  calls need (a `network` call is at least `external`, `subprocess` is `privileged`, any other service call at least `reversible`).
+  `StartIssue` could not be declared `reversible`, because its rule calls `router.route` (network).
+- **Hostile arguments.** Manifests give text parameters `maxLength` 4000 and no control characters; `validate_args` is the check a
+  broker runs before sending a message. Two built-in gates run on any app with intents: `every-intent-has-a-scenario` (a gate
+  scenario names each intent with `"intent": "Send"`) and `intent-arguments-are-bounded`.
+- **What T3 deliberately hides:** `AllowOnce`, `Deny` and `AllowOldest` (an agent must never answer its own permission prompts),
+  `ToggleRunner` (starts unattended work) and `SetProvider`. A test fails if any of them appears in the manifest.
+
+**Commands:** `msdk check` (new rules, codes `agent-*`, each explained by `msdk explain`), `msdk agent-manifest app.msdk` (scopes with
+their strongest risk, intents with input schemas, entities with the state lists that back them, and a SHA-256 over the canonical
+content), `msdk agent-manifest app.msdk --mcp` (the MCP `tools/list` shape; risk, scope, confirm, shows and the manifest hash in
+`_meta`; entity queries as read-only tools). The hash ignores spelling and key order, so reformatting never invalidates a grant, but
+widening an intent does.
+
+**T3's surface:** 9 scopes, 5 entities (Thread, Status, Line, Account, Issue) and 5 intents (NewThread, SelectThread, EditDraft, Send,
+StartIssue); `msdk agent-manifest --mcp` yields 10 tools.
+
+**Still not built:** the broker (grant store, TCC-style prompts, expiry, manifest-hash binding), the Settings page, a generated
+Rust-side intent dispatcher in `msdk-gtk`, structured multi-field payloads, manifests for the other SDK apps, and the live
+verification of `verify` readbacks.
