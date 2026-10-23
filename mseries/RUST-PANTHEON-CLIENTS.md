@@ -1,3 +1,15 @@
+## New-message picker keyboard parity — 2026-10-22
+
+Actual Ctrl+N/Down/Escape input found the same composite-entry focus bug in the
+new-message To field. Shared SDK has_focus_within now handles widgets with an
+internal focused child; both main search Escape and contact-result Down use it.
+The regression opens the actual modal dialog, selects/focuses a synthetic recent
+contact with Down, and closes with Escape without starting or sending a message.
+Full isolated GTK scenario, 30 SDK/Messages library tests and strict all-target
+Clippy pass. The ARM64 package rebuilt and was installed through install-user.sh.
+No running client or compositor was restarted. Signal must be fully Quit and
+relaunched (not merely have its tray window closed) to load its recent styling.
+
 ## Larger reading text and Messages/Signal switcher — 2026-10-22
 
 Owner requested larger text, distinct channel backgrounds and approved a tab-style

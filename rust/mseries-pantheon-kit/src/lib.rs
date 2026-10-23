@@ -23,7 +23,7 @@ pub use blueferry::{
 pub use dock_badge::DockBadge;
 pub use images::decode_contact_avatar;
 pub use layout::{
-    LayoutClass, install_css, set_accessible_label, set_box_spacing_text_units,
+    LayoutClass, has_focus_within, install_css, set_accessible_label, set_box_spacing_text_units,
     set_margins_text_units, text_unit, watch_responsive_width,
 };
 pub use messages::{

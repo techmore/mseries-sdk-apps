@@ -29,6 +29,16 @@ pub fn text_unit<W: IsA<gtk::Widget>>(widget: &W, multiplier: f64) -> i32 {
         .max(0.0) as i32
 }
 
+/// Whether keyboard focus belongs to a widget or one of its internal children.
+/// Composite entries put focus on an internal GtkText rather than the entry.
+pub fn has_focus_within<W: IsA<gtk::Widget>>(widget: &W) -> bool {
+    let widget = widget.as_ref();
+    widget
+        .root()
+        .and_then(|root| root.focus())
+        .is_some_and(|focus| focus == *widget || focus.is_ancestor(widget))
+}
+
 /// Set a box's spacing in current text-line units and track font/DPI changes.
 pub fn set_box_spacing_text_units(container: &gtk::Box, multiplier: f64) {
     let weak = container.downgrade();

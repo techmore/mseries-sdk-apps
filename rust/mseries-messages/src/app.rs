@@ -1086,10 +1086,8 @@ impl App {
                     glib::Propagation::Stop
                 }
                 (false, gtk::gdk::Key::Escape)
-                    if gtk::prelude::RootExt::focus(&app.window).is_some_and(|focus| {
-                        focus == app.search.clone().upcast::<gtk::Widget>()
-                            || focus.is_ancestor(&app.search)
-                    }) && !app.search.text().is_empty() =>
+                    if mseries_pantheon_kit::has_focus_within(&app.search)
+                        && !app.search.text().is_empty() =>
                 {
                     app.search.set_text("");
                     glib::Propagation::Stop
@@ -3545,7 +3543,7 @@ impl App {
             let dialog = dialog.downgrade();
             let query = query.clone();
             keys.connect_key_pressed(move |_, key, _, _| {
-                if key == gtk::gdk::Key::Down && query.has_focus() {
+                if key == gtk::gdk::Key::Down && mseries_pantheon_kit::has_focus_within(&query) {
                     if let Some(row) = results.row_at_index(0) {
                         results.select_row(Some(&row));
                         row.grab_focus();
@@ -4055,6 +4053,87 @@ mod tests {
             app.search.text().is_empty(),
             "Escape must clear focused conversation search"
         );
+        press_key("ctrl+n");
+        let dialog = gtk::Window::list_toplevels()
+            .into_iter()
+            .filter_map(|widget| widget.downcast::<gtk::Window>().ok())
+            .find(|window| window.title().as_deref() == Some("New Message"))
+            .expect("Ctrl+N opens new-message dialog");
+        let content = dialog.child().unwrap().downcast::<gtk::Box>().unwrap();
+        let query = content
+            .first_child()
+            .unwrap()
+            .downcast::<gtk::SearchEntry>()
+            .unwrap();
+        let results = query
+            .next_sibling()
+            .unwrap()
+            .next_sibling()
+            .unwrap()
+            .downcast::<gtk::ScrolledWindow>()
+            .unwrap()
+            .child()
+            .unwrap()
+            .downcast::<gtk::Viewport>()
+            .unwrap()
+            .child()
+            .unwrap()
+            .downcast::<gtk::ListBox>()
+            .unwrap();
+        assert!(
+            results.row_at_index(0).is_some(),
+            "fixture must have a recent contact"
+        );
+        let dialog_windows = std::process::Command::new("xdotool")
+            .args([
+                "search",
+                "--onlyvisible",
+                "--pid",
+                &std::process::id().to_string(),
+                "--name",
+                "^New Message$",
+            ])
+            .output()
+            .unwrap();
+        assert!(dialog_windows.status.success());
+        let dialog_id = String::from_utf8(dialog_windows.stdout)
+            .unwrap()
+            .lines()
+            .next()
+            .unwrap()
+            .to_string();
+        let dialog_key = |key: &str| {
+            assert!(
+                std::process::Command::new("xdotool")
+                    .args(["windowfocus", "--sync", &dialog_id])
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            assert!(
+                std::process::Command::new("xdotool")
+                    .args(["key", "--clearmodifiers", key])
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            let until = std::time::Instant::now() + std::time::Duration::from_millis(100);
+            while std::time::Instant::now() < until {
+                gtk::glib::MainContext::default().iteration(false);
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        };
+        dialog_key("Down");
+        assert!(
+            results.selected_row().is_some(),
+            "Down from To must select a recent contact"
+        );
+        assert!(
+            gtk::prelude::RootExt::focus(&dialog).is_some_and(|focus| focus.is_ancestor(&results)),
+            "Down must move keyboard focus into contact results"
+        );
+        dialog_key("Escape");
+        assert!(!dialog.is_visible(), "Escape closes new-message dialog");
         let resize = |width: &str| {
             assert!(
                 std::process::Command::new("xdotool")
