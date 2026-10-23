@@ -242,7 +242,7 @@ impl MediaCard {
         status.add_css_class("dim-label");
         let load = gtk::Button::with_label(&tr("Load Preview"));
         load.set_halign(gtk::Align::Start);
-        mseries_pantheon_kit::set_accessible_label(&load, "Load link preview");
+        mseries_pantheon_kit::set_accessible_label(&load, &tr("Load link preview"));
         let original = gtk::LinkButton::with_label(
             url,
             if youtube {
@@ -535,16 +535,22 @@ impl App {
                 let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
                 mseries_pantheon_kit::set_box_spacing_text_units(&actions, 0.5);
                 let setup = gtk::Button::with_label(&tr("Connect iPhone…"));
-                mseries_pantheon_kit::set_accessible_label(&setup, "Connect iPhone");
+                mseries_pantheon_kit::set_accessible_label(&setup, &tr("Connect iPhone"));
                 let setup_feedback = helper_feedback.clone();
                 setup.connect_clicked(move |_| launch_phone_setup(&setup_feedback));
                 let advanced = gtk::Button::with_label(&tr("Advanced BlueFerry…"));
-                mseries_pantheon_kit::set_accessible_label(&advanced, "Open Advanced BlueFerry");
+                mseries_pantheon_kit::set_accessible_label(
+                    &advanced,
+                    &tr("Open Advanced BlueFerry"),
+                );
                 let advanced_feedback = helper_feedback.clone();
                 advanced.connect_clicked(move |_| launch_advanced_blueferry(&advanced_feedback));
                 let retry = gtk::Button::with_label(&tr("Retry"));
                 retry.add_css_class("suggested-action");
-                mseries_pantheon_kit::set_accessible_label(&retry, "Retry BlueFerry connection");
+                mseries_pantheon_kit::set_accessible_label(
+                    &retry,
+                    &tr("Retry BlueFerry connection"),
+                );
                 actions.append(&setup);
                 actions.append(&advanced);
                 actions.append(&retry);
@@ -568,36 +574,42 @@ impl App {
         title.add_css_class("title");
         header.set_title_widget(Some(&title));
         let new_message = gtk::Button::from_icon_name("mail-message-new-symbolic");
-        new_message.set_tooltip_text(Some("New message"));
-        mseries_pantheon_kit::set_accessible_label(&new_message, "New message");
+        new_message.set_tooltip_text(Some(&tr("New message")));
+        mseries_pantheon_kit::set_accessible_label(&new_message, &tr("New message"));
         header.pack_start(&new_message);
         let refresh = gtk::Button::from_icon_name("view-refresh-symbolic");
-        refresh.set_tooltip_text(Some("Refresh conversations"));
-        mseries_pantheon_kit::set_accessible_label(&refresh, "Refresh conversations");
+        refresh.set_tooltip_text(Some(&tr("Refresh conversations")));
+        mseries_pantheon_kit::set_accessible_label(&refresh, &tr("Refresh conversations"));
         header.pack_start(&refresh);
         let shortcuts_button = gtk::Button::with_label(&tr("Keyboard Shortcuts"));
         shortcuts_button.add_css_class("flat");
-        mseries_pantheon_kit::set_accessible_label(&shortcuts_button, "Show keyboard shortcuts");
+        mseries_pantheon_kit::set_accessible_label(
+            &shortcuts_button,
+            &tr("Show keyboard shortcuts"),
+        );
         let pin_import_button = gtk::Button::with_label(&tr("Import iPhone Pins…"));
         pin_import_button.add_css_class("flat");
-        mseries_pantheon_kit::set_accessible_label(&pin_import_button, "Import iPhone pins");
+        mseries_pantheon_kit::set_accessible_label(&pin_import_button, &tr("Import iPhone pins"));
         let pin_review_button = gtk::Button::with_label(&tr("Review Imported Pins…"));
         pin_review_button.add_css_class("flat");
-        mseries_pantheon_kit::set_accessible_label(&pin_review_button, "Review imported pins");
+        mseries_pantheon_kit::set_accessible_label(&pin_review_button, &tr("Review imported pins"));
         pin_review_button.set_sensitive(false);
         let setup_button = gtk::Button::with_label(&tr("Connect iPhone…"));
         setup_button.add_css_class("flat");
-        mseries_pantheon_kit::set_accessible_label(&setup_button, "Connect iPhone");
+        mseries_pantheon_kit::set_accessible_label(&setup_button, &tr("Connect iPhone"));
         let advanced_button = gtk::Button::with_label(&tr("Advanced BlueFerry…"));
         advanced_button.add_css_class("flat");
-        mseries_pantheon_kit::set_accessible_label(&advanced_button, "Open Advanced BlueFerry");
+        mseries_pantheon_kit::set_accessible_label(
+            &advanced_button,
+            &tr("Open Advanced BlueFerry"),
+        );
         let auto_refresh_switch = gtk::Switch::builder()
             .active(auto_refresh)
             .valign(gtk::Align::Center)
             .build();
         mseries_pantheon_kit::set_accessible_label(
             &auto_refresh_switch,
-            "Refresh conversations automatically every 30 seconds",
+            &tr("Refresh conversations automatically every 30 seconds"),
         );
         let refresh_description = gtk::Label::builder()
             .label(tr("Refresh every 30 seconds while this window is open"))
@@ -624,7 +636,7 @@ impl App {
             .build();
         mseries_pantheon_kit::set_accessible_label(
             &enter_send_switch,
-            "Send messages when Enter is pressed",
+            &tr("Send messages when Enter is pressed"),
         );
         let enter_send_label = gtk::Label::builder()
             .label(tr("Send with Enter"))
@@ -663,10 +675,10 @@ impl App {
         menu.set_child(Some(&menu_actions));
         let menu_button = gtk::MenuButton::builder()
             .icon_name("open-menu-symbolic")
-            .tooltip_text("Menu")
+            .tooltip_text(tr("Menu"))
             .build();
         menu_button.set_popover(Some(&menu));
-        mseries_pantheon_kit::set_accessible_label(&menu_button, "Menu");
+        mseries_pantheon_kit::set_accessible_label(&menu_button, &tr("Menu"));
         header.pack_end(&menu_button);
 
         let status = gtk::Label::builder()
@@ -691,7 +703,7 @@ impl App {
             .margin_top(8)
             .margin_bottom(8)
             .build();
-        mseries_pantheon_kit::set_accessible_label(&search, "Search conversations");
+        mseries_pantheon_kit::set_accessible_label(&search, &tr("Search conversations"));
         let favorites_title = gtk::Label::builder()
             .label(tr("Favorites"))
             .xalign(0.0)
@@ -727,7 +739,7 @@ impl App {
             .selection_mode(gtk::SelectionMode::Single)
             .css_classes(["navigation-sidebar"])
             .build();
-        mseries_pantheon_kit::set_accessible_label(&list, "Conversations");
+        mseries_pantheon_kit::set_accessible_label(&list, &tr("Conversations"));
         let list_scroll = gtk::ScrolledWindow::builder()
             .child(&list)
             .hscrollbar_policy(gtk::PolicyType::Never)
@@ -749,23 +761,23 @@ impl App {
         conversation_title.add_css_class("title-2");
         let star_button = gtk::ToggleButton::builder()
             .icon_name("non-starred-symbolic")
-            .tooltip_text("Favorite conversation")
+            .tooltip_text(tr("Favorite conversation"))
             .sensitive(false)
             .build();
-        mseries_pantheon_kit::set_accessible_label(&star_button, "Favorite conversation");
+        mseries_pantheon_kit::set_accessible_label(&star_button, &tr("Favorite conversation"));
         let copy_addresses_button = gtk::Button::from_icon_name("edit-copy-symbolic");
-        copy_addresses_button.set_tooltip_text(Some("Copy recipient addresses"));
+        copy_addresses_button.set_tooltip_text(Some(&tr("Copy recipient addresses")));
         copy_addresses_button.set_sensitive(false);
         mseries_pantheon_kit::set_accessible_label(
             &copy_addresses_button,
-            "Copy recipient addresses",
+            &tr("Copy recipient addresses"),
         );
         let conversation_header = gtk::Box::new(gtk::Orientation::Horizontal, 10);
         mseries_pantheon_kit::set_box_spacing_text_units(&conversation_header, 0.6);
         mseries_pantheon_kit::set_margins_text_units(&conversation_header, 0.65, 0.75, 0.65, 1.0);
         let back_button = gtk::Button::with_label(&tr("Back"));
         back_button.set_visible(false);
-        mseries_pantheon_kit::set_accessible_label(&back_button, "Back to conversations");
+        mseries_pantheon_kit::set_accessible_label(&back_button, &tr("Back to conversations"));
         conversation_header.append(&back_button);
         conversation_header.append(&conversation_title);
         conversation_header.append(&copy_addresses_button);
@@ -783,7 +795,7 @@ impl App {
         let latest_button = gtk::Button::with_label(&tr("Latest Messages"));
         latest_button.set_halign(gtk::Align::Center);
         latest_button.set_visible(false);
-        mseries_pantheon_kit::set_accessible_label(&latest_button, "Jump to latest messages");
+        mseries_pantheon_kit::set_accessible_label(&latest_button, &tr("Jump to latest messages"));
 
         message_scroll.add_css_class("pantheon-history");
 
@@ -796,7 +808,7 @@ impl App {
             .bottom_margin(8)
             .height_request(72)
             .build();
-        mseries_pantheon_kit::set_accessible_label(&editor, "Message composer");
+        mseries_pantheon_kit::set_accessible_label(&editor, &tr("Message composer"));
         let editor_scroll = gtk::ScrolledWindow::builder()
             .child(&editor)
             .hexpand(true)
@@ -812,7 +824,7 @@ impl App {
         } else {
             "Send message (Ctrl+Enter)"
         }));
-        mseries_pantheon_kit::set_accessible_label(&send_button, "Send message");
+        mseries_pantheon_kit::set_accessible_label(&send_button, &tr("Send message"));
         let compose = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         mseries_pantheon_kit::set_box_spacing_text_units(&compose, 0.5);
         mseries_pantheon_kit::set_margins_text_units(&compose, 0.65, 0.75, 0.65, 0.75);
@@ -1790,7 +1802,10 @@ impl App {
         if thread.unread() > 0 && !thread.local_only {
             let mark_read = gtk::Button::with_label(&tr("Mark as Read"));
             mark_read.add_css_class("flat");
-            mseries_pantheon_kit::set_accessible_label(&mark_read, "Mark conversation as read");
+            mseries_pantheon_kit::set_accessible_label(
+                &mark_read,
+                &tr("Mark conversation as read"),
+            );
             let weak_app = Rc::downgrade(self);
             let key = thread.key.clone();
             let phone_generation = self.pin_load_generation.get();
@@ -2589,7 +2604,7 @@ impl App {
                     ));
                     mseries_pantheon_kit::set_accessible_label(
                         &attachment,
-                        "Attachment. Open Messages on your iPhone to view it.",
+                        &tr("Attachment. Open Messages on your iPhone to view it."),
                     );
                     bubble.append(&attachment);
                 }
@@ -2711,7 +2726,7 @@ impl App {
                     "Connect iPhone…",
                     "Open Phone Setup",
                 );
-                mseries_pantheon_kit::set_accessible_label(&setup, "Connect iPhone");
+                mseries_pantheon_kit::set_accessible_label(&setup, &tr("Connect iPhone"));
                 let feedback = self.feedback.clone();
                 setup.connect_clicked(move |_| launch_phone_setup(&feedback));
 
@@ -2720,7 +2735,10 @@ impl App {
                     "Advanced BlueFerry…",
                     "Open BlueFerry connection settings",
                 );
-                mseries_pantheon_kit::set_accessible_label(&advanced, "Open Advanced BlueFerry");
+                mseries_pantheon_kit::set_accessible_label(
+                    &advanced,
+                    &tr("Open Advanced BlueFerry"),
+                );
                 let feedback = self.feedback.clone();
                 advanced.connect_clicked(move |_| launch_advanced_blueferry(&feedback));
 
@@ -2729,7 +2747,10 @@ impl App {
                     "Retry",
                     "Check the BlueFerry connection again",
                 );
-                mseries_pantheon_kit::set_accessible_label(&retry, "Retry BlueFerry connection");
+                mseries_pantheon_kit::set_accessible_label(
+                    &retry,
+                    &tr("Retry BlueFerry connection"),
+                );
                 let weak = Rc::downgrade(self);
                 retry.connect_clicked(move |_| {
                     if let Some(app) = weak.upgrade() {
@@ -2899,7 +2920,7 @@ impl App {
 
         let reply = gtk::Button::with_label(&tr("Reply"));
         reply.add_css_class("flat");
-        mseries_pantheon_kit::set_accessible_label(&reply, "Reply to message");
+        mseries_pantheon_kit::set_accessible_label(&reply, &tr("Reply to message"));
         let weak_app = Rc::downgrade(self);
         let reply_message = message.clone();
         let reply_popover = popover.downgrade();
@@ -2915,7 +2936,7 @@ impl App {
 
         let copy = gtk::Button::with_label(&tr("Copy Text"));
         copy.add_css_class("flat");
-        mseries_pantheon_kit::set_accessible_label(&copy, "Copy message text");
+        mseries_pantheon_kit::set_accessible_label(&copy, &tr("Copy message text"));
         let weak_app = Rc::downgrade(self);
         let copy_body = message.visible_body();
         let copy_popover = popover.downgrade();
@@ -3302,7 +3323,7 @@ impl App {
         let query = gtk::SearchEntry::builder()
             .placeholder_text(tr("Name, phone number, or email"))
             .build();
-        mseries_pantheon_kit::set_accessible_label(&query, "To");
+        mseries_pantheon_kit::set_accessible_label(&query, &tr("To"));
         let hint = gtk::Label::builder()
             .label(tr("Choose a contact or enter a complete address."))
             .xalign(0.0)

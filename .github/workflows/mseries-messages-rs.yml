@@ -37,7 +37,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config cargo rustc libgtk-4-dev \
-            libgranite-7-dev desktop-file-utils appstream xvfb xauth dbus xdotool python3 libxtst6
+            libgranite-7-dev desktop-file-utils appstream xvfb xauth dbus xdotool python3 libxtst6 gettext
 
       - uses: actions/cache@v6
         with:
@@ -55,6 +55,12 @@ jobs:
 
       - name: Rust Messages and shared SDK unit tests
         run: cargo test --manifest-path rust/Cargo.toml -p mseries-messages -p mseries-pantheon-kit --locked
+
+      - name: Validate translation template
+        run: |
+          python3 rust/mseries-messages/po/update.py
+          git diff --exit-code -- rust/mseries-messages/po/io.elementary.mseries.MessagesRust.pot
+          msgfmt --check-format -o "$RUNNER_TEMP/messages-template.mo" rust/mseries-messages/po/io.elementary.mseries.MessagesRust.pot
 
       - name: Isolated Messages GTK recovery test
         run: bash rust/mseries-messages/test-gui.sh

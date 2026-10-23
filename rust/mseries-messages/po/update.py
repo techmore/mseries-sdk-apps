@@ -8,7 +8,11 @@ root = Path(__file__).resolve().parents[1]
 messages = {}
 for relative in ('src/app.rs', 'src/bin/mseries-conversations.rs'):
     source = (root / relative).read_text().split('mod tests {')[0]
-    for match in re.finditer(r'\btr\(\s*("(?:[^"\\]|\\.)*")\s*,?\s*\)', source):
+    calls = list(re.finditer(r'\btr\s*\(', source))
+    matches = list(re.finditer(r'\btr\(\s*("(?:[^"\\]|\\.)*")\s*,?\s*\)', source))
+    if len(calls) != len(matches):
+        raise SystemExit(f'{relative}: tr() must receive one supported string literal')
+    for match in matches:
         message = json.loads(match[1])
         if message:
             line = source.count('\n', 0, match.start()) + 1
