@@ -9,6 +9,13 @@ pub const MAX_CHARS: usize = 1_500;
 
 pub const KEY_TAB: u32 = 0xff09;
 pub const KEY_ESCAPE: u32 = 0xff1b;
+pub const KEY_RETURN: u32 = 0xff0d;
+pub const KEY_KP_ENTER: u32 = 0xff8d;
+
+/// Keys that accept the draft. Enter only inserts it (the key is consumed), so it can never send the message.
+pub fn accepts(keyval: u32) -> bool {
+    matches!(keyval, KEY_TAB | KEY_RETURN | KEY_KP_ENTER)
+}
 
 /// Shift, Control, Caps Lock, Alt, Meta, Super and Hyper on their own. Pressing one is not a reason to drop a draft
 /// (the shortcut's own modifiers are still going up when the draft starts).
@@ -85,16 +92,18 @@ pub fn classify_key(held: &Held, keyval: u32, released: bool, now: Instant) -> K
         return KeyAction::Ignore;
     }
     if released {
-        return if matches!(keyval, KEY_TAB | KEY_ESCAPE) {
+        return if accepts(keyval) || keyval == KEY_ESCAPE {
             KeyAction::Swallow
         } else {
             KeyAction::Ignore
         };
     }
-    match keyval {
-        KEY_TAB => KeyAction::Insert,
-        KEY_ESCAPE => KeyAction::DiscardConsume,
-        _ => KeyAction::DiscardPass,
+    if accepts(keyval) {
+        KeyAction::Insert
+    } else if keyval == KEY_ESCAPE {
+        KeyAction::DiscardConsume
+    } else {
+        KeyAction::DiscardPass
     }
 }
 
@@ -117,6 +126,17 @@ mod tests {
         assert_eq!(classify_key(&held, A, false, now), KeyAction::DiscardPass);
         assert_eq!(classify_key(&held, A, true, now), KeyAction::Ignore);
         assert_eq!(classify_key(&held, KEY_TAB, true, now), KeyAction::Swallow);
+    }
+
+    #[test]
+    fn enter_inserts_the_draft_but_is_consumed_so_it_never_sends() {
+        let now = Instant::now();
+        let mut held = Held::default();
+        held.hold("hello", now).unwrap();
+        for key in [KEY_RETURN, KEY_KP_ENTER] {
+            assert_eq!(classify_key(&held, key, false, now), KeyAction::Insert);
+            assert_eq!(classify_key(&held, key, true, now), KeyAction::Swallow);
+        }
     }
 
     #[test]
