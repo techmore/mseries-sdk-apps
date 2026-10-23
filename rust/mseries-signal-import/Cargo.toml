@@ -1,0 +1,21 @@
+[package]
+name = "mseries-signal-import"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+description = "One-time import of Signal Desktop history into the Signal Pantheon client's encrypted store"
+
+# Deliberately NOT a member of the ../ workspace: SQLCipher and the plain
+# bundled SQLite used by the other crates both claim the `sqlite3` native
+# library, and Cargo allows only one such crate per dependency graph.
+[workspace]
+
+[dependencies]
+openssl = "0.10"
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher", "backup"] }
+serde_json = "1"
+
+[[bin]]
+name = "mseries-signal-import"
+path = "src/main.rs"
