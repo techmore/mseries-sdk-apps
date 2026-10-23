@@ -3823,6 +3823,30 @@ mod tests {
             .register(None::<&gtk::gio::Cancellable>)
             .unwrap();
         let app = super::App::build(&application).expect("private session bus");
+        for widget in [
+            app.search.clone().upcast::<gtk::Widget>(),
+            app.list.clone().upcast(),
+            app.editor.clone().upcast(),
+            app.send_button.clone().upcast(),
+            app.back_button.clone().upcast(),
+            app.latest_button.clone().upcast(),
+            app.star_button.clone().upcast(),
+            app.copy_addresses_button.clone().upcast(),
+        ] {
+            assert!(
+                gtk::test_accessible_has_property(&widget, gtk::AccessibleProperty::Label),
+                "critical control must expose an explicit accessible name: {}",
+                widget.type_()
+            );
+        }
+        assert!(gtk::test_accessible_has_role(
+            &app.send_button,
+            gtk::AccessibleRole::Button
+        ));
+        assert!(gtk::test_accessible_has_role(
+            &app.latest_button,
+            gtk::AccessibleRole::Button
+        ));
         let wait_for_refresh = || {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
             let context = gtk::glib::MainContext::default();

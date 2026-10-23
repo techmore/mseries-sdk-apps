@@ -22,7 +22,7 @@ cat >"$scratch/dbus.conf" <<'BUS'
 BUS
 export XDG_CONFIG_HOME="$scratch/config" XDG_CACHE_HOME="$scratch/cache"
 export XDG_DATA_HOME="$scratch/data" XDG_RUNTIME_DIR="$scratch/runtime"
-export MSERIES_MESSAGES_ISOLATED_GUI=1 GSK_RENDERER=cairo GTK_A11Y=none
+export MSERIES_MESSAGES_ISOLATED_GUI=1 GSK_RENDERER=cairo GTK_A11Y=test
 export GIO_USE_VFS=local GDK_BACKEND=x11
 unset WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS
 xvfb-run -a dbus-run-session --config-file="$scratch/dbus.conf" -- \

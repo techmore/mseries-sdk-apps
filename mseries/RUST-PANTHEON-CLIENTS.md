@@ -1,3 +1,15 @@
+## GTK accessibility contract checks — 2026-10-22
+
+The private Messages GUI harness now enables GTK_A11Y=test rather than disabling
+accessibility. Eight critical controls (search, conversation list, editor, Send,
+Back, Latest Messages, favorite and recipient-copy) are asserted to expose explicit
+accessible Label properties; Send and Latest expose Button roles. The complete
+GTK scenario and strict all-target Clippy pass with this backend. This verifies
+GTK accessibility metadata, not screen-reader narration or complete keyboard order.
+No production binary changed in this batch. The compositor remains the old
+installed version and requires privileged installation/next login. Messages CI
+run 39876315164 was confirmed pending with no assigned jobs at inspection.
+
 ## Signal elementary palette deployment verified — 2026-10-22
 
 The installed accent helper was older than the reviewed PR #525 version. Ran
