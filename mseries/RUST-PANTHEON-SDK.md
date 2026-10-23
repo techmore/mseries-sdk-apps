@@ -57,3 +57,6 @@ shipped scaffolder. Signal integration, Rust Messages and their combined launche
 remain incomplete and deferred by the owner. Their draft implementation inventory
 and acceptance receipts remain in PR #526; this guidance does not merge those
 apps or qualify them for replacement. Resume that app work only when requested.
+
+The authoritative deferred app status is [MESSAGING-STATUS.md](MESSAGING-STATUS.md).
+Read it before continuing Signal/Messages work or interpreting older receipts.
