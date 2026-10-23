@@ -1,4 +1,5 @@
 use rusqlite::{Connection, OptionalExtension, params};
+use serde::Serialize;
 use std::env;
 use std::fs::{self, OpenOptions};
 use std::io;
@@ -9,6 +10,7 @@ use url::Url;
 
 const DEFAULT_ENDPOINT: &str = "http://127.0.0.1:8766/v1";
 const MAX_MEMORY_CHARS: usize = 600;
+const SCHEMA_VERSION: i64 = 2;
 
 #[derive(Clone, Debug)]
 pub struct AiPreferences {
@@ -40,7 +42,7 @@ impl Default for LocalModelSettings {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct AiMemory {
     pub id: i64,
     /// `*` means shared by all apps; otherwise this is an app ID.
@@ -49,7 +51,7 @@ pub struct AiMemory {
 }
 
 pub struct AiStore {
-    connection: Connection,
+    pub(crate) connection: Connection,
 }
 
 impl AiStore {
@@ -81,7 +83,7 @@ impl AiStore {
         let schema_version: i64 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .map_err(storage_error)?;
-        if schema_version > 1 {
+        if schema_version > SCHEMA_VERSION {
             return Err(format!(
                 "The AI database schema version {schema_version} is newer than this app supports"
             ));
@@ -112,6 +114,41 @@ impl AiStore {
                      CREATE INDEX IF NOT EXISTS memories_scope_created
                          ON memories(scope, created_at DESC);
                      PRAGMA user_version=1;
+                     COMMIT;",
+                )
+                .map_err(storage_error)?;
+        }
+        if schema_version < 2 {
+            // The owner's personal knowledge (contacts and notes); see persona.rs for the field rules.
+            connection
+                .execute_batch(
+                    "BEGIN IMMEDIATE;
+                     CREATE TABLE IF NOT EXISTS contacts (
+                         id INTEGER PRIMARY KEY,
+                         name TEXT NOT NULL CHECK (length(trim(name)) > 0 AND length(name) <= 80),
+                         aliases TEXT NOT NULL DEFAULT '' CHECK (length(aliases) <= 400),
+                         relationship TEXT NOT NULL DEFAULT '' CHECK (length(relationship) <= 80),
+                         tone TEXT NOT NULL DEFAULT '' CHECK (length(tone) <= 160),
+                         notes TEXT NOT NULL DEFAULT '' CHECK (length(notes) <= 600),
+                         created_at INTEGER NOT NULL,
+                         updated_at INTEGER NOT NULL
+                     );
+                     CREATE UNIQUE INDEX IF NOT EXISTS contacts_name
+                         ON contacts(name COLLATE NOCASE);
+                     CREATE TABLE IF NOT EXISTS notes (
+                         id INTEGER PRIMARY KEY,
+                         kind TEXT NOT NULL CHECK (kind IN ('profile', 'style', 'topic', 'fact')),
+                         title TEXT NOT NULL DEFAULT '' CHECK (length(title) <= 80),
+                         keywords TEXT NOT NULL DEFAULT '' CHECK (length(keywords) <= 300),
+                         body TEXT NOT NULL CHECK (length(trim(body)) > 0 AND length(body) <= 600),
+                         contact_id INTEGER REFERENCES contacts(id) ON DELETE CASCADE,
+                         created_at INTEGER NOT NULL,
+                         updated_at INTEGER NOT NULL
+                     );
+                     CREATE INDEX IF NOT EXISTS notes_kind_updated
+                         ON notes(kind, updated_at DESC);
+                     CREATE INDEX IF NOT EXISTS notes_contact ON notes(contact_id);
+                     PRAGMA user_version=2;
                      COMMIT;",
                 )
                 .map_err(storage_error)?;
@@ -178,10 +215,7 @@ impl AiStore {
                 "Writing guidance must be {MAX_MEMORY_CHARS} characters or fewer"
             ));
         }
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
+        let now = now_secs();
         self.connection
             .execute(
                 "INSERT INTO app_preferences(app_id, writing_style, use_shared_memory, updated_at)
@@ -266,10 +300,7 @@ impl AiStore {
                 "A saved memory must contain 1 to {MAX_MEMORY_CHARS} characters"
             ));
         }
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
+        let now = now_secs();
         self.connection
             .execute(
                 "INSERT INTO memories(scope, content, created_at) VALUES (?1, ?2, ?3)",
@@ -277,6 +308,24 @@ impl AiStore {
             )
             .map_err(storage_error)?;
         Ok(self.connection.last_insert_rowid())
+    }
+
+    /// Every saved memory in every scope, oldest first (for the owner's export and the memory command).
+    pub fn all_memories(&self) -> Result<Vec<AiMemory>, String> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT id, scope, content FROM memories ORDER BY created_at, id")
+            .map_err(storage_error)?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok(AiMemory {
+                    id: row.get(0)?,
+                    scope: row.get(1)?,
+                    content: row.get(2)?,
+                })
+            })
+            .map_err(storage_error)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(storage_error)
     }
 
     pub fn delete_memory(&self, id: i64) -> Result<(), String> {
@@ -367,39 +416,22 @@ fn set_mode(path: &Path, mode: u32) -> Result<(), String> {
     fs::set_permissions(path, permissions).map_err(storage_error)
 }
 
-fn storage_error(error: impl std::fmt::Display) -> String {
+pub(crate) fn storage_error(error: impl std::fmt::Display) -> String {
     format!("AI database error: {error}")
+}
+
+pub(crate) fn now_secs() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::TestDatabase;
     use std::os::unix::fs::PermissionsExt;
-
-    struct TestDatabase {
-        directory: PathBuf,
-        path: PathBuf,
-    }
-
-    impl TestDatabase {
-        fn new() -> Self {
-            let nonce = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos();
-            let directory =
-                env::temp_dir().join(format!("mseries-ai-test-{}-{nonce}", std::process::id()));
-            fs::create_dir_all(&directory).expect("create isolated test directory");
-            let path = directory.join("assistant.sqlite3");
-            Self { directory, path }
-        }
-    }
-
-    impl Drop for TestDatabase {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.directory);
-        }
-    }
 
     #[test]
     fn database_is_private_and_preferences_round_trip_by_app() {

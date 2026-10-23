@@ -7,7 +7,9 @@
 //!
 //! The desktop side: [`window`] (focused window from the compositor), [`a11y`] and [`tree`] (bounded AT-SPI reads),
 //! [`source`] (the AT-SPI chat source behind the gate), [`trigger`] (the hotkey command) and [`ibus`] with [`held`]
-//! (the input service that holds a draft until Tab or Esc). Not here yet: the Settings panel.
+//! (the input service that holds a draft until Tab or Esc). [`memory`] is the owner's command for the personal records the
+//! draft agent is given (contacts, topics, facts, style); retrieval itself lives in `mseries-ai`. Not here yet: the
+//! Settings panel.
 
 pub mod a11y;
 pub mod agent;
@@ -17,6 +19,7 @@ pub mod fixture;
 pub mod held;
 pub mod ibus;
 pub mod marker;
+pub mod memory;
 pub mod probe;
 pub mod rules;
 pub mod source;

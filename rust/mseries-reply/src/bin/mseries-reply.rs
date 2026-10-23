@@ -2,6 +2,7 @@
 //!
 //!   mseries-reply trigger [--in SECONDS] [--dry-run]   draft a reply for the focused chat field (bound to the hotkey)
 //!   mseries-reply input-service                        hold the draft; Tab inserts it, Esc discards it (systemd user unit)
+//!   mseries-reply memory add|list|edit|rm|export|preview   what Smart Reply knows about you (run it with no arguments for help)
 //!   mseries-reply init-rules                           write the default rules file unless one exists
 //!   mseries-reply probe [TITLE]                        counts only: what the reader sees in a window (no message text)
 //!   mseries-reply rules <rules.json> <app-id> [--contact NAME] [--field KIND]
@@ -14,7 +15,7 @@ use mseries_reply::context::build_packet;
 use mseries_reply::fixture::Fixture;
 use mseries_reply::marker::ChatMarker;
 use mseries_reply::rules::{FieldKind, Query, Rules};
-use mseries_reply::{ibus, probe, trigger};
+use mseries_reply::{ibus, memory, probe, trigger};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -79,6 +80,11 @@ fn run(args: Vec<String>) -> Result<(), String> {
             }
             Ok(())
         }
+        Some("memory") => {
+            let store = mseries_ai::AiStore::open_default()?;
+            let rules = Rules::load(&Rules::default_path());
+            memory::run(&args[1..], &store, &rules, &mut std::io::stdout())
+        }
         Some("probe") => probe::run(args.get(1).map(String::as_str)),
         Some("rules") => {
             let (path, app) = (args.get(1), args.get(2));
@@ -120,8 +126,9 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 println!("{}", AuditRecord::drafted(&packet, "packet").to_json());
                 return Ok(());
             }
+            let personal = agent::personal_context(&packet, &rules);
             let started = std::time::Instant::now();
-            let result = agent::draft(&packet, &LocalModel);
+            let result = agent::draft(&packet, &personal, &LocalModel);
             eprintln!("elapsed {:.1}s", started.elapsed().as_secs_f32());
             println!(
                 "{}",
@@ -133,6 +140,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
                         "model-error"
                     }
                 )
+                .with_personal(personal.counts)
                 .to_json()
             );
             println!("{}", result?);

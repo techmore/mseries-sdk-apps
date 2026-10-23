@@ -169,6 +169,7 @@ pub fn run(options: &Options) -> u8 {
 
     if options.dry_run {
         print_packet(&packet);
+        print_personal(&agent::personal_context(&packet, &rules));
         return 0;
     }
 
@@ -184,19 +185,27 @@ pub fn run(options: &Options) -> u8 {
         // This toolkit cannot show composing text safely, so the notification is the only place to say so.
         notify("Smart Reply", "Drafting…", 4000);
     }
+    let personal = agent::personal_context(&packet, &rules);
     let started = std::time::Instant::now();
-    let draft = match agent::draft(&packet, &LocalModel) {
+    let draft = match agent::draft(&packet, &personal, &LocalModel) {
         Ok(draft) => draft,
         Err(error) => {
             let _ = service("Cancel", &());
-            eprintln!("{}", AuditRecord::drafted(&packet, "model-error").to_json());
+            eprintln!(
+                "{}",
+                AuditRecord::drafted(&packet, "model-error")
+                    .with_personal(personal.counts)
+                    .to_json()
+            );
             notify("Smart Reply could not draft", &error, 10_000);
             return EXIT_MODEL;
         }
     };
     eprintln!(
         "{} elapsed={:.1}s inline={inline}",
-        AuditRecord::drafted(&packet, "drafted").to_json(),
+        AuditRecord::drafted(&packet, "drafted")
+            .with_personal(personal.counts)
+            .to_json(),
         started.elapsed().as_secs_f32()
     );
     if let Err(error) = service("Finish", &(draft.as_str(),)) {
@@ -215,6 +224,14 @@ pub fn run(options: &Options) -> u8 {
         );
     }
     0
+}
+
+/// `--dry-run` output for the owner's own notes: what would go into the prompt besides the conversation.
+fn print_personal(personal: &mseries_ai::PersonalContext) {
+    println!("personal {:?}", personal.counts);
+    if !personal.block().is_empty() {
+        println!("{}", personal.block());
+    }
 }
 
 /// `--dry-run` output: the owner asked to see what would be sent, on their own terminal.

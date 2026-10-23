@@ -1,7 +1,9 @@
 //! What is recorded about a request: tiers, sizes and outcome. Never a message body, a draft, a contact name or a window
-//! title, and a refusal records only its kind, so a blocked contact leaves no trace of who it was.
+//! title, and a refusal records only its kind, so a blocked contact leaves no trace of who it was. The owner's personal
+//! records that went into a prompt appear only as counts (how many of each kind, and how many characters).
 
 use crate::context::{Packet, Refusal, Tier};
+use mseries_ai::RetrievalCounts;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -12,6 +14,7 @@ pub struct AuditRecord {
     pub tiers: Vec<Tier>,
     pub truncated: bool,
     pub local_only: bool,
+    pub personal: RetrievalCounts,
 }
 
 impl AuditRecord {
@@ -22,7 +25,14 @@ impl AuditRecord {
             tiers: packet.tiers.clone(),
             truncated: packet.truncated,
             local_only: packet.local_only,
+            personal: RetrievalCounts::default(),
         }
+    }
+
+    /// Adds how many personal records the prompt used. Counts only, never the records.
+    pub fn with_personal(mut self, counts: RetrievalCounts) -> Self {
+        self.personal = counts;
+        self
     }
 
     pub fn refused(app_id: &str, refusal: &Refusal) -> Self {
@@ -39,6 +49,7 @@ impl AuditRecord {
             tiers: Vec::new(),
             truncated: false,
             local_only: false,
+            personal: RetrievalCounts::default(),
         }
     }
 
@@ -72,7 +83,17 @@ mod tests {
             truncated: false,
             local_only: true,
         };
-        let json = AuditRecord::drafted(&packet, "drafted").to_json();
+        let counts = RetrievalCounts {
+            contact: 1,
+            profile: 1,
+            topics: 2,
+            chars: 640,
+            ..RetrievalCounts::default()
+        };
+        let json = AuditRecord::drafted(&packet, "drafted")
+            .with_personal(counts)
+            .to_json();
+        assert!(json.contains(r#""personal":{"contact":1,"profile":1,"style":0,"topics":2,"facts":0,"memories":0,"chars":640}"#), "{json}");
         for secret in ["Secret project", "Sam Example", "launch code", "1234"] {
             assert!(!json.contains(secret), "{secret} leaked into {json}");
         }
