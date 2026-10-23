@@ -1658,6 +1658,19 @@ impl App {
     }
 
     fn rebuild_sidebar(self: &Rc<Self>) {
+        // Rows are replaced on refresh; remember keyboard focus by thread identity,
+        // independently of the selected conversation and its changing sort order.
+        let focused_thread = self
+            .order
+            .borrow()
+            .iter()
+            .enumerate()
+            .find_map(|(index, key)| {
+                self.list
+                    .row_at_index(index as i32)
+                    .filter(mseries_pantheon_kit::has_focus_within)
+                    .map(|_| key.clone())
+            });
         let filter = glib::casefold(self.search.text());
         let (threads, selected) = {
             let state = self.state.borrow();
@@ -1754,6 +1767,12 @@ impl App {
         }
         let selected = self.state.borrow().selected.clone();
         self.rebuild_favorites(&threads, selected.as_deref());
+        if let Some(key) = focused_thread
+            && let Some(index) = self.order.borrow().iter().position(|entry| entry == &key)
+            && let Some(row) = self.list.row_at_index(index as i32)
+        {
+            row.grab_focus();
+        }
     }
 
     fn attach_thread_actions(self: &Rc<Self>, row: &gtk::ListBoxRow, thread: &Thread) {
@@ -4028,6 +4047,28 @@ mod tests {
         assert!(
             app.search.text().is_empty(),
             "Escape must clear focused conversation search"
+        );
+        let focused_row = app.list.row_at_index(0).unwrap();
+        assert!(focused_row.grab_focus());
+        let focused_key = app.order.borrow()[0].clone();
+        app.rebuild_sidebar();
+        let focused_index = app
+            .order
+            .borrow()
+            .iter()
+            .position(|key| key == &focused_key)
+            .unwrap();
+        assert!(
+            mseries_pantheon_kit::has_focus_within(
+                &app.list.row_at_index(focused_index as i32).unwrap()
+            ),
+            "inbox refresh must retain keyboard focus on the same thread"
+        );
+        app.search.grab_focus();
+        app.rebuild_sidebar();
+        assert!(
+            mseries_pantheon_kit::has_focus_within(&app.search),
+            "refresh must not steal focus from search"
         );
         let context_menu = |widget: &gtk::Widget| {
             let mut child = widget.first_child();
