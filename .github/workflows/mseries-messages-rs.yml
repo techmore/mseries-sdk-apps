@@ -8,6 +8,8 @@ on:
       - "rust/mseries-pantheon-kit/**"
       - "rust/Cargo.toml"
       - "rust/Cargo.lock"
+      - "mseries/phone-setup/message_pins.py"
+      - "mseries/phone-setup/messages_model.py"
       - ".github/workflows/mseries-messages-rs.yml"
   pull_request:
     paths:
@@ -15,6 +17,8 @@ on:
       - "rust/mseries-pantheon-kit/**"
       - "rust/Cargo.toml"
       - "rust/Cargo.lock"
+      - "mseries/phone-setup/message_pins.py"
+      - "mseries/phone-setup/messages_model.py"
       - ".github/workflows/mseries-messages-rs.yml"
 
 permissions:
@@ -31,13 +35,18 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: erikwb/blueferry
+          ref: 60fd7ef1abbd25947981f0cf27a521d82784a75f
+          path: .pin-test-blueferry
 
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config cargo rustc libgtk-4-dev \
-            libgranite-7-dev desktop-file-utils appstream xvfb xauth dbus xdotool python3 libxtst6 gettext
+            libgranite-7-dev desktop-file-utils appstream xvfb xauth dbus xdotool python3 libxtst6 gettext python3-gi gir1.2-secret-1 libsecret-tools gnome-keyring
 
       - uses: actions/cache@v6
         with:
@@ -64,6 +73,11 @@ jobs:
 
       - name: Isolated Messages GTK recovery test
         run: bash rust/mseries-messages/test-gui.sh
+
+      - name: Isolated Python and Rust favorites keyring round-trip
+        env:
+          PYTHONPATH: ${{ github.workspace }}/.pin-test-blueferry/src
+        run: bash rust/mseries-messages/test-keyring.sh
 
       - name: Build and package
         run: MSERIES_MESSAGES_OUTPUT_DIR="$RUNNER_TEMP/mseries-messages-rs" bash rust/mseries-messages/build-deb.sh

@@ -267,3 +267,7 @@ remaining history. Clients must preserve those fields when reviewing a new impor
 Rust Messages does so. favorite_thread_keys resolves visible imported/local favorites against the complete inbox;
 toggled_favorite returns a validated v2 state without mutating server stars or
 the imported snapshot. Rust Messages persists that state after phone checks.
+
+`bash rust/mseries-messages/test-keyring.sh` qualifies encrypted v2 preferences
+across Python and Rust, including another-phone isolation and clear/reload. It
+creates its own bus/home/keyring and requires libsecret tools and GNOME Keyring.

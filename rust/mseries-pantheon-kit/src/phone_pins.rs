@@ -672,6 +672,73 @@ mod tests {
         assert!(invalid.validate().is_err());
     }
 
+    #[test]
+    #[ignore = "requires test-keyring.sh private bus, home and encrypted keyring"]
+    fn phone_pin_private_keyring_roundtrip() {
+        assert_eq!(
+            std::env::var("MSERIES_PRIVATE_PIN_TEST").as_deref(),
+            Ok("1")
+        );
+        let source = std::env::var("MSERIES_MESSAGES_PYTHON_SOURCE").unwrap();
+        let first = "01234567-89ab-4cde-8fab-0123456789ab";
+        let second = "87654321-1234-4234-8234-123456789abc";
+        let mut state = ImportedPinState::reviewed(
+            snapshot(&["+12025550123"]),
+            vec![Some("imported".into())],
+            &[Thread {
+                key: "imported".into(),
+                ..Default::default()
+            }],
+        )
+        .unwrap();
+        // Python stores UTC timestamps in ISO +00:00 form.
+        state.snapshot.as_mut().unwrap().captured_at = "2026-10-20T16:00:00+00:00".into();
+        state.local_pins.push("thread:local".into());
+        state.hidden_imports.push("+12025550123".into());
+        let python = |script: &str, value: Option<String>| {
+            let mut command = std::process::Command::new("python3");
+            command.args(["-c", script, &source, first]);
+            if let Some(value) = value {
+                command.arg(value);
+            }
+            let output = command.output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            output.stdout
+        };
+        python(
+            "import sys,json; sys.path.insert(0,sys.argv[1]); from message_pins import PinStore; PinStore(sys.argv[2]).save(json.loads(sys.argv[3]))",
+            Some(serde_json::to_string(&state).unwrap()),
+        );
+        let context = glib::MainContext::default();
+        context.block_on(async {
+            assert_eq!(PhonePinStore::load(first).await.unwrap(), state);
+            assert_eq!(
+                PhonePinStore::load(second).await.unwrap(),
+                ImportedPinState::default()
+            );
+            state.local_pins.push("thread:rust-added".into());
+            PhonePinStore::save(first, &state).await.unwrap();
+            assert_eq!(PhonePinStore::load(first).await.unwrap(), state);
+            assert_eq!(
+                PhonePinStore::load(second).await.unwrap(),
+                ImportedPinState::default()
+            );
+        });
+        let python_state: ImportedPinState = serde_json::from_slice(&python("import sys,json; sys.path.insert(0,sys.argv[1]); from message_pins import PinStore; print(json.dumps(PinStore(sys.argv[2]).load()))", None)).unwrap();
+        assert_eq!(python_state, state);
+        context.block_on(async {
+            PhonePinStore::clear(first).await.unwrap();
+            assert_eq!(
+                PhonePinStore::load(first).await.unwrap(),
+                ImportedPinState::default()
+            );
+        });
+    }
+
     fn snapshot(identifiers: &[&str]) -> PinSnapshot {
         PinSnapshot {
             schema: APPLE_PINS_SCHEMA.into(),
