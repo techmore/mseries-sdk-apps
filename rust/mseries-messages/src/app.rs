@@ -3,6 +3,10 @@ use crate::preferences;
 use crate::strings::tr;
 use granite::prelude::PlaceholderExt;
 use gtk::{gio, glib, prelude::*};
+use mseries_ai::{
+    AiPreferences, AiStore, ChatMessage as AiChatMessage, ChatRole as AiChatRole,
+    LocalModelSettings,
+};
 use mseries_pantheon_kit::{
     BlueFerryMessagesClient as Backend, BlueFerryStatus, ContactMatch, DockBadge, ImportedPinState,
     Message, MessagePosition, PhonePinStore, PinSnapshot, Polling, RecentMessage, ResumeWatcher,
@@ -25,6 +29,7 @@ const MAX_OUTBOX_MESSAGES: usize = 128;
 const RECENT_INBOX_FOLDER: &str = "telecom/msg/INBOX";
 const RECENT_INBOX_LIMIT: u32 = 200;
 const RECENT_INBOX_MAX_AGE: Duration = Duration::from_secs(300);
+const AI_APP_ID: &str = "io.elementary.mseries.MessagesRust";
 
 fn ensure_refresh_phone_unchanged(
     before: &BlueFerryStatus,
@@ -84,6 +89,19 @@ fn launch_helper(program: &OsStr, name: &str, feedback: &gtk::Label) {
         Err(error) => {
             feedback.add_css_class("warning");
             feedback.set_text(&format!("Could not open {name}: {error}"));
+        }
+    }
+}
+
+fn set_ai_settings_status(status: &gtk::Label, result: Result<String, String>) {
+    match result {
+        Ok(message) => {
+            status.remove_css_class("warning");
+            status.set_text(&message);
+        }
+        Err(error) => {
+            status.add_css_class("warning");
+            status.set_text(&error);
         }
     }
 }
@@ -452,6 +470,64 @@ impl MediaState {
     }
 }
 
+fn can_draft_thread(thread: &Thread) -> bool {
+    thread.reply_ready
+        && !thread.participants_required
+        && !thread.roster_changed
+        && thread
+            .messages
+            .last()
+            .is_some_and(|message| !message.outgoing)
+}
+
+fn ai_context(thread: &Thread) -> Vec<AiChatMessage> {
+    thread
+        .messages
+        .iter()
+        .rev()
+        .take(12)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .filter_map(|message| {
+            let body = message.visible_body();
+            let text = if body.trim().is_empty() && message.has_attachment() {
+                "[Attachment shared]".to_string()
+            } else {
+                body
+            };
+            if text.trim().is_empty() {
+                return None;
+            }
+            Some(AiChatMessage {
+                role: if message.outgoing {
+                    AiChatRole::User
+                } else {
+                    AiChatRole::Contact
+                },
+                sender: if thread.is_group && !message.outgoing {
+                    message.sender.clone()
+                } else {
+                    String::new()
+                },
+                text,
+            })
+        })
+        .collect()
+}
+
+fn ai_context_signature(thread: &Thread) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut signature = std::collections::hash_map::DefaultHasher::new();
+    for message in thread.messages.iter().rev().take(12).rev() {
+        message.outgoing.hash(&mut signature);
+        message.timestamp.hash(&mut signature);
+        message.sender.hash(&mut signature);
+        message.visible_body().hash(&mut signature);
+    }
+    format!("{:016x}", signature.finish())
+}
+
 pub struct App {
     backend: Backend,
     dock_badge: DockBadge,
@@ -501,6 +577,17 @@ pub struct App {
     history_render_generation: Cell<u64>,
     editor: gtk::TextView,
     send_button: gtk::Button,
+    ai_button: gtk::Button,
+    ai_spinner: gtk::Spinner,
+    ai_status: gtk::Label,
+    ai_preview_box: gtk::Box,
+    ai_preview: gtk::Label,
+    ai_insert_button: gtk::Button,
+    ai_dismiss_button: gtk::Button,
+    ai_busy: Cell<bool>,
+    ai_generation: Cell<u64>,
+    ai_request_context: RefCell<Option<(String, String)>>,
+    ai_draft: RefCell<Option<(String, String, String)>>,
     copy_addresses_button: gtk::Button,
     star_button: gtk::ToggleButton,
     syncing_star: Cell<bool>,
@@ -590,6 +677,12 @@ impl App {
             &shortcuts_button,
             &tr("Show keyboard shortcuts"),
         );
+        let ai_preferences_button = gtk::Button::with_label(&tr("AI Reply Drafts…"));
+        ai_preferences_button.add_css_class("flat");
+        mseries_pantheon_kit::set_accessible_label(
+            &ai_preferences_button,
+            &tr("AI reply draft settings"),
+        );
         let pin_import_button = gtk::Button::with_label(&tr("Import iPhone Pins…"));
         pin_import_button.add_css_class("flat");
         mseries_pantheon_kit::set_accessible_label(&pin_import_button, &tr("Import iPhone pins"));
@@ -673,6 +766,7 @@ impl App {
         menu_actions.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         menu_actions.append(&refresh_row);
         menu_actions.append(&enter_send_row);
+        menu_actions.append(&ai_preferences_button);
         menu_actions.append(&shortcuts_button);
         let menu = gtk::Popover::new();
         menu.set_child(Some(&menu_actions));
@@ -834,6 +928,66 @@ impl App {
         compose.append(&editor_scroll);
         compose.append(&send_button);
 
+        let ai_button = gtk::Button::with_label("Draft reply");
+        ai_button.set_sensitive(false);
+        ai_button.set_tooltip_text(Some(
+            "Draft a reply with the local Qwen model. Conversation text is not saved to the AI database.",
+        ));
+        mseries_pantheon_kit::set_accessible_label(&ai_button, "Draft a reply with local AI");
+        let ai_spinner = gtk::Spinner::new();
+        ai_spinner.set_visible(false);
+        mseries_pantheon_kit::set_accessible_label(&ai_spinner, "Waiting for local AI draft");
+        let ai_status = gtk::Label::builder()
+            .xalign(0.0)
+            .wrap(true)
+            .hexpand(true)
+            .build();
+        ai_status.add_css_class("dim-label");
+        let ai_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        mseries_pantheon_kit::set_box_spacing_text_units(&ai_row, 0.5);
+        mseries_pantheon_kit::set_margins_text_units(&ai_row, 0.3, 0.75, 0.3, 0.75);
+        ai_row.append(&ai_button);
+        ai_row.append(&ai_spinner);
+        ai_row.append(&ai_status);
+
+        let ai_preview_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        ai_preview_box.add_css_class("card");
+        ai_preview_box.add_css_class("pantheon-surface");
+        mseries_pantheon_kit::set_margins_text_units(&ai_preview_box, 0.6, 0.8, 0.6, 0.8);
+        let ai_preview_title = gtk::Label::builder()
+            .label("Suggested reply · Local Qwen")
+            .xalign(0.0)
+            .build();
+        ai_preview_title.add_css_class("heading");
+        let ai_preview = gtk::Label::builder()
+            .xalign(0.0)
+            .wrap(true)
+            .selectable(true)
+            .build();
+        let ai_preview_hint = gtk::Label::builder()
+            .label("Tab inserts at the cursor. Review it before sending.")
+            .xalign(0.0)
+            .wrap(true)
+            .build();
+        ai_preview_hint.add_css_class("caption");
+        ai_preview_hint.add_css_class("dim-label");
+        let ai_preview_actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let ai_insert_button = gtk::Button::with_label("Insert (Tab)");
+        mseries_pantheon_kit::set_accessible_label(
+            &ai_insert_button,
+            "Insert AI draft at the composer cursor",
+        );
+        let ai_dismiss_button = gtk::Button::with_label("Discard");
+        ai_dismiss_button.add_css_class("flat");
+        mseries_pantheon_kit::set_accessible_label(&ai_dismiss_button, "Discard AI draft");
+        ai_preview_actions.append(&ai_insert_button);
+        ai_preview_actions.append(&ai_dismiss_button);
+        ai_preview_box.append(&ai_preview_title);
+        ai_preview_box.append(&ai_preview);
+        ai_preview_box.append(&ai_preview_hint);
+        ai_preview_box.append(&ai_preview_actions);
+        ai_preview_box.set_visible(false);
+
         let detail = gtk::Box::new(gtk::Orientation::Vertical, 0);
         detail.append(&status);
         detail.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
@@ -844,6 +998,8 @@ impl App {
         detail.append(&feedback);
         detail.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         detail.append(&compose);
+        detail.append(&ai_row);
+        detail.append(&ai_preview_box);
 
         let pane = gtk::Paned::new(gtk::Orientation::Horizontal);
         pane.set_start_child(Some(&sidebar));
@@ -915,6 +1071,17 @@ impl App {
             history_render_generation: Cell::new(0),
             editor,
             send_button,
+            ai_button,
+            ai_spinner,
+            ai_status,
+            ai_preview_box,
+            ai_preview,
+            ai_insert_button,
+            ai_dismiss_button,
+            ai_busy: Cell::new(false),
+            ai_generation: Cell::new(0),
+            ai_request_context: RefCell::new(None),
+            ai_draft: RefCell::new(None),
             copy_addresses_button,
             star_button,
             syncing_star: Cell::new(false),
@@ -933,7 +1100,12 @@ impl App {
             &shortcuts_button,
             &enter_send_switch,
         );
-        app.connect_helper_buttons(&menu, &setup_button, &advanced_button);
+        app.connect_helper_buttons(
+            &menu,
+            &setup_button,
+            &advanced_button,
+            &ai_preferences_button,
+        );
         app.connect_responsive_layout();
         app.watch_history();
         app.install_refresh_controls();
@@ -984,6 +1156,7 @@ impl App {
                 app.enter_armed.set(false);
                 app.enter_generation
                     .set(app.enter_generation.get().wrapping_add(1));
+                app.invalidate_ai_request();
             }
             glib::Propagation::Proceed
         });
@@ -1085,6 +1258,17 @@ impl App {
             let Some(app) = weak.upgrade() else {
                 return glib::Propagation::Proceed;
             };
+            if key == gtk::gdk::Key::Tab
+                && state.is_empty()
+                && app.ai_draft.borrow().is_some()
+                && (mseries_pantheon_kit::has_focus_within(&app.editor)
+                    || mseries_pantheon_kit::has_focus_within(&app.ai_button)
+                    || mseries_pantheon_kit::has_focus_within(&app.ai_insert_button)
+                    || mseries_pantheon_kit::has_focus_within(&app.ai_dismiss_button))
+            {
+                app.insert_ai_draft();
+                return glib::Propagation::Stop;
+            }
             if state.contains(gtk::gdk::ModifierType::ALT_MASK)
                 && key == gtk::gdk::Key::Left
                 && app.state.borrow().selected.is_some()
@@ -1164,6 +1348,25 @@ impl App {
             glib::Propagation::Stop
         });
         self.editor.add_controller(composer_keys);
+
+        let weak = Rc::downgrade(self);
+        self.ai_button.connect_clicked(move |_| {
+            if let Some(app) = weak.upgrade() {
+                app.start_ai_draft();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ai_insert_button.connect_clicked(move |_| {
+            if let Some(app) = weak.upgrade() {
+                app.insert_ai_draft();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.ai_dismiss_button.connect_clicked(move |_| {
+            if let Some(app) = weak.upgrade() {
+                app.clear_ai_draft();
+            }
+        });
 
         let buffer = self.editor.buffer();
         let weak = Rc::downgrade(self);
@@ -1256,6 +1459,7 @@ impl App {
         menu: &gtk::Popover,
         setup: &gtk::Button,
         advanced: &gtk::Button,
+        ai_preferences: &gtk::Button,
     ) {
         let weak = Rc::downgrade(self);
         let setup_menu = menu.clone();
@@ -1272,6 +1476,15 @@ impl App {
             advanced_menu.popdown();
             if let Some(app) = weak.upgrade() {
                 launch_advanced_blueferry(&app.feedback);
+            }
+        });
+
+        let weak = Rc::downgrade(self);
+        let ai_menu = menu.clone();
+        ai_preferences.connect_clicked(move |_| {
+            ai_menu.popdown();
+            if let Some(app) = weak.upgrade() {
+                app.show_ai_preferences();
             }
         });
     }
@@ -1364,6 +1577,175 @@ impl App {
         self.search.grab_focus();
     }
 
+    fn current_ai_thread(&self) -> Option<Thread> {
+        let state = self.state.borrow();
+        let key = state.selected.as_deref()?;
+        state
+            .threads
+            .iter()
+            .find(|thread| thread.key == key)
+            .cloned()
+    }
+
+    fn update_ai_availability(&self, thread: Option<&Thread>) {
+        let pending =
+            thread.is_some_and(|thread| self.state.borrow().pending.contains(&thread.key));
+        self.ai_button
+            .set_sensitive(!self.ai_busy.get() && !pending && thread.is_some_and(can_draft_thread));
+    }
+
+    fn ai_context_key(&self, thread: &Thread) -> String {
+        format!(
+            "{}:{}",
+            self.pin_load_generation.get(),
+            ai_context_signature(thread)
+        )
+    }
+
+    fn reconcile_ai_context(&self, thread: Option<&Thread>) {
+        let current = thread.map(|thread| (thread.key.clone(), self.ai_context_key(thread)));
+        let pending = self.ai_request_context.borrow().clone();
+        if pending.is_some() && pending != current {
+            self.invalidate_ai_request();
+            self.ai_status
+                .set_text("The conversation changed. Generate a fresh draft.");
+        }
+        let ready = self
+            .ai_draft
+            .borrow()
+            .as_ref()
+            .map(|(key, signature, _)| (key.clone(), signature.clone()));
+        if ready.is_some() && ready != current {
+            self.clear_ai_draft();
+        }
+        self.update_ai_availability(thread);
+    }
+
+    fn invalidate_ai_request(&self) {
+        self.ai_generation
+            .set(self.ai_generation.get().wrapping_add(1));
+        self.ai_request_context.borrow_mut().take();
+        self.ai_busy.set(false);
+        self.ai_spinner.stop();
+        self.ai_spinner.set_visible(false);
+        let current = self.current_ai_thread();
+        self.update_ai_availability(current.as_ref());
+    }
+
+    fn clear_ai_draft(&self) {
+        self.ai_draft.borrow_mut().take();
+        self.ai_preview.set_text("");
+        self.ai_preview_box.set_visible(false);
+        self.ai_status.set_text("");
+    }
+
+    fn start_ai_draft(self: &Rc<Self>) {
+        if self.ai_busy.get() {
+            return;
+        }
+        let Some(thread) = self.current_ai_thread().filter(can_draft_thread) else {
+            return;
+        };
+        let context = ai_context(&thread);
+        if context.is_empty() {
+            self.ai_status
+                .set_text("There is no message text to use for a reply.");
+            return;
+        }
+        let key = thread.key.clone();
+        let signature = self.ai_context_key(&thread);
+        let request_context = (key.clone(), signature.clone());
+        let generation = self.ai_generation.get().wrapping_add(1);
+        self.ai_generation.set(generation);
+        self.ai_request_context
+            .replace(Some(request_context.clone()));
+        self.ai_draft.borrow_mut().take();
+        self.ai_preview_box.set_visible(false);
+        self.ai_busy.set(true);
+        self.ai_button.set_sensitive(false);
+        self.ai_spinner.set_visible(true);
+        self.ai_spinner.start();
+        self.ai_status.set_text("Thinking…");
+
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || {
+            let result = mseries_ai::draft_reply(AI_APP_ID, &context);
+            let _ = sender.send(result);
+        });
+
+        let weak = Rc::downgrade(self);
+        glib::timeout_add_local(Duration::from_millis(80), move || {
+            let Some(app) = weak.upgrade() else {
+                return glib::ControlFlow::Break;
+            };
+            if app.ai_generation.get() != generation {
+                return glib::ControlFlow::Break;
+            }
+            let result = match receiver.try_recv() {
+                Ok(result) => result,
+                Err(mpsc::TryRecvError::Empty) => return glib::ControlFlow::Continue,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    Err("The local AI request ended before returning a draft.".to_string())
+                }
+            };
+            app.ai_request_context.borrow_mut().take();
+            app.ai_busy.set(false);
+            app.ai_spinner.stop();
+            app.ai_spinner.set_visible(false);
+
+            let current = app.current_ai_thread();
+            let still_current = current
+                .as_ref()
+                .is_some_and(|thread| thread.key == key && app.ai_context_key(thread) == signature);
+            if !still_current {
+                app.ai_status
+                    .set_text("The conversation changed. Generate a fresh draft.");
+                app.update_ai_availability(current.as_ref());
+                return glib::ControlFlow::Break;
+            }
+            match result {
+                Ok(draft) => {
+                    app.ai_draft
+                        .replace(Some((key.clone(), signature.clone(), draft.clone())));
+                    app.ai_preview.set_text(&draft);
+                    app.ai_preview_box.set_visible(true);
+                    app.ai_status.set_text("Draft ready · press Tab to insert.");
+                }
+                Err(error) => {
+                    app.ai_preview_box.set_visible(false);
+                    app.ai_status.set_text(&error);
+                }
+            }
+            app.update_ai_availability(current.as_ref());
+            glib::ControlFlow::Break
+        });
+    }
+
+    fn insert_ai_draft(&self) {
+        let Some((key, signature, draft)) = self.ai_draft.borrow_mut().take() else {
+            return;
+        };
+        let Some(thread) = self.current_ai_thread() else {
+            self.clear_ai_draft();
+            return;
+        };
+        if thread.key != key || self.ai_context_key(&thread) != signature {
+            self.clear_ai_draft();
+            self.ai_status
+                .set_text("The conversation changed. Generate a fresh draft.");
+            return;
+        }
+        let buffer = self.editor.buffer();
+        let mut cursor = buffer.iter_at_mark(&buffer.get_insert());
+        buffer.place_cursor(&cursor);
+        buffer.insert(&mut cursor, &draft);
+        self.editor.grab_focus();
+        self.ai_preview.set_text("");
+        self.ai_preview_box.set_visible(false);
+        self.ai_status
+            .set_text("Draft inserted. Review it before sending.");
+    }
+
     fn show_shortcuts(self: &Rc<Self>) {
         let dialog = gtk::Window::builder()
             .title(tr("Keyboard Shortcuts"))
@@ -1389,6 +1771,7 @@ impl App {
             (tr("Refresh conversations"), "Ctrl+R or F5"),
             (tr("Back to conversations"), "Alt+Left"),
             (tr("Send message"), send_shortcut),
+            (tr("Insert a ready AI draft"), "Tab"),
             (tr("Clear search / back in compact view"), "Escape"),
         ];
         let rows = gtk::Grid::builder()
@@ -1412,6 +1795,292 @@ impl App {
         }
         dialog.set_child(Some(&rows));
         dialog.present();
+    }
+
+    fn show_ai_preferences(self: &Rc<Self>) {
+        let dialog = gtk::Window::builder()
+            .title("AI Reply Drafts")
+            .transient_for(&self.window)
+            .modal(true)
+            .destroy_with_parent(true)
+            .default_width(520)
+            .default_height(680)
+            .build();
+        let header = gtk::HeaderBar::new();
+        let title = gtk::Label::new(Some("AI Reply Drafts"));
+        title.add_css_class("title");
+        header.set_title_widget(Some(&title));
+        let close = gtk::Button::with_label("Close");
+        close.set_action_name(Some("window.close"));
+        header.pack_end(&close);
+        dialog.set_titlebar(Some(&header));
+
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        mseries_pantheon_kit::set_margins_text_units(&content, 0.8, 0.9, 0.8, 0.9);
+        let explanation = gtk::Label::builder()
+            .label("Reply drafts use a Qwen model already loaded by your local model service. Preferences and memories live in one private SQLite database shared by M-Series apps. Conversation text and generated drafts are not saved there.")
+            .xalign(0.0)
+            .wrap(true)
+            .build();
+        explanation.add_css_class("dim-label");
+        content.append(&explanation);
+
+        let store = match AiStore::open_default() {
+            Ok(store) => Rc::new(store),
+            Err(error) => {
+                let message = gtk::Label::builder()
+                    .label(format!("Could not open AI settings: {error}"))
+                    .xalign(0.0)
+                    .wrap(true)
+                    .build();
+                message.add_css_class("warning");
+                content.append(&message);
+                dialog.set_child(Some(&content));
+                dialog.present();
+                return;
+            }
+        };
+
+        let endpoint_label = gtk::Label::builder()
+            .label("Local model endpoint")
+            .xalign(0.0)
+            .build();
+        endpoint_label.add_css_class("heading");
+        let endpoint = gtk::Entry::builder()
+            .text(store.local_model_settings().unwrap_or_default().endpoint)
+            .placeholder_text("http://127.0.0.1:8766/v1")
+            .build();
+        mseries_pantheon_kit::set_accessible_label(&endpoint, "Local model service URL");
+        let endpoint_hint = gtk::Label::builder()
+            .label("Only HTTP loopback addresses are accepted. Start and load Qwen in the local model service first.")
+            .xalign(0.0)
+            .wrap(true)
+            .build();
+        endpoint_hint.add_css_class("caption");
+        endpoint_hint.add_css_class("dim-label");
+        content.append(&endpoint_label);
+        content.append(&endpoint);
+        content.append(&endpoint_hint);
+
+        let preferences = store.preferences_for(AI_APP_ID).unwrap_or_default();
+        let style_label = gtk::Label::builder()
+            .label("Writing style for Messages")
+            .xalign(0.0)
+            .build();
+        style_label.add_css_class("heading");
+        let style = gtk::TextView::builder()
+            .wrap_mode(gtk::WrapMode::WordChar)
+            .left_margin(8)
+            .right_margin(8)
+            .top_margin(6)
+            .bottom_margin(6)
+            .build();
+        style.buffer().set_text(&preferences.writing_style);
+        mseries_pantheon_kit::set_accessible_label(
+            &style,
+            "Writing style guidance for Messages drafts",
+        );
+        let style_scroll = gtk::ScrolledWindow::builder()
+            .child(&style)
+            .min_content_height(82)
+            .max_content_height(110)
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .build();
+        style_scroll.add_css_class("card");
+        let shared_memory =
+            gtk::CheckButton::with_label("Use explicitly saved shared memories in Messages drafts");
+        shared_memory.set_active(preferences.use_shared_memory);
+        content.append(&style_label);
+        content.append(&style_scroll);
+        content.append(&shared_memory);
+
+        let save = gtk::Button::with_label("Save Settings");
+        save.add_css_class("suggested-action");
+        let status = gtk::Label::builder()
+            .label("")
+            .xalign(0.0)
+            .wrap(true)
+            .build();
+        status.add_css_class("caption");
+        let store_for_save = store.clone();
+        let endpoint_for_save = endpoint.clone();
+        let style_for_save = style.clone();
+        let shared_memory_for_save = shared_memory.clone();
+        let status_for_save = status.clone();
+        save.connect_clicked(move |_| {
+            let endpoint = endpoint_for_save.text().to_string();
+            let style_buffer = style_for_save.buffer();
+            let style_text = style_buffer
+                .text(&style_buffer.start_iter(), &style_buffer.end_iter(), false)
+                .to_string();
+            let result = store_for_save
+                .set_local_model_settings(&LocalModelSettings { endpoint })
+                .and_then(|()| {
+                    store_for_save.save_preferences(
+                        AI_APP_ID,
+                        &AiPreferences {
+                            writing_style: style_text,
+                            use_shared_memory: shared_memory_for_save.is_active(),
+                        },
+                    )
+                });
+            set_ai_settings_status(
+                &status_for_save,
+                result.map(|()| "AI reply draft settings saved.".to_string()),
+            );
+        });
+        content.append(&save);
+        content.append(&status);
+
+        let memory_heading = gtk::Label::builder()
+            .label("Saved memories")
+            .xalign(0.0)
+            .build();
+        memory_heading.add_css_class("heading");
+        let memory_hint = gtk::Label::builder()
+            .label("Add only details you want the AI to use. Shared memories are available to all M-Series apps; Messages-only memories stay scoped here.")
+            .xalign(0.0)
+            .wrap(true)
+            .build();
+        memory_hint.add_css_class("caption");
+        memory_hint.add_css_class("dim-label");
+        content.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+        content.append(&memory_heading);
+        content.append(&memory_hint);
+
+        let memory_entry = gtk::Entry::builder()
+            .placeholder_text("A short preference or useful detail")
+            .max_length(600)
+            .build();
+        mseries_pantheon_kit::set_accessible_label(&memory_entry, "New AI memory");
+        let shared_new_memory =
+            gtk::CheckButton::with_label("Share this memory with all M-Series apps");
+        shared_new_memory.set_active(true);
+        let add_memory = gtk::Button::with_label("Add Memory");
+        let memory_form = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        memory_form.append(&memory_entry);
+        memory_form.append(&shared_new_memory);
+        memory_form.append(&add_memory);
+        content.append(&memory_form);
+
+        let memory_list = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .build();
+        let memory_scroll = gtk::ScrolledWindow::builder()
+            .child(&memory_list)
+            .min_content_height(92)
+            .vexpand(true)
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .build();
+        content.append(&memory_scroll);
+        Self::refresh_ai_memory_list(&memory_list, store.clone(), AI_APP_ID, &status);
+
+        let store_for_add = store.clone();
+        let entry_for_add = memory_entry.clone();
+        let shared_for_add = shared_new_memory.clone();
+        let list_for_add = memory_list.clone();
+        let status_for_add = status.clone();
+        add_memory.connect_clicked(move |_| {
+            let scope = if shared_for_add.is_active() {
+                "*"
+            } else {
+                AI_APP_ID
+            };
+            let result = store_for_add
+                .save_memory(scope, &entry_for_add.text())
+                .map(|_| "Memory saved.".to_string());
+            if result.is_ok() {
+                entry_for_add.set_text("");
+                Self::refresh_ai_memory_list(
+                    &list_for_add,
+                    store_for_add.clone(),
+                    AI_APP_ID,
+                    &status_for_add,
+                );
+            }
+            set_ai_settings_status(&status_for_add, result);
+        });
+
+        dialog.set_child(Some(&content));
+        dialog.present();
+    }
+
+    fn refresh_ai_memory_list(
+        list: &gtk::ListBox,
+        store: Rc<AiStore>,
+        app_id: &'static str,
+        status: &gtk::Label,
+    ) {
+        while let Some(child) = list.first_child() {
+            list.remove(&child);
+        }
+        let memories = match store.memories_for_settings(app_id) {
+            Ok(memories) => memories,
+            Err(error) => {
+                set_ai_settings_status(status, Err(error));
+                return;
+            }
+        };
+        if memories.is_empty() {
+            let empty = gtk::Label::builder()
+                .label("No saved memories yet.")
+                .xalign(0.0)
+                .margin_top(8)
+                .margin_bottom(8)
+                .build();
+            empty.add_css_class("dim-label");
+            list.append(&empty);
+            return;
+        }
+        for memory in memories {
+            let row = gtk::ListBoxRow::new();
+            let body = gtk::Box::new(gtk::Orientation::Vertical, 3);
+            mseries_pantheon_kit::set_margins_text_units(&body, 0.35, 0.45, 0.35, 0.45);
+            let scope = gtk::Label::builder()
+                .label(if memory.scope == "*" {
+                    "Shared across M-Series apps"
+                } else {
+                    "Messages only"
+                })
+                .xalign(0.0)
+                .build();
+            scope.add_css_class("caption");
+            scope.add_css_class("dim-label");
+            let text = gtk::Label::builder()
+                .label(&memory.content)
+                .xalign(0.0)
+                .wrap(true)
+                .hexpand(true)
+                .build();
+            let remove = gtk::Button::with_label("Remove");
+            remove.add_css_class("flat");
+            let line = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            line.append(&text);
+            line.append(&remove);
+            body.append(&scope);
+            body.append(&line);
+            row.set_child(Some(&body));
+            list.append(&row);
+
+            let store_for_remove = store.clone();
+            let list_for_remove = list.clone();
+            let status_for_remove = status.clone();
+            let id = memory.id;
+            remove.connect_clicked(move |_| {
+                let result = store_for_remove
+                    .delete_memory(id)
+                    .map(|()| "Memory removed.".to_string());
+                if result.is_ok() {
+                    Self::refresh_ai_memory_list(
+                        &list_for_remove,
+                        store_for_remove.clone(),
+                        app_id,
+                        &status_for_remove,
+                    );
+                }
+                set_ai_settings_status(&status_for_remove, result);
+            });
+        }
     }
 
     fn arm_enter(self: &Rc<Self>) {
@@ -2563,6 +3232,7 @@ impl App {
     }
 
     fn render_conversation(self: &Rc<Self>, thread: Option<Thread>) {
+        self.reconcile_ai_context(thread.as_ref());
         let adjustment = self.message_scroll.vadjustment();
         let previous_position = adjustment.value();
         let near_bottom = previous_position + adjustment.page_size() >= adjustment.upper() - 80.0;
@@ -3292,6 +3962,8 @@ impl App {
             );
             return;
         }
+        self.invalidate_ai_request();
+        self.clear_ai_draft();
         let (outbox_id, selected_thread) = {
             let mut state = self.state.borrow_mut();
             let Some(thread) = state
