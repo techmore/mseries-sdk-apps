@@ -7,8 +7,14 @@ retains the Gala/XWayland fallback and explicit backend override. This closes
 an integration gap: the old detector recognized only patched Gala. Native-DRM
 cargo check and both shelf regression suites pass, including capability absence,
 invalid versions and explicit override. The PR #525 suite has 13 tests.
-The previously packaged compositor does not advertise this property; a new
-package is building. Live loading/DRM/Signal attachment acceptance remains open.
+The optimized release and full nested screenshot/shelf workflow pass without
+forcing the shelf backend; capability selection is asserted explicitly. Receipt:
+/tmp/pantheon-capture-probe.Q3z0AQ. New package:
+build/screenshot-native-capability/pantheon-rust-compositor_0.1.0+gitb2887485_arm64.deb
+(package revision was selected before the capability source commit 427aebae).
+Package SHA256: 4ef4a735610980e0d67085a6577ef9ddcc7969d5e29e02e8d0cb0d03e4d520a7.
+Binary SHA256: 321a7371e6f72cc242f0634141f5e6439a1c3d914d5f60f28f58e7f11bfe571e.
+Live loading/DRM/Signal attachment acceptance remains open.
 
 ## Messages keyboard acceptance — 2026-10-22
 
