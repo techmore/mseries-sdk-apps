@@ -300,7 +300,7 @@ impl Shared {
         let a11y = self.a11y()?;
         let node = tree::focused_node(&*a11y, Limits::FOCUS).ok_or_else(|| {
             self.forget_a11y();
-            "No accessible focused field".to_string()
+            "No text field has keyboard focus. Click into the message box first.".to_string()
         })?;
         tree::check_field(&*a11y, &node, Limits::FOCUS).map_err(str::to_string)?;
         Ok(node)
@@ -697,9 +697,7 @@ async fn lease(shared: &Share) -> Result<Lease, String> {
         shared.discard();
     }
     // Refuse sensitive fields BEFORE switching input methods.
-    let identity = shared
-        .focused_field()
-        .map_err(|_| "Accessible field metadata unavailable or unsafe".to_string())?;
+    let identity = shared.focused_field()?;
     let inline = shared
         .a11y()
         .ok()

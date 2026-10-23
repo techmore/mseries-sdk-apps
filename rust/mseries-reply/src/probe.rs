@@ -6,6 +6,16 @@ use crate::tree::{self, Limits, Tree};
 
 pub fn run(title_filter: Option<&str>) -> Result<(), String> {
     let a11y = A11y::connect()?;
+    // What the input service sees when asked to lease the focused field, and why it would refuse.
+    match tree::focused_node(&a11y, Limits::FOCUS) {
+        None => println!("focus: no focused node found in the active window"),
+        Some(node) => println!(
+            "focus: role={:?} states={:?} check={:?}",
+            a11y.role(&node),
+            a11y.states(&node).map(|states| states.0),
+            tree::check_field(&a11y, &node, Limits::FOCUS)
+        ),
+    }
     let filter = title_filter.map(str::to_lowercase);
     for app in a11y.applications() {
         let app_name = a11y.name(&app).unwrap_or_default();
