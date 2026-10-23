@@ -79,6 +79,10 @@ pub struct Rule {
     pub context_cap: Option<ContextCap>,
     #[serde(default)]
     pub local_only: bool,
+    /// Contact rules only: match when the conversation title *contains* the value (how the first Python slice
+    /// matched `contacts.block`) instead of equalling it.
+    #[serde(default)]
+    pub contains: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -213,7 +217,13 @@ impl Rules {
             return Err("rules file is writable by others".into());
         }
         let text = std::fs::read_to_string(path).map_err(|error| error.to_string())?;
-        let settings: Settings = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+        let value: serde_json::Value =
+            serde_json::from_str(&text).map_err(|error| error.to_string())?;
+        let settings = if is_legacy(&value) {
+            legacy_settings(&value)?
+        } else {
+            serde_json::from_value::<Settings>(value).map_err(|error| error.to_string())?
+        };
         if settings.version != RULES_VERSION {
             return Err("unsupported rules version".into());
         }
@@ -222,6 +232,33 @@ impl Rules {
 
     pub fn settings(&self) -> &Settings {
         &self.settings
+    }
+
+    /// The owner named this app in an allow rule, which is how an app without a desktop-entry marker becomes a chat app
+    /// (the first Python slice had no markers, only this list). Never true for a locked or switched-off rule set, and
+    /// a block rule for the same app wins.
+    pub fn declares_chat_app(&self, app_id: &str) -> bool {
+        if self.unreadable || !self.settings.enabled {
+            return false;
+        }
+        let query = Query {
+            app_id,
+            field: FieldKind::Chat,
+            contact: None,
+        };
+        let mut allowed = false;
+        for rule in self
+            .settings
+            .rules
+            .iter()
+            .filter(|rule| rule.scope == RuleScope::App && matches_rule(rule, &query))
+        {
+            if rule.action == Action::Block {
+                return false;
+            }
+            allowed = true;
+        }
+        allowed
     }
 
     pub fn decide(&self, query: &Query<'_>) -> Decision {
@@ -274,14 +311,137 @@ impl Rules {
     }
 }
 
+/// The rules file of the first (Python) slice: `policy` `allow-list`/`block-list`, `apps.allow`/`apps.block`,
+/// `contacts.block`, plus `style` and `endpoint` which the Rust path takes from `mseries-ai` instead.
+fn is_legacy(value: &serde_json::Value) -> bool {
+    value.get("apps").is_some()
+        || value.get("contacts").is_some()
+        || matches!(
+            value.get("policy").and_then(|policy| policy.as_str()),
+            Some("allow-list" | "block-list")
+        )
+}
+
+fn legacy_list(value: &serde_json::Value, group: &str, key: &str) -> Result<Vec<String>, String> {
+    let list = value
+        .get(group)
+        .and_then(|group| group.get(key))
+        .and_then(|list| list.as_array())
+        .ok_or_else(|| format!("{group}.{key} is missing"))?;
+    list.iter()
+        .map(|item| {
+            item.as_str()
+                .map(str::to_string)
+                .ok_or_else(|| format!("{group}.{key} must hold strings"))
+        })
+        .collect()
+}
+
+fn legacy_settings(value: &serde_json::Value) -> Result<Settings, String> {
+    let policy = match value.get("policy").and_then(|policy| policy.as_str()) {
+        Some("allow-list") => Policy::AskFirst,
+        Some("block-list") => Policy::EverywhereExceptBlocked,
+        _ => return Err("unknown policy".into()),
+    };
+    let version = value
+        .get("version")
+        .and_then(|version| version.as_u64())
+        .ok_or("version is missing")? as u32;
+    let mut rules = Vec::new();
+    for (key, action) in [("allow", Action::Allow), ("block", Action::Block)] {
+        for app in legacy_list(value, "apps", key)? {
+            rules.push(Rule {
+                scope: RuleScope::App,
+                value: app,
+                action,
+                context_cap: None,
+                local_only: false,
+                contains: false,
+            });
+        }
+    }
+    for contact in legacy_list(value, "contacts", "block")? {
+        rules.push(Rule {
+            scope: RuleScope::Contact,
+            value: contact,
+            action: Action::Block,
+            context_cap: None,
+            local_only: false,
+            contains: true,
+        });
+    }
+    Ok(Settings {
+        version,
+        enabled: value
+            .get("enabled")
+            .and_then(|enabled| enabled.as_bool())
+            .unwrap_or(false),
+        policy,
+        hotkey: None,
+        rules,
+    })
+}
+
+/// The rules the first slice wrote on its first run, kept in its file format so the Python bridge could still read it.
+pub const DEFAULT_RULES_FILE: &str = r#"{
+  "version": 1,
+  "enabled": true,
+  "policy": "allow-list",
+  "apps": {
+    "allow": [
+      "io.elementary.mseries.Messages",
+      "io.elementary.mseries.MessagesRust",
+      "io.github.sdolbec.SignalPantheonClient",
+      "io.github.techmore.ClaudePantheonRs",
+      "io.github.qwersyk.Newelle",
+      "brave-teams.microsoft.com__v2_-Default"
+    ],
+    "block": []
+  },
+  "contacts": {
+    "block": []
+  },
+  "style": "",
+  "endpoint": "http://127.0.0.1:8766/v1"
+}
+"#;
+
+/// Writes [`DEFAULT_RULES_FILE`] (owner-only) unless a file is already there. Returns whether it wrote one.
+pub fn ensure_default_file(path: &Path) -> Result<bool, String> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+    {
+        Ok(mut file) => {
+            file.write_all(DEFAULT_RULES_FILE.as_bytes())
+                .map_err(|error| error.to_string())?;
+            Ok(true)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 fn matches_rule(rule: &Rule, query: &Query<'_>) -> bool {
     let same = |a: &str, b: &str| a.trim().eq_ignore_ascii_case(b.trim());
     match rule.scope {
         RuleScope::App => same(&rule.value, query.app_id),
         RuleScope::FieldKind => same(&rule.value, query.field.name()),
-        RuleScope::Contact => query
-            .contact
-            .is_some_and(|contact| same(&rule.value, contact)),
+        RuleScope::Contact => query.contact.is_some_and(|contact| {
+            if rule.contains {
+                let needle = rule.value.trim().to_lowercase();
+                !needle.is_empty() && contact.to_lowercase().contains(&needle)
+            } else {
+                same(&rule.value, contact)
+            }
+        }),
     }
 }
 
@@ -350,6 +510,7 @@ mod tests {
             action,
             context_cap: None,
             local_only: false,
+            contains: false,
         }
     }
 
@@ -548,6 +709,108 @@ mod tests {
             Rules::load(&missing).decide(&chat("a", None)),
             Decision::Block(BlockReason::RulesUnreadable)
         );
+    }
+
+    #[test]
+    fn the_first_slice_rules_file_loads_unchanged() {
+        // Exactly what the Python bridge wrote and the owner may have edited.
+        let path = write_rules("legacy", DEFAULT_RULES_FILE, 0o600);
+        let rules = Rules::load(&path);
+        assert!(rules.settings().enabled);
+        assert!(matches!(
+            rules.decide(&chat("io.elementary.mseries.Messages", None)),
+            Decision::Allow(_)
+        ));
+        assert!(matches!(
+            rules.decide(&chat("brave-teams.microsoft.com__v2_-Default", None)),
+            Decision::Allow(_)
+        ));
+        assert_eq!(
+            rules.decide(&chat("org.mozilla.firefox", None)),
+            Decision::Block(BlockReason::NotAllowed)
+        );
+        assert!(rules.declares_chat_app("io.github.qwersyk.Newelle"));
+        assert!(!rules.declares_chat_app("org.mozilla.firefox"));
+    }
+
+    #[test]
+    fn legacy_block_lists_and_contact_substrings_keep_their_meaning() {
+        let text = r#"{"version":1,"enabled":true,"policy":"block-list",
+            "apps":{"allow":[],"block":["org.bad.App"]},"contacts":{"block":["Ex Partner"]},
+            "style":"short","endpoint":"http://127.0.0.1:8766/v1"}"#;
+        let rules = Rules::load(&write_rules("legacy-block", text, 0o600));
+        assert!(matches!(
+            rules.decide(&chat("org.mozilla.firefox", None)),
+            Decision::Allow(_)
+        ));
+        assert_eq!(
+            rules.decide(&chat("org.bad.App", None)),
+            Decision::Block(BlockReason::Rule)
+        );
+        // The first slice matched the contact as a substring of the window title, ignoring case.
+        assert_eq!(
+            rules.decide(&chat("org.mozilla.firefox", Some("Chat with ex partner"))),
+            Decision::Block(BlockReason::Rule)
+        );
+        assert!(matches!(
+            rules.decide(&chat("org.mozilla.firefox", Some("Chat with Sam"))),
+            Decision::Allow(_)
+        ));
+        // A block rule withdraws the "chat app" declaration even if an allow rule exists.
+        assert!(!rules.declares_chat_app("org.bad.App"));
+    }
+
+    #[test]
+    fn legacy_files_with_the_wrong_shape_block_everything() {
+        for (name, text) in [
+            (
+                "bad-list",
+                r#"{"version":1,"policy":"allow-list","apps":{"allow":[1],"block":[]},"contacts":{"block":[]}}"#,
+            ),
+            (
+                "no-contacts",
+                r#"{"version":1,"policy":"allow-list","apps":{"allow":[],"block":[]}}"#,
+            ),
+            (
+                "bad-policy",
+                r#"{"version":1,"policy":"sometimes","apps":{"allow":[],"block":[]},"contacts":{"block":[]}}"#,
+            ),
+            (
+                "version-2",
+                r#"{"version":2,"enabled":true,"policy":"allow-list","apps":{"allow":[],"block":[]},"contacts":{"block":[]}}"#,
+            ),
+        ] {
+            let rules = Rules::load(&write_rules(name, text, 0o600));
+            assert_eq!(
+                rules.decide(&chat("a", None)),
+                Decision::Block(BlockReason::RulesUnreadable),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_owner_allow_declares_a_chat_app_only_while_enabled() {
+        let r = rules(
+            Policy::AskFirst,
+            vec![rule(RuleScope::App, "chat.app", Action::Allow)],
+        );
+        assert!(r.declares_chat_app("chat.app"));
+        assert!(!r.declares_chat_app("other"));
+        assert!(!Rules::locked().declares_chat_app("chat.app"));
+    }
+
+    #[test]
+    fn the_default_file_is_written_once_and_never_overwritten() {
+        let dir =
+            std::env::temp_dir().join(format!("mseries-reply-default-{}", std::process::id()));
+        let path = dir.join("nested").join("smart-reply.json");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(ensure_default_file(&path).unwrap());
+        std::fs::write(&path, "{\"edited\":true}").unwrap();
+        assert!(!ensure_default_file(&path).unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"edited\":true}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

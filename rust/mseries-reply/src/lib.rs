@@ -5,12 +5,21 @@
 //! minimum needed and builds a bounded packet, [`agent`] turns the packet into a plain-text draft with no tools, and
 //! [`audit`] records what happened without recording any conversation text.
 //!
-//! Not in this crate yet: the hotkey, the IBus lease/popup and the Settings panel. Nothing here reads a window by itself;
-//! a [`context::ChatSource`] has to be supplied.
+//! The desktop side: [`window`] (focused window from the compositor), [`a11y`] and [`tree`] (bounded AT-SPI reads),
+//! [`source`] (the AT-SPI chat source behind the gate), [`trigger`] (the hotkey command) and [`ibus`] with [`held`]
+//! (the input service that holds a draft until Tab or Esc). Not here yet: the Settings panel.
 
+pub mod a11y;
 pub mod agent;
 pub mod audit;
 pub mod context;
 pub mod fixture;
+pub mod held;
+pub mod ibus;
 pub mod marker;
+pub mod probe;
 pub mod rules;
+pub mod source;
+pub mod tree;
+pub mod trigger;
+pub mod window;

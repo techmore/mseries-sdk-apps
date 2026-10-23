@@ -1,7 +1,11 @@
-//! Command line for the Smart Reply core, driven by fixtures (no window is ever read).
+//! Smart Reply: the hotkey command, the input service and the fixture tools.
 //!
+//!   mseries-reply trigger [--in SECONDS] [--dry-run]   draft a reply for the focused chat field (bound to the hotkey)
+//!   mseries-reply input-service                        hold the draft; Tab inserts it, Esc discards it (systemd user unit)
+//!   mseries-reply init-rules                           write the default rules file unless one exists
+//!   mseries-reply probe [TITLE]                        counts only: what the reader sees in a window (no message text)
 //!   mseries-reply rules <rules.json> <app-id> [--contact NAME] [--field KIND]
-//!   mseries-reply packet <fixture.json> [--rules rules.json]
+//!   mseries-reply packet <fixture.json> [--rules rules.json]   (fixtures: no window is ever read)
 //!   mseries-reply draft  <fixture.json> [--rules rules.json]   (needs an already-loaded local Qwen model)
 
 use mseries_reply::agent::{self, LocalModel};
@@ -10,11 +14,34 @@ use mseries_reply::context::build_packet;
 use mseries_reply::fixture::Fixture;
 use mseries_reply::marker::ChatMarker;
 use mseries_reply::rules::{FieldKind, Query, Rules};
+use mseries_reply::{ibus, probe, trigger};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    match run(std::env::args().skip(1).collect()) {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("trigger") => {
+            let options = trigger::Options {
+                delay: option(&args, "--in")
+                    .and_then(|seconds| seconds.parse().ok())
+                    .unwrap_or(0.0),
+                dry_run: args.iter().any(|arg| arg == "--dry-run"),
+            };
+            return ExitCode::from(trigger::run(&options));
+        }
+        Some("input-service") => {
+            return match ibus::serve() {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(message) => {
+                    eprintln!("{message}");
+                    ExitCode::FAILURE
+                }
+            };
+        }
+        _ => {}
+    }
+    match run(args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
             eprintln!("{message}");
@@ -44,6 +71,15 @@ fn field_kind(name: &str) -> Result<FieldKind, String> {
 
 fn run(args: Vec<String>) -> Result<(), String> {
     match args.first().map(String::as_str) {
+        Some("init-rules") => {
+            let path = Rules::default_path();
+            match mseries_reply::rules::ensure_default_file(&path)? {
+                true => println!("wrote {}", path.display()),
+                false => println!("{} already exists; left unchanged", path.display()),
+            }
+            Ok(())
+        }
+        Some("probe") => probe::run(args.get(1).map(String::as_str)),
         Some("rules") => {
             let (path, app) = (args.get(1), args.get(2));
             let (Some(path), Some(app)) = (path, app) else {
