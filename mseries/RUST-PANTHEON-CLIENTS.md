@@ -1,3 +1,16 @@
+## Messages navigation parity — 2026-10-22
+
+Source comparison with the qualified Python client is recorded in MESSAGES-PARITY.md.
+Rust selection now scrolls to newest history after allocation, using a bounded
+two-frame callback guarded by phone generation and selected conversation. Back
+restores focus to search instead of leaving it in hidden/destroyed content.
+A 30-item synthetic history regression exposed the previous idle-before-layout
+race and now passes, together with the full private GTK scenario and strict
+all-target Messages Clippy. Refresh-follow/jump behavior, gettext integration,
+assistive technology and live acceptance remain open. The optimized ARM64 package
+rebuilt successfully and was installed through install-user.sh; existing running
+app instances were not restarted.
+
 ## User-level native client installation — 2026-10-22
 
 Installed the verified Messages release as Messages (Rust Preview), alongside

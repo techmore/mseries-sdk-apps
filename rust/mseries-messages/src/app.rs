@@ -1295,6 +1295,7 @@ impl App {
         self.render_conversation(None);
         self.show_conversation_list();
         self.sync_favorite_selection();
+        self.search.grab_focus();
     }
 
     fn show_shortcuts(self: &Rc<Self>) {
@@ -2357,6 +2358,7 @@ impl App {
         self.render_conversation(thread.clone());
         self.show_selected_conversation();
         self.sync_favorite_selection();
+        self.scroll_messages_to_bottom();
         if let Some(thread) = thread.filter(|thread| !thread.local_only && thread.unread() > 0) {
             let phone_generation = self.pin_load_generation.get();
             let backend = self.backend.clone();
@@ -3164,12 +3166,28 @@ impl App {
 
     fn scroll_messages_to_bottom(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
-        glib::idle_add_local_once(move || {
-            if let Some(app) = weak.upgrade() {
-                let adjustment = app.message_scroll.vadjustment();
-                let bottom = (adjustment.upper() - adjustment.page_size()).max(adjustment.lower());
-                adjustment.set_value(bottom);
+        let selected = self.state.borrow().selected.clone();
+        let phone_generation = self.pin_load_generation.get();
+        let frames = Cell::new(0);
+        // An idle callback can precede GTK's new content allocation. Wait for
+        // the following frame so the adjustment describes the rendered history.
+        self.message_scroll.add_tick_callback(move |_, _| {
+            let Some(app) = weak.upgrade() else {
+                return glib::ControlFlow::Break;
+            };
+            if app.pin_load_generation.get() != phone_generation
+                || app.state.borrow().selected != selected
+            {
+                return glib::ControlFlow::Break;
             }
+            frames.set(frames.get() + 1);
+            if frames.get() < 2 {
+                return glib::ControlFlow::Continue;
+            }
+            let adjustment = app.message_scroll.vadjustment();
+            let bottom = (adjustment.upper() - adjustment.page_size()).max(adjustment.lower());
+            adjustment.set_value(bottom);
+            glib::ControlFlow::Break
         });
     }
 
@@ -3986,7 +4004,13 @@ mod tests {
             read: true,
             ..Default::default()
         });
-        app.render_conversation(Some(long_thread));
+        for index in 0..30 {
+            long_thread.messages.push(super::Message {
+                body: format!("Synthetic history item {index}\nA second line for scrolling"),
+                ..Default::default()
+            });
+        }
+        app.render_conversation(Some(long_thread.clone()));
         resize("520");
         wait_for_layout(true);
         capture("compact-long");
@@ -4006,6 +4030,39 @@ mod tests {
         assert!(app.detail.is_visible());
         assert!(!app.back_button.is_visible());
         capture("regular-long");
+        *app.state
+            .borrow_mut()
+            .threads
+            .iter_mut()
+            .find(|thread| thread.key == "shared-key")
+            .unwrap() = long_thread;
+        app.select_thread("shared-key");
+        capture("regular-latest");
+        let adjustment = app.message_scroll.vadjustment();
+        let scroll_deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while (adjustment.value() - (adjustment.upper() - adjustment.page_size())).abs() >= 2.0
+            && std::time::Instant::now() < scroll_deadline
+        {
+            gtk::glib::MainContext::default().iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(
+            adjustment.upper() > adjustment.page_size(),
+            "fixture must scroll"
+        );
+        assert!(
+            (adjustment.value() - (adjustment.upper() - adjustment.page_size())).abs() < 2.0,
+            "opening a conversation must show its newest messages: value={} upper={} page={}",
+            adjustment.value(),
+            adjustment.upper(),
+            adjustment.page_size()
+        );
+        *app.state
+            .borrow_mut()
+            .threads
+            .iter_mut()
+            .find(|thread| thread.key == "shared-key")
+            .unwrap() = original_thread.clone();
         app.render_conversation(Some(original_thread));
         let settings = gtk::Settings::default().unwrap();
         let original_font = settings.property::<String>("gtk-font-name");
@@ -4025,6 +4082,12 @@ mod tests {
             "Composer draft"
         );
         app.go_back_to_conversations();
+        assert!(
+            gtk::prelude::RootExt::focus(&app.window)
+                .is_some_and(|focus| focus == app.search.clone().upcast::<gtk::Widget>()
+                    || focus.is_ancestor(&app.search)),
+            "Back must restore focus to the conversation list search"
+        );
         let phone_a = "12345678-1234-4234-8234-123456789abc";
         let phone_b = "87654321-1234-4234-8234-123456789abc";
         *fixture_profile.borrow_mut() = Some(phone_a.into());
