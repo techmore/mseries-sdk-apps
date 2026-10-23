@@ -1,5 +1,6 @@
 use gtk::gio;
 use gtk::prelude::*;
+use mseries_messages::strings::tr;
 
 fn launch(desktop: &str, feedback: &gtk::Label) {
     let result = gio::AppInfo::all()
@@ -15,11 +16,13 @@ fn launch(desktop: &str, feedback: &gtk::Label) {
                 .map_err(|error| error.to_string())
         });
     match result {
-        Ok(()) => {
-            feedback.set_text("Opening the selected app. Reopen this switcher to choose another.")
-        }
+        Ok(()) => feedback.set_text(&tr(
+            "Opening the selected app. Reopen this switcher to choose another.",
+        )),
         Err(error) => {
-            feedback.set_text("Could not open this app. Check its installation and try again.");
+            feedback.set_text(&tr(
+                "Could not open this app. Check its installation and try again.",
+            ));
             feedback.set_tooltip_text(Some(&error));
         }
     }
@@ -92,7 +95,7 @@ fn main() -> gtk::glib::ExitCode {
         content.append(&feedback);
         let window = gtk::ApplicationWindow::builder()
             .application(app)
-            .title("Messages & Signal")
+            .title(tr("Messages & Signal"))
             .default_width(470)
             .default_height(230)
             .child(&content)

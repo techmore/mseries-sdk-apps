@@ -1,0 +1,219 @@
+# Messages source strings. License: GPL-3.0-only.
+msgid ""
+msgstr "Project-Id-Version: mseries-messages 0.1.0\nContent-Type: text/plain; charset=UTF-8\nContent-Transfer-Encoding: 8bit\n"
+
+#: src/app.rs:541 src/app.rs:591
+msgid "Advanced BlueFerry…"
+msgstr ""
+
+#: src/app.rs:2156
+msgid "Apple Messages exported an empty pin list. Importing it clears this computer’s imported pin order."
+msgstr ""
+
+#: src/app.rs:611
+msgid "Automatic refresh"
+msgstr ""
+
+#: src/app.rs:766
+msgid "Back"
+msgstr ""
+
+#: src/app.rs:3010 src/app.rs:3029
+msgid "BlueFerry has blocked replies to this conversation. Review its status before sending."
+msgstr ""
+
+#: src/app.rs:2179 src/app.rs:3297
+msgid "Cancel"
+msgstr ""
+
+#: src/app.rs:3307
+msgid "Choose a contact or enter a complete address."
+msgstr ""
+
+#: src/app.rs:2039
+msgid "Choose a local Apple pin export file."
+msgstr ""
+
+#: src/app.rs:3016
+msgid "Choose a valid phone number or email address first."
+msgstr ""
+
+#: src/app.rs:3529
+msgid "Choose the address you want to message."
+msgstr ""
+
+#: src/app.rs:537 src/app.rs:588
+msgid "Connect iPhone…"
+msgstr ""
+
+#: src/app.rs:673
+msgid "Connecting to BlueFerry…"
+msgstr ""
+
+#: src/app.rs:1817
+msgid "Conversation marked as read."
+msgstr ""
+
+#: src/app.rs:2916
+msgid "Copy Text"
+msgstr ""
+
+#: src/app.rs:2388
+msgid "Could not mark conversation as read. Refresh to try again."
+msgstr ""
+
+#: src/app.rs:63
+msgid "Could not open Connect iPhone: HOME is not set."
+msgstr ""
+
+#: src/bin/mseries-conversations.rs:23
+msgid "Could not open this app. Check its installation and try again."
+msgstr ""
+
+#: src/app.rs:3578
+msgid "Enter a complete phone number or email address."
+msgstr ""
+
+#: src/app.rs:696
+msgid "Favorites"
+msgstr ""
+
+#: src/app.rs:2180
+msgid "Import Pins"
+msgstr ""
+
+#: src/app.rs:2030 src/app.rs:2100
+msgid "Import iPhone Pins"
+msgstr ""
+
+#: src/app.rs:581
+msgid "Import iPhone Pins…"
+msgstr ""
+
+#: src/app.rs:578 src/app.rs:1345
+msgid "Keyboard Shortcuts"
+msgstr ""
+
+#: src/app.rs:783
+msgid "Latest Messages"
+msgstr ""
+
+#: src/app.rs:243
+msgid "Load Preview"
+msgstr ""
+
+#: src/app.rs:2798
+msgid "Loading preview…"
+msgstr ""
+
+#: src/app.rs:1791
+msgid "Mark as Read"
+msgstr ""
+
+#: src/app.rs:2115
+msgid "Match Apple’s ordered pin list with conversations on this computer. Groups need your selection. This saves a local snapshot and does not change your iPhone."
+msgstr ""
+
+#: src/app.rs:2930
+msgid "Message text copied."
+msgstr ""
+
+#: src/app.rs:524 src/app.rs:847
+msgid "Messages"
+msgstr ""
+
+#: src/bin/mseries-conversations.rs:98
+msgid "Messages & Signal"
+msgstr ""
+
+#: src/app.rs:3303
+msgid "Name, phone number, or email"
+msgstr ""
+
+#: src/app.rs:3286
+msgid "New Message"
+msgstr ""
+
+#: src/bin/mseries-conversations.rs:19
+msgid "Opening the selected app. Reopen this switcher to choose another."
+msgstr ""
+
+#: src/app.rs:2794
+msgid "Other previews are loading. Try again shortly."
+msgstr ""
+
+#: src/app.rs:280
+msgid "Preview unavailable · open the link to view it."
+msgstr ""
+
+#: src/app.rs:603
+msgid "Refresh every 30 seconds while this window is open"
+msgstr ""
+
+#: src/app.rs:1458
+msgid "Refreshing conversations…"
+msgstr ""
+
+#: src/app.rs:2900
+msgid "Reply"
+msgstr ""
+
+#: src/app.rs:545
+msgid "Retry"
+msgstr ""
+
+#: src/app.rs:584
+msgid "Review Imported Pins…"
+msgstr ""
+
+#: src/app.rs:688
+msgid "Search conversations"
+msgstr ""
+
+#: src/app.rs:3492
+msgid "Searching contacts…"
+msgstr ""
+
+#: src/app.rs:744
+msgid "Select a conversation"
+msgstr ""
+
+#: src/app.rs:807
+msgid "Send"
+msgstr ""
+
+#: src/app.rs:630
+msgid "Send with Enter"
+msgstr ""
+
+#: src/app.rs:3136
+msgid "Sending to your iPhone…"
+msgstr ""
+
+#: src/app.rs:3322
+msgid "Start Conversation"
+msgstr ""
+
+#: src/app.rs:3388 src/app.rs:3411 src/app.rs:3439 src/app.rs:3496
+msgid "The connected phone changed. Open a new message again."
+msgstr ""
+
+#: src/app.rs:3190
+msgid "The message was transferred to your iPhone."
+msgstr ""
+
+#: src/app.rs:634
+msgid "Turn off to use Ctrl+Enter and keep Enter for new lines"
+msgstr ""
+
+#: src/app.rs:2021 src/app.rs:2071
+msgid "Update BlueFerry and connect your iPhone before importing phone pins."
+msgstr ""
+
+#: src/app.rs:2992
+msgid "Write a message before sending."
+msgstr ""
+
+#: src/app.rs:3004
+msgid "Your iPhone is offline. Your draft is kept while this window is open."
+msgstr ""

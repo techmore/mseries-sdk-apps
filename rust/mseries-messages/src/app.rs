@@ -1,5 +1,6 @@
 use crate::media::{self, LinkPreview, PreviewKind};
 use crate::preferences;
+use crate::strings::tr;
 use granite::prelude::PlaceholderExt;
 use gtk::{gio, glib, prelude::*};
 use mseries_pantheon_kit::{
@@ -59,7 +60,7 @@ fn recent_inbox_due(
 
 fn launch_phone_setup(feedback: &gtk::Label) {
     let Some(home) = std::env::var_os("HOME") else {
-        feedback.set_text("Could not open Connect iPhone: HOME is not set.");
+        feedback.set_text(&tr("Could not open Connect iPhone: HOME is not set."));
         feedback.add_css_class("warning");
         return;
     };
@@ -239,7 +240,7 @@ impl MediaCard {
             .max_width_chars(36)
             .build();
         status.add_css_class("dim-label");
-        let load = gtk::Button::with_label("Load Preview");
+        let load = gtk::Button::with_label(&tr("Load Preview"));
         load.set_halign(gtk::Align::Start);
         mseries_pantheon_kit::set_accessible_label(&load, "Load link preview");
         let original = gtk::LinkButton::with_label(
@@ -276,7 +277,7 @@ impl MediaCard {
             return;
         }
         self.status
-            .set_text("Preview unavailable · open the link to view it.");
+            .set_text(&tr("Preview unavailable · open the link to view it."));
         self.status.add_css_class("dim-label");
         self.load.set_sensitive(true);
     }
@@ -520,7 +521,7 @@ impl App {
             Err(error) => {
                 let window = gtk::ApplicationWindow::builder()
                     .application(application)
-                    .title("Messages")
+                    .title(tr("Messages"))
                     .build();
                 window.set_default_size(620, 440);
                 let placeholder = granite::Placeholder::new("Messages could not start");
@@ -533,15 +534,15 @@ impl App {
                 helper_feedback.add_css_class("dim-label");
                 let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
                 mseries_pantheon_kit::set_box_spacing_text_units(&actions, 0.5);
-                let setup = gtk::Button::with_label("Connect iPhone…");
+                let setup = gtk::Button::with_label(&tr("Connect iPhone…"));
                 mseries_pantheon_kit::set_accessible_label(&setup, "Connect iPhone");
                 let setup_feedback = helper_feedback.clone();
                 setup.connect_clicked(move |_| launch_phone_setup(&setup_feedback));
-                let advanced = gtk::Button::with_label("Advanced BlueFerry…");
+                let advanced = gtk::Button::with_label(&tr("Advanced BlueFerry…"));
                 mseries_pantheon_kit::set_accessible_label(&advanced, "Open Advanced BlueFerry");
                 let advanced_feedback = helper_feedback.clone();
                 advanced.connect_clicked(move |_| launch_advanced_blueferry(&advanced_feedback));
-                let retry = gtk::Button::with_label("Retry");
+                let retry = gtk::Button::with_label(&tr("Retry"));
                 retry.add_css_class("suggested-action");
                 mseries_pantheon_kit::set_accessible_label(&retry, "Retry BlueFerry connection");
                 actions.append(&setup);
@@ -574,20 +575,20 @@ impl App {
         refresh.set_tooltip_text(Some("Refresh conversations"));
         mseries_pantheon_kit::set_accessible_label(&refresh, "Refresh conversations");
         header.pack_start(&refresh);
-        let shortcuts_button = gtk::Button::with_label("Keyboard Shortcuts");
+        let shortcuts_button = gtk::Button::with_label(&tr("Keyboard Shortcuts"));
         shortcuts_button.add_css_class("flat");
         mseries_pantheon_kit::set_accessible_label(&shortcuts_button, "Show keyboard shortcuts");
-        let pin_import_button = gtk::Button::with_label("Import iPhone Pins…");
+        let pin_import_button = gtk::Button::with_label(&tr("Import iPhone Pins…"));
         pin_import_button.add_css_class("flat");
         mseries_pantheon_kit::set_accessible_label(&pin_import_button, "Import iPhone pins");
-        let pin_review_button = gtk::Button::with_label("Review Imported Pins…");
+        let pin_review_button = gtk::Button::with_label(&tr("Review Imported Pins…"));
         pin_review_button.add_css_class("flat");
         mseries_pantheon_kit::set_accessible_label(&pin_review_button, "Review imported pins");
         pin_review_button.set_sensitive(false);
-        let setup_button = gtk::Button::with_label("Connect iPhone…");
+        let setup_button = gtk::Button::with_label(&tr("Connect iPhone…"));
         setup_button.add_css_class("flat");
         mseries_pantheon_kit::set_accessible_label(&setup_button, "Connect iPhone");
-        let advanced_button = gtk::Button::with_label("Advanced BlueFerry…");
+        let advanced_button = gtk::Button::with_label(&tr("Advanced BlueFerry…"));
         advanced_button.add_css_class("flat");
         mseries_pantheon_kit::set_accessible_label(&advanced_button, "Open Advanced BlueFerry");
         let auto_refresh_switch = gtk::Switch::builder()
@@ -599,7 +600,7 @@ impl App {
             "Refresh conversations automatically every 30 seconds",
         );
         let refresh_description = gtk::Label::builder()
-            .label("Refresh every 30 seconds while this window is open")
+            .label(tr("Refresh every 30 seconds while this window is open"))
             .xalign(0.0)
             .wrap(true)
             .max_width_chars(34)
@@ -607,7 +608,7 @@ impl App {
         refresh_description.add_css_class("dim-label");
         refresh_description.add_css_class("caption");
         let refresh_label = gtk::Label::builder()
-            .label("Automatic refresh")
+            .label(tr("Automatic refresh"))
             .xalign(0.0)
             .build();
         let refresh_text = gtk::Box::new(gtk::Orientation::Vertical, 2);
@@ -626,11 +627,13 @@ impl App {
             "Send messages when Enter is pressed",
         );
         let enter_send_label = gtk::Label::builder()
-            .label("Send with Enter")
+            .label(tr("Send with Enter"))
             .xalign(0.0)
             .build();
         let enter_send_description = gtk::Label::builder()
-            .label("Turn off to use Ctrl+Enter and keep Enter for new lines")
+            .label(tr(
+                "Turn off to use Ctrl+Enter and keep Enter for new lines",
+            ))
             .xalign(0.0)
             .wrap(true)
             .max_width_chars(34)
@@ -667,7 +670,7 @@ impl App {
         header.pack_end(&menu_button);
 
         let status = gtk::Label::builder()
-            .label("Connecting to BlueFerry…")
+            .label(tr("Connecting to BlueFerry…"))
             .xalign(0.0)
             .wrap(true)
             .build();
@@ -682,14 +685,17 @@ impl App {
         feedback.add_css_class("dim-label");
 
         let search = gtk::SearchEntry::builder()
-            .placeholder_text("Search conversations")
+            .placeholder_text(tr("Search conversations"))
             .margin_start(8)
             .margin_end(8)
             .margin_top(8)
             .margin_bottom(8)
             .build();
         mseries_pantheon_kit::set_accessible_label(&search, "Search conversations");
-        let favorites_title = gtk::Label::builder().label("Favorites").xalign(0.0).build();
+        let favorites_title = gtk::Label::builder()
+            .label(tr("Favorites"))
+            .xalign(0.0)
+            .build();
         favorites_title.add_css_class("heading");
         let favorites_strip = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         mseries_pantheon_kit::set_box_spacing_text_units(&favorites_strip, 0.5);
@@ -735,7 +741,7 @@ impl App {
         sidebar.append(&list_scroll);
 
         let conversation_title = gtk::Label::builder()
-            .label("Select a conversation")
+            .label(tr("Select a conversation"))
             .xalign(0.0)
             .hexpand(true)
             .ellipsize(gtk::pango::EllipsizeMode::End)
@@ -757,7 +763,7 @@ impl App {
         let conversation_header = gtk::Box::new(gtk::Orientation::Horizontal, 10);
         mseries_pantheon_kit::set_box_spacing_text_units(&conversation_header, 0.6);
         mseries_pantheon_kit::set_margins_text_units(&conversation_header, 0.65, 0.75, 0.65, 1.0);
-        let back_button = gtk::Button::with_label("Back");
+        let back_button = gtk::Button::with_label(&tr("Back"));
         back_button.set_visible(false);
         mseries_pantheon_kit::set_accessible_label(&back_button, "Back to conversations");
         conversation_header.append(&back_button);
@@ -774,7 +780,7 @@ impl App {
             .hscrollbar_policy(gtk::PolicyType::Never)
             .build();
 
-        let latest_button = gtk::Button::with_label("Latest Messages");
+        let latest_button = gtk::Button::with_label(&tr("Latest Messages"));
         latest_button.set_halign(gtk::Align::Center);
         latest_button.set_visible(false);
         mseries_pantheon_kit::set_accessible_label(&latest_button, "Jump to latest messages");
@@ -798,7 +804,7 @@ impl App {
             .max_content_height(150)
             .hscrollbar_policy(gtk::PolicyType::Never)
             .build();
-        let send_button = gtk::Button::with_label("Send");
+        let send_button = gtk::Button::with_label(&tr("Send"));
         send_button.add_css_class("suggested-action");
         send_button.set_sensitive(false);
         send_button.set_tooltip_text(Some(if enter_sends {
@@ -838,7 +844,7 @@ impl App {
 
         let window = gtk::ApplicationWindow::builder()
             .application(application)
-            .title("Messages")
+            .title(tr("Messages"))
             .build();
         window.add_css_class("mseries-messages");
         window.set_default_size(1040, 730);
@@ -1336,7 +1342,7 @@ impl App {
 
     fn show_shortcuts(self: &Rc<Self>) {
         let dialog = gtk::Window::builder()
-            .title("Keyboard Shortcuts")
+            .title(tr("Keyboard Shortcuts"))
             .transient_for(&self.window)
             .modal(true)
             .destroy_with_parent(true)
@@ -1449,7 +1455,7 @@ impl App {
         let was_map_ready = self.state.borrow().map_ready;
         let has_recent_snapshot = self.recent_inbox_snapshot.borrow().is_some();
         let recent_last_success = self.recent_inbox_last_success.get();
-        self.status.set_text("Refreshing conversations…");
+        self.status.set_text(&tr("Refreshing conversations…"));
         let weak = Rc::downgrade(self);
         let backend = self.backend.clone();
         glib::MainContext::default().spawn_local(async move {
@@ -1782,7 +1788,7 @@ impl App {
         mseries_pantheon_kit::set_margins_text_units(&actions, 0.45, 0.45, 0.45, 0.45);
 
         if thread.unread() > 0 && !thread.local_only {
-            let mark_read = gtk::Button::with_label("Mark as Read");
+            let mark_read = gtk::Button::with_label(&tr("Mark as Read"));
             mark_read.add_css_class("flat");
             mseries_pantheon_kit::set_accessible_label(&mark_read, "Mark conversation as read");
             let weak_app = Rc::downgrade(self);
@@ -1808,7 +1814,7 @@ impl App {
                             if let Some(app) = weak_app.upgrade()
                                 && app.pin_load_generation.get() == phone_generation
                             {
-                                app.feedback.set_text("Conversation marked as read.");
+                                app.feedback.set_text(&tr("Conversation marked as read."));
                                 app.refresh();
                             }
                         }
@@ -2012,15 +2018,16 @@ impl App {
 
     fn import_phone_pins(self: &Rc<Self>) {
         if self.pin_profile_id.borrow().is_none() {
-            self.status
-                .set_text("Update BlueFerry and connect your iPhone before importing phone pins.");
+            self.status.set_text(&tr(
+                "Update BlueFerry and connect your iPhone before importing phone pins.",
+            ));
             return;
         }
         let weak = Rc::downgrade(self);
         let parent = self.window.clone();
         glib::MainContext::default().spawn_local(async move {
             let dialog = gtk::FileDialog::builder()
-                .title("Import iPhone Pins")
+                .title(tr("Import iPhone Pins"))
                 .modal(true)
                 .build();
             let file = match dialog.open_future(Some(&parent)).await {
@@ -2029,7 +2036,7 @@ impl App {
             };
             let Some(path) = file.path() else {
                 if let Some(app) = weak.upgrade() {
-                    app.status.set_text("Choose a local Apple pin export file.");
+                    app.status.set_text(&tr("Choose a local Apple pin export file."));
                 }
                 return;
             };
@@ -2061,8 +2068,9 @@ impl App {
 
     fn show_pin_review(self: &Rc<Self>, snapshot: PinSnapshot) {
         let Some(profile) = self.pin_profile_id.borrow().clone() else {
-            self.status
-                .set_text("Update BlueFerry and connect your iPhone before importing phone pins.");
+            self.status.set_text(&tr(
+                "Update BlueFerry and connect your iPhone before importing phone pins.",
+            ));
             return;
         };
         let threads = self.state.borrow().threads.clone();
@@ -2089,7 +2097,7 @@ impl App {
         let label_refs = labels.iter().map(String::as_str).collect::<Vec<_>>();
 
         let dialog = gtk::Window::builder()
-            .title("Import iPhone Pins")
+            .title(tr("Import iPhone Pins"))
             .transient_for(&self.window)
             .destroy_with_parent(true)
             .modal(true)
@@ -2104,7 +2112,7 @@ impl App {
         let content = gtk::Box::new(gtk::Orientation::Vertical, 10);
         mseries_pantheon_kit::set_margins_text_units(&content, 0.8, 0.9, 0.8, 0.9);
         let explanation = gtk::Label::builder()
-            .label("Match Apple’s ordered pin list with conversations on this computer. Groups need your selection. This saves a local snapshot and does not change your iPhone.")
+            .label(tr("Match Apple’s ordered pin list with conversations on this computer. Groups need your selection. This saves a local snapshot and does not change your iPhone."))
             .xalign(0.0)
             .wrap(true)
             .build();
@@ -2145,7 +2153,7 @@ impl App {
         }
         if snapshot.pins.is_empty() {
             let empty = gtk::Label::builder()
-                .label("Apple Messages exported an empty pin list. Importing it clears this computer’s imported pin order.")
+                .label(tr("Apple Messages exported an empty pin list. Importing it clears this computer’s imported pin order."))
                 .xalign(0.0)
                 .wrap(true)
                 .build();
@@ -2168,8 +2176,8 @@ impl App {
         content.append(&error);
         let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         actions.set_halign(gtk::Align::End);
-        let cancel = gtk::Button::with_label("Cancel");
-        let apply = gtk::Button::with_label("Import Pins");
+        let cancel = gtk::Button::with_label(&tr("Cancel"));
+        let apply = gtk::Button::with_label(&tr("Import Pins"));
         apply.add_css_class("suggested-action");
         actions.append(&cancel);
         actions.append(&apply);
@@ -2377,8 +2385,9 @@ impl App {
     }
 
     fn show_read_error(&self, error: &str) {
-        self.status
-            .set_text("Could not mark conversation as read. Refresh to try again.");
+        self.status.set_text(&tr(
+            "Could not mark conversation as read. Refresh to try again.",
+        ));
         self.status.set_tooltip_text(Some(error));
         self.status.add_css_class("warning");
     }
@@ -2782,11 +2791,11 @@ impl App {
         }
         if media.pending.len() >= 6 {
             card.status
-                .set_text("Other previews are loading. Try again shortly.");
+                .set_text(&tr("Other previews are loading. Try again shortly."));
             return;
         }
         card.load.set_sensitive(false);
-        card.status.set_text("Loading preview…");
+        card.status.set_text(&tr("Loading preview…"));
         media.pending.insert(url.clone(), vec![card.clone()]);
         let submitted = media
             .jobs
@@ -2888,7 +2897,7 @@ impl App {
         let actions = gtk::Box::new(gtk::Orientation::Vertical, 4);
         mseries_pantheon_kit::set_margins_text_units(&actions, 0.45, 0.45, 0.45, 0.45);
 
-        let reply = gtk::Button::with_label("Reply");
+        let reply = gtk::Button::with_label(&tr("Reply"));
         reply.add_css_class("flat");
         mseries_pantheon_kit::set_accessible_label(&reply, "Reply to message");
         let weak_app = Rc::downgrade(self);
@@ -2904,7 +2913,7 @@ impl App {
         });
         actions.append(&reply);
 
-        let copy = gtk::Button::with_label("Copy Text");
+        let copy = gtk::Button::with_label(&tr("Copy Text"));
         copy.add_css_class("flat");
         mseries_pantheon_kit::set_accessible_label(&copy, "Copy message text");
         let weak_app = Rc::downgrade(self);
@@ -2918,7 +2927,7 @@ impl App {
                 gtk::prelude::WidgetExt::display(&app.window)
                     .clipboard()
                     .set_text(&copy_body);
-                app.feedback.set_text("Message text copied.");
+                app.feedback.set_text(&tr("Message text copied."));
             }
         });
         actions.append(&copy);
@@ -2980,7 +2989,7 @@ impl App {
                 .to_string()
         };
         if body.trim().is_empty() {
-            self.status.set_text("Write a message before sending.");
+            self.status.set_text(&tr("Write a message before sending."));
             return;
         }
         let thread = self
@@ -2992,18 +3001,19 @@ impl App {
             .cloned();
         let Some(thread) = thread else { return };
         if !self.state.borrow().map_ready {
-            self.status
-                .set_text("Your iPhone is offline. Your draft is kept while this window is open.");
+            self.status.set_text(&tr(
+                "Your iPhone is offline. Your draft is kept while this window is open.",
+            ));
             return;
         }
         if !thread.reply_ready {
-            self.status.set_text("BlueFerry has blocked replies to this conversation. Review its status before sending.");
+            self.status.set_text(&tr("BlueFerry has blocked replies to this conversation. Review its status before sending."));
             return;
         }
         if thread.local_only {
             let Some(recipient) = thread.recipients.first() else {
                 self.status
-                    .set_text("Choose a valid phone number or email address first.");
+                    .set_text(&tr("Choose a valid phone number or email address first."));
                 return;
             };
             self.dispatch_send(
@@ -3016,7 +3026,7 @@ impl App {
             return;
         }
         if thread.participants_required || thread.roster_changed {
-            self.status.set_text("BlueFerry has blocked replies to this conversation. Review its status before sending.");
+            self.status.set_text(&tr("BlueFerry has blocked replies to this conversation. Review its status before sending."));
             return;
         }
         if thread.is_group && !thread.group_confirmed {
@@ -3123,7 +3133,7 @@ impl App {
             (outbox_id, selected_thread)
         };
         self.send_button.set_sensitive(false);
-        self.feedback.set_text("Sending to your iPhone…");
+        self.feedback.set_text(&tr("Sending to your iPhone…"));
         if let Some(thread) = selected_thread {
             self.render_conversation(Some(thread));
             self.scroll_messages_to_bottom();
@@ -3177,7 +3187,7 @@ impl App {
                 match result {
                     Ok(()) => {
                         app.feedback
-                            .set_text("The message was transferred to your iPhone.");
+                            .set_text(&tr("The message was transferred to your iPhone."));
                         if app.state.borrow().selected.as_deref() == Some(key.as_str()) {
                             let buffer = app.editor.buffer();
                             let current = buffer
@@ -3273,7 +3283,7 @@ impl App {
     fn show_new_message_dialog(self: &Rc<Self>) {
         let phone_generation = self.pin_load_generation.get();
         let dialog = gtk::Window::builder()
-            .title("New Message")
+            .title(tr("New Message"))
             .transient_for(&self.window)
             .modal(true)
             .destroy_with_parent(true)
@@ -3284,17 +3294,17 @@ impl App {
         let title = gtk::Label::new(Some("New Message"));
         title.add_css_class("title");
         header.set_title_widget(Some(&title));
-        let cancel = gtk::Button::with_label("Cancel");
+        let cancel = gtk::Button::with_label(&tr("Cancel"));
         cancel.set_action_name(Some("window.close"));
         header.pack_start(&cancel);
         dialog.set_titlebar(Some(&header));
 
         let query = gtk::SearchEntry::builder()
-            .placeholder_text("Name, phone number, or email")
+            .placeholder_text(tr("Name, phone number, or email"))
             .build();
         mseries_pantheon_kit::set_accessible_label(&query, "To");
         let hint = gtk::Label::builder()
-            .label("Choose a contact or enter a complete address.")
+            .label(tr("Choose a contact or enter a complete address."))
             .xalign(0.0)
             .wrap(true)
             .build();
@@ -3309,7 +3319,7 @@ impl App {
             .vexpand(true)
             .hscrollbar_policy(gtk::PolicyType::Never)
             .build();
-        let start = gtk::Button::with_label("Start Conversation");
+        let start = gtk::Button::with_label(&tr("Start Conversation"));
         start.add_css_class("suggested-action");
         start.set_sensitive(false);
         let content = gtk::Box::new(gtk::Orientation::Vertical, 10);
@@ -3375,8 +3385,9 @@ impl App {
             results.connect_row_activated(move |_, row| {
                 let Some(app) = app.upgrade() else { return };
                 if app.pin_load_generation.get() != phone_generation {
-                    app.feedback
-                        .set_text("The connected phone changed. Open a new message again.");
+                    app.feedback.set_text(&tr(
+                        "The connected phone changed. Open a new message again.",
+                    ));
                     return;
                 }
                 let Some(contact) = matches.borrow().get(row.index() as usize).cloned() else {
@@ -3397,8 +3408,9 @@ impl App {
             start.connect_clicked(move |_| {
                 let Some(app) = app.upgrade() else { return };
                 if app.pin_load_generation.get() != phone_generation {
-                    app.feedback
-                        .set_text("The connected phone changed. Open a new message again.");
+                    app.feedback.set_text(&tr(
+                        "The connected phone changed. Open a new message again.",
+                    ));
                     return;
                 }
                 let contact = normalize_recipient(&query.text())
@@ -3424,8 +3436,9 @@ impl App {
             query.connect_activate(move |_| {
                 let Some(app) = app.upgrade() else { return };
                 if app.pin_load_generation.get() != phone_generation {
-                    app.feedback
-                        .set_text("The connected phone changed. Open a new message again.");
+                    app.feedback.set_text(&tr(
+                        "The connected phone changed. Open a new message again.",
+                    ));
                     return;
                 }
                 let contact = normalize_recipient(&query_for_activate.text())
@@ -3476,12 +3489,13 @@ impl App {
                     results.remove(&child);
                 }
                 *matches.borrow_mut() = Vec::new();
-                hint.set_text("Searching contacts…");
+                hint.set_text(&tr("Searching contacts…"));
                 start.set_sensitive(valid);
                 let Some(app) = app.upgrade() else { return };
                 if app.pin_load_generation.get() != phone_generation {
-                    app.feedback
-                        .set_text("The connected phone changed. Open a new message again.");
+                    app.feedback.set_text(&tr(
+                        "The connected phone changed. Open a new message again.",
+                    ));
                     return;
                 }
                 let backend = app.backend.clone();
@@ -3512,7 +3526,7 @@ impl App {
                     *matches.borrow_mut() = contacts.clone();
                     append_contact_rows(&results, &contacts);
                     if !contacts.is_empty() {
-                        hint.set_text("Choose the address you want to message.");
+                        hint.set_text(&tr("Choose the address you want to message."));
                     } else if !search_failed {
                         hint.set_text(
                             "No matching contacts. A complete number or email works too.",
@@ -3561,7 +3575,7 @@ impl App {
     fn start_direct_conversation(self: &Rc<Self>, name: String, address: String) {
         let Some(address) = normalize_recipient(&address) else {
             self.feedback
-                .set_text("Enter a complete phone number or email address.");
+                .set_text(&tr("Enter a complete phone number or email address."));
             return;
         };
         let existing = self

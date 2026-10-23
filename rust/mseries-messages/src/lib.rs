@@ -4,3 +4,5 @@ mod media;
 mod preferences;
 
 pub use app::App;
+
+pub mod strings;
