@@ -27,7 +27,7 @@ pub fn spacing_px(name: &str) -> i32 {
 /// GTK CSS for the SDK classes (`msdk-*`). Scoped to the app; no colours except theme references.
 pub fn css() -> String {
     let t = tokens();
-    let r = |k: &str| t["radius"][k].as_i64().unwrap_or(0);
+    let r = |k: &str| t["corners"][k].as_i64().unwrap_or(0);
     let ts = |k: &str| t["type_scale"][k].as_f64().unwrap_or(1.0);
     let w = &t["window"];
     format!(
@@ -51,11 +51,13 @@ pub fn css() -> String {
          .msdk-error {{ color: @error_color; }}\n\
          .msdk-indicator {{ min-width: 18px; min-height: 3px; border-radius: 2px; background: alpha(currentColor, 0.45); }}\n\
          .msdk-indicator.focused {{ background: @accent_color; }}\n\
-         .msdk-bubble {{ background: alpha(currentColor, {sa}); border-radius: {card}px; padding: 8px 12px; }}\n\
-         .msdk-bubble-user {{ background: alpha(@accent_color, {bub}); color: @theme_fg_color; border-radius: {card}px; padding: 8px 12px; }}\n\
+         .msdk-bubble {{ background: alpha(currentColor, {sa}); border-radius: {bubble}px; padding: 8px 12px; }}\n\
+         .msdk-bubble-user {{ background: alpha(@accent_color, {bub}); color: @theme_fg_color; border-radius: {bubble}px; padding: 8px 12px; }}\n\
          .msdk-editor {{ border-radius: {card}px; border: 1px solid alpha(currentColor, 0.18); background: @theme_base_color; }}\n\
          .msdk-code {{ font-family: monospace; background: alpha(currentColor, 0.08); border-radius: {control}px; padding: 8px 12px; }}\n\
          .msdk-tool {{ font-size: {caption}em; opacity: {o_tool}; }}\n\
+         window.msdk-app, window.msdk-app decoration {{ border-radius: {win}px; }}\n\
+         window.msdk-app.maximized, window.msdk-app.fullscreen, window.msdk-app.maximized decoration, window.msdk-app.maximized headerbar.msdk-titlebar {{ border-radius: 0; }}\n\
          headerbar.msdk-titlebar {{ min-height: {tb}px; padding: 0 12px; border-radius: {win}px {win}px 0 0; \
            background-image: linear-gradient(to bottom, mix(shade(@theme_bg_color, 1.06), {silver}, {band}), mix(shade(@theme_bg_color, 0.95), {silver}, {band})); \
            border-bottom: 1px solid alpha(black, 0.14); box-shadow: inset 0 1px alpha(white, 0.55); }}\n\
@@ -96,6 +98,7 @@ pub fn css() -> String {
         cgap = t["chrome"]["control_gap"].as_i64().unwrap_or(8),
         cg2 = t["chrome"]["control_gap"].as_i64().unwrap_or(8) / 2,
         win = r("window"),
+        bubble = r("bubble"),
     )
 }
 
@@ -107,4 +110,15 @@ pub fn layout_px(name: &str) -> i32 {
 /// Optional features that can be switched off in one place (`features` in tokens.json).
 pub fn feature(name: &str) -> bool {
     tokens()["features"][name].as_bool().unwrap_or(false)
+}
+
+/// A corner radius from the `corners` tokens, in logical pixels (`screen`, `window`, `popover`, `card`, `bubble`, `control`).
+pub fn corner_px(name: &str) -> i32 {
+    tokens()["corners"][name].as_i64().unwrap_or(0) as i32
+}
+
+/// The radius of something inset from a rounded corner so the two curves stay concentric (Apple's rule: inner = outer minus
+/// the gap), never below the `min` token so the corner does not collapse to a point.
+pub fn concentric_px(outer: i32, inset: i32) -> i32 {
+    (outer - inset).max(corner_px("min"))
 }

@@ -257,3 +257,17 @@ fn layout_props_validate_and_round_trip() {
     );
     assert_eq!(msdk::text::parse(&text).unwrap().doc, doc);
 }
+
+#[test]
+fn corner_tokens_nest_and_concentric_radii_never_collapse() {
+    use msdk::tokens::{concentric_px, corner_px};
+    assert!(corner_px("screen") >= corner_px("window"), "windows must not be rounder than the display");
+    assert!(
+        corner_px("window") >= corner_px("popover")
+            && corner_px("card") >= corner_px("control")
+            && corner_px("control") >= corner_px("min")
+    );
+    assert_eq!(concentric_px(14, 4), 10);
+    assert_eq!(concentric_px(14, 20), corner_px("min"));
+    assert!(msdk::tokens::css().contains("window.msdk-app.maximized"));
+}
