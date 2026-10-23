@@ -74,6 +74,8 @@ pub enum Refusal {
     Blocked(BlockReason),
     /// The grant allows the app but caps the context so low there is nothing to reply to.
     CapLeavesNoContext,
+    /// The focused field is not a chat composer (a search box or address bar), so there is nothing to reply in.
+    NotComposer,
     EmptyTranscript,
     NoIncomingMessage,
 }
@@ -105,8 +107,14 @@ pub fn classify(field: &FieldDescriptor) -> FieldKind {
     )
     .to_lowercase();
     let has = |words: &[&str]| words.iter().any(|word| text.contains(word));
-    if has(&["password", "passcode", "passphrase", "secret", "pin "])
-        || text.trim_end().ends_with(" pin")
+    if has(&[
+        "password",
+        "passcode",
+        "passphrase",
+        "secret",
+        "token",
+        "pin ",
+    ]) || text.trim_end().ends_with(" pin")
     {
         FieldKind::Password
     } else if has(&["card", "cvv", "cvc", "credit", "iban", "routing"]) {
@@ -147,6 +155,9 @@ pub fn build_packet(
     };
     if let Decision::Block(reason) = rules.decide(&first) {
         return Err(Refusal::Blocked(reason));
+    }
+    if kind != FieldKind::Chat {
+        return Err(Refusal::NotComposer);
     }
 
     let header = source.header();
@@ -327,6 +338,7 @@ mod tests {
             action,
             context_cap: None,
             local_only: false,
+            contains: false,
         }
     }
 

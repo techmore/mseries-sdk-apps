@@ -32,6 +32,7 @@ impl AuditRecord {
                 Refusal::NotChatApp => "refused-not-chat-app",
                 Refusal::Blocked(_) => "refused-blocked",
                 Refusal::CapLeavesNoContext => "refused-cap",
+                Refusal::NotComposer => "refused-not-composer",
                 Refusal::EmptyTranscript => "refused-empty",
                 Refusal::NoIncomingMessage => "refused-nothing-to-reply-to",
             },
