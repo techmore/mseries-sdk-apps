@@ -264,4 +264,6 @@ coalescing, clamping and clearing; owner dock visual acceptance remains separate
 ImportedPinState reads v1/v2 shared Python records. Version 2 retains bounded
 local_pins and hidden_imports and orders visible imported/local pins before the
 remaining history. Clients must preserve those fields when reviewing a new import;
-Rust Messages does so. Local favorite editing parity remains separate.
+Rust Messages does so. favorite_thread_keys resolves visible imported/local favorites against the complete inbox;
+toggled_favorite returns a validated v2 state without mutating server stars or
+the imported snapshot. Rust Messages persists that state after phone checks.

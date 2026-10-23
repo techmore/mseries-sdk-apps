@@ -476,6 +476,8 @@ pub struct App {
     recent_inbox_warning: RefCell<Option<String>>,
     pin_profile_id: RefCell<Option<String>>,
     pin_state: RefCell<ImportedPinState>,
+    pin_ready: Cell<bool>,
+    pin_io_pending: Cell<bool>,
     pin_load_generation: Cell<u64>,
     search: gtk::SearchEntry,
     list: gtk::ListBox,
@@ -888,6 +890,8 @@ impl App {
             recent_inbox_warning: RefCell::new(None),
             pin_profile_id: RefCell::new(None),
             pin_state: RefCell::new(ImportedPinState::default()),
+            pin_ready: Cell::new(false),
+            pin_io_pending: Cell::new(false),
             pin_load_generation: Cell::new(0),
             search,
             list,
@@ -1238,11 +1242,11 @@ impl App {
         });
 
         let weak = Rc::downgrade(self);
-        self.star_button.connect_toggled(move |button| {
+        self.star_button.connect_toggled(move |_| {
             if let Some(app) = weak.upgrade()
                 && !app.syncing_star.get()
             {
-                app.toggle_star(button.is_active());
+                app.toggle_selected_favorite();
             }
         });
     }
@@ -1720,6 +1724,10 @@ impl App {
                 .sort_by_key(|thread| rank.get(thread.key.as_str()).copied().unwrap_or(usize::MAX));
             (threads, state.selected.clone())
         };
+        let favorites = self
+            .pin_state
+            .borrow()
+            .favorite_thread_keys(&self.state.borrow().threads);
         self.list.remove_all();
         let mut order = Vec::with_capacity(threads.len());
         let mut selected_index = None;
@@ -1739,7 +1747,7 @@ impl App {
                 name.add_css_class("accent");
             }
             heading.append(&name);
-            if thread.starred {
+            if favorites.contains(&thread.key) {
                 heading.append(&gtk::Image::from_icon_name("starred-symbolic"));
             }
             copy.append(&heading);
@@ -1858,6 +1866,36 @@ impl App {
             actions.append(&mark_read);
         }
 
+        if !thread.recipients.is_empty() && !thread.key.starts_with("new:") {
+            let favorite = self
+                .pin_state
+                .borrow()
+                .favorite_thread_keys(&self.state.borrow().threads)
+                .contains(&thread.key);
+            let toggle = gtk::Button::with_label(&if favorite {
+                tr("Remove from Favorites")
+            } else {
+                tr("Add to Favorites")
+            });
+            toggle.add_css_class("flat");
+            toggle.set_sensitive(self.pin_ready.get() && !self.pin_io_pending.get());
+            let weak = Rc::downgrade(self);
+            let key = thread.key.clone();
+            let generation = self.pin_load_generation.get();
+            let menu = popover.downgrade();
+            toggle.connect_clicked(move |_| {
+                if let Some(menu) = menu.upgrade() {
+                    menu.popdown();
+                }
+                if let Some(app) = weak.upgrade()
+                    && app.pin_load_generation.get() == generation
+                {
+                    app.toggle_local_favorite(&key);
+                }
+            });
+            actions.append(&toggle);
+        }
+
         if !thread.recipients.is_empty() {
             let label = if thread.recipients.len() == 1 {
                 "Copy Address"
@@ -1902,12 +1940,14 @@ impl App {
         }
         self.favorite_buttons.borrow_mut().clear();
 
-        let mut favorites = threads
+        let keys = self
+            .pin_state
+            .borrow()
+            .favorite_thread_keys(&self.state.borrow().threads);
+        let favorites = keys
             .iter()
-            .filter(|thread| thread.starred)
-            .cloned()
+            .filter_map(|key| threads.iter().find(|thread| &thread.key == key))
             .collect::<Vec<_>>();
-        favorites.sort_by(|left, right| right.last_ts.cmp(&left.last_ts));
         for thread in &favorites {
             let button = gtk::ToggleButton::new();
             button.add_css_class("flat");
@@ -1955,19 +1995,29 @@ impl App {
     fn sync_phone_pin_profile(self: &Rc<Self>, reported: Option<String>) {
         let profile = reported.filter(|value| is_valid_phone_profile_id(value));
         if self.pin_profile_id.borrow().as_ref() == profile.as_ref() {
+            if let Some(profile) = profile
+                && !self.pin_ready.get()
+                && !self.pin_io_pending.get()
+            {
+                self.load_pin_state(profile);
+            }
             return;
         }
+        self.pin_ready.set(false);
+        self.pin_io_pending.set(profile.is_some());
         *self.pin_profile_id.borrow_mut() = profile.clone();
         *self.pin_state.borrow_mut() = ImportedPinState::default();
         self.pin_load_generation
             .set(self.pin_load_generation.get().wrapping_add(1));
-        let generation = self.pin_load_generation.get();
         self.pin_review_button.set_sensitive(false);
         self.update_pin_note();
-        let Some(profile) = profile else {
-            return;
-        };
+        let Some(profile) = profile else { return };
+        self.load_pin_state(profile);
+    }
 
+    fn load_pin_state(self: &Rc<Self>, profile: String) {
+        self.pin_io_pending.set(true);
+        let generation = self.pin_load_generation.get();
         let weak = Rc::downgrade(self);
         glib::MainContext::default().spawn_local(async move {
             let result = PhonePinStore::load(&profile).await;
@@ -1977,8 +2027,10 @@ impl App {
             {
                 return;
             }
+            app.pin_io_pending.set(false);
             match result {
                 Ok(state) => {
+                    app.pin_ready.set(true);
                     *app.pin_state.borrow_mut() = state;
                     app.update_pin_note();
                     app.rebuild_sidebar();
@@ -2100,6 +2152,7 @@ impl App {
             ));
             return;
         };
+        let review_generation = self.pin_load_generation.get();
         let threads = self.state.borrow().threads.clone();
         let previous = self.pin_state.borrow().clone();
         let choices = if previous.snapshot.as_ref() == Some(&snapshot) {
@@ -2224,6 +2277,17 @@ impl App {
         let dialog_for_save = dialog.clone();
         apply.connect_clicked(move |_| {
             let Some(app) = weak.upgrade() else { return };
+            if app.pin_load_generation.get() != review_generation {
+                error_label.set_text(&tr("The connected phone changed. Close this dialog and review pins again."));
+                error_label.set_visible(true);
+                return;
+            }
+            if !app.pin_ready.get() || app.pin_io_pending.get() {
+                error_label.set_text(&tr("Favorites are still loading or saving. Try again in a moment."));
+                error_label.set_visible(true);
+                return;
+            }
+            let save_generation = app.pin_load_generation.get();
             let choices = dropdowns
                 .iter()
                 .map(|dropdown| {
@@ -2253,6 +2317,7 @@ impl App {
                     return;
                 }
             };
+            app.pin_io_pending.set(true);
             apply_button.set_sensitive(false);
             let backend = app.backend.clone();
             let weak_app = Rc::downgrade(&app);
@@ -2270,11 +2335,12 @@ impl App {
                 }
                 .await;
                 let Some(app) = weak_app.upgrade() else { return };
-                if app.pin_profile_id.borrow().as_deref() != Some(profile.as_str()) {
-                    return;
-                }
+                if app.pin_profile_id.borrow().as_deref() != Some(profile.as_str())
+                    || app.pin_load_generation.get() != save_generation { return; }
+                app.pin_io_pending.set(false);
                 match result {
                     Ok(()) => {
+                        app.pin_ready.set(true);
                         *app.pin_state.borrow_mut() = state;
                         app.update_pin_note();
                         app.rebuild_sidebar();
@@ -2535,24 +2601,33 @@ impl App {
         );
         if let Some(thread) = thread {
             self.conversation_title.set_text(&thread.name);
-            self.star_button.set_sensitive(!thread.local_only);
+            let favorite = self
+                .pin_state
+                .borrow()
+                .favorite_thread_keys(&self.state.borrow().threads)
+                .contains(&thread.key);
+            self.star_button.set_sensitive(
+                self.pin_ready.get()
+                    && !self.pin_io_pending.get()
+                    && !thread.key.starts_with("new:"),
+            );
             self.syncing_star.set(true);
-            self.star_button.set_active(thread.starred);
+            self.star_button.set_active(favorite);
             self.syncing_star.set(false);
             mseries_pantheon_kit::set_accessible_label(
                 &self.star_button,
-                if thread.starred {
+                if favorite {
                     "Remove favorite"
                 } else {
                     "Add favorite"
                 },
             );
-            self.star_button.set_icon_name(if thread.starred {
+            self.star_button.set_icon_name(if favorite {
                 "starred-symbolic"
             } else {
                 "non-starred-symbolic"
             });
-            self.star_button.set_tooltip_text(Some(if thread.starred {
+            self.star_button.set_tooltip_text(Some(if favorite {
                 "Remove favorite"
             } else {
                 "Favorite conversation"
@@ -3035,25 +3110,69 @@ impl App {
         self.editor.grab_focus();
     }
 
-    fn toggle_star(self: &Rc<Self>, starred: bool) {
+    fn toggle_selected_favorite(self: &Rc<Self>) {
         let Some(key) = self.state.borrow().selected.clone() else {
             return;
         };
-        let phone_generation = self.pin_load_generation.get();
+        self.toggle_local_favorite(&key);
+    }
+
+    fn toggle_local_favorite(self: &Rc<Self>, key: &str) {
+        if !self.pin_ready.get() || self.pin_io_pending.get() {
+            self.feedback.set_text(&tr(
+                "Saved favorites are unavailable or still loading. Try again after reconnecting.",
+            ));
+            self.rebuild_sidebar();
+            return;
+        }
+        let Some(profile) = self.pin_profile_id.borrow().clone() else {
+            return;
+        };
+        let next = self
+            .pin_state
+            .borrow()
+            .toggled_favorite(key, &self.state.borrow().threads);
+        let next = match next {
+            Ok(next) => next,
+            Err(error) => {
+                self.feedback.set_text(&error);
+                self.rebuild_sidebar();
+                return;
+            }
+        };
+        self.pin_io_pending.set(true);
+        self.rebuild_sidebar();
+        let generation = self.pin_load_generation.get();
         let backend = self.backend.clone();
         let weak = Rc::downgrade(self);
         glib::MainContext::default().spawn_local(async move {
-            let result = backend.set_starred(&key, starred).await;
-            if let Some(app) = weak.upgrade() {
-                if app.pin_load_generation.get() != phone_generation {
-                    return;
+            let result = async {
+                let status = backend.status().await?;
+                if status.phone_profile_id.as_deref() != Some(profile.as_str()) {
+                    return Err(
+                        "The connected phone changed. Refresh before saving favorites.".to_string(),
+                    );
                 }
-                if let Err(error) = result {
-                    app.status
-                        .set_text(&format!("Could not update favorite: {error}"));
-                }
-                app.refresh();
+                PhonePinStore::save(&profile, &next).await
             }
+            .await;
+            let Some(app) = weak.upgrade() else { return };
+            if app.pin_load_generation.get() != generation {
+                return;
+            }
+            app.pin_io_pending.set(false);
+            match result {
+                Ok(()) => {
+                    *app.pin_state.borrow_mut() = next;
+                    app.update_pin_note();
+                }
+                Err(error) => {
+                    app.feedback.set_text(&format!(
+                        "Could not save that favorite. Your previous pins are kept. {error}"
+                    ));
+                }
+            }
+            app.rebuild_sidebar();
         });
     }
 
@@ -4150,6 +4269,71 @@ mod tests {
             app.search.text().is_empty(),
             "Escape must clear focused conversation search"
         );
+        let favorite_state = app
+            .pin_state
+            .borrow()
+            .toggled_favorite("shared-key", &app.state.borrow().threads)
+            .unwrap();
+        *app.pin_state.borrow_mut() = favorite_state;
+        app.rebuild_sidebar();
+        assert!(app.favorite_buttons.borrow().contains_key("shared-key"));
+        assert!(
+            app.star_button.is_active(),
+            "header reflects the local favorite"
+        );
+        let unpinned = app
+            .pin_state
+            .borrow()
+            .toggled_favorite("shared-key", &app.state.borrow().threads)
+            .unwrap();
+        *app.pin_state.borrow_mut() = unpinned;
+        app.rebuild_sidebar();
+        assert!(!app.favorite_buttons.borrow().contains_key("shared-key"));
+        assert!(!app.star_button.is_active());
+        // This bus has no Secret Service: a failed save must retain the old state.
+        let profile = "01234567-89ab-4cde-8fab-0123456789ab".to_string();
+        *fixture_profile.borrow_mut() = Some(profile.clone());
+        *app.pin_profile_id.borrow_mut() = Some(profile);
+        app.pin_ready.set(true);
+        let previous_pins = app.pin_state.borrow().clone();
+        app.toggle_local_favorite("shared-key");
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(6);
+        while app.pin_io_pending.get() && std::time::Instant::now() < until {
+            gtk::glib::MainContext::default().iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(
+            !app.pin_io_pending.get(),
+            "failed save must release the write gate"
+        );
+        assert_eq!(*app.pin_state.borrow(), previous_pins);
+        assert!(
+            !app.star_button.is_active(),
+            "failed save must restore the star"
+        );
+        assert!(app.feedback.text().contains("previous pins are kept"));
+        app.pin_ready.set(false);
+        let generation = app.pin_load_generation.get();
+        let current_profile = app.pin_profile_id.borrow().clone();
+        app.sync_phone_pin_profile(current_profile);
+        assert!(
+            app.pin_io_pending.get(),
+            "refresh retries a failed keyring load"
+        );
+        assert_eq!(
+            app.pin_load_generation.get(),
+            generation,
+            "same-phone keyring retry must not invalidate message operations"
+        );
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(6);
+        while app.pin_io_pending.get() && std::time::Instant::now() < until {
+            gtk::glib::MainContext::default().iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(!app.pin_io_pending.get());
+        assert!(!app.pin_ready.get());
+        *fixture_profile.borrow_mut() = None;
+        *app.pin_profile_id.borrow_mut() = None;
         let mut unread_thread = app.state.borrow().threads[0].clone();
         unread_thread.messages[0].read = false;
         let baseline_reads = read_calls.get();

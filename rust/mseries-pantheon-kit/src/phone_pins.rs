@@ -208,9 +208,9 @@ impl ImportedPinState {
         suggested_pin_matches(snapshot, threads, Some(self))
     }
 
-    /// Apply the imported Apple order, then list all remaining conversations
-    /// by their most recent message time.
-    pub fn ordered_thread_keys(&self, threads: &[Thread]) -> Vec<String> {
+    /// Visible imported Apple pins followed by local favorites. Resolve against
+    /// the complete inbox so filtering cannot make an ambiguous address unique.
+    pub fn favorite_thread_keys(&self, threads: &[Thread]) -> Vec<String> {
         let current = threads
             .iter()
             .map(|thread| thread.key.as_str())
@@ -254,6 +254,13 @@ impl ImportedPinState {
                 ordered.push(key);
             }
         }
+        ordered
+    }
+
+    /// Favorites first, followed by remaining conversations in recent order.
+    pub fn ordered_thread_keys(&self, threads: &[Thread]) -> Vec<String> {
+        let mut ordered = self.favorite_thread_keys(threads);
+        let included = ordered.iter().cloned().collect::<HashSet<_>>();
         let mut remaining = threads
             .iter()
             .filter(|thread| !included.contains(thread.key.as_str()))
@@ -261,6 +268,62 @@ impl ImportedPinState {
         remaining.sort_by(|left, right| right.last_ts.cmp(&left.last_ts));
         ordered.extend(remaining.into_iter().map(|thread| thread.key.clone()));
         ordered
+    }
+    /// Toggle this computer's favorite without mutating the imported snapshot
+    /// or BlueFerry's unordered server star store.
+    pub fn toggled_favorite(&self, key: &str, threads: &[Thread]) -> Result<Self, String> {
+        self.validate()?;
+        let thread = threads
+            .iter()
+            .find(|thread| thread.key == key)
+            .filter(|thread| !thread.key.starts_with("new:"))
+            .ok_or_else(|| "This conversation cannot be saved as a favorite yet.".to_string())?;
+        let identity = if !thread.is_group && thread.recipients.len() == 1 {
+            normalized_address(&thread.recipients[0]).map(|address| format!("direct:{address}"))
+        } else {
+            None
+        }
+        .unwrap_or_else(|| format!("thread:{key}"));
+        let mut next = self.clone();
+        next.version = 2;
+        let matching = self
+            .snapshot
+            .as_ref()
+            .map(|snapshot| {
+                snapshot
+                    .pins
+                    .iter()
+                    .zip(effective_choices(self, snapshot, threads))
+                    .filter(|(_, choice)| choice.as_deref() == Some(key))
+                    .map(|(pin, _)| pin.apple_identifier.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let pinned = self
+            .favorite_thread_keys(threads)
+            .iter()
+            .any(|entry| entry == key);
+        let local = next.local_pins.iter().position(|entry| entry == &identity);
+        if let Some(index) = local {
+            next.local_pins.remove(index);
+        }
+        if pinned && !matching.is_empty() {
+            for identifier in matching {
+                if !next.hidden_imports.contains(&identifier) {
+                    next.hidden_imports.push(identifier);
+                }
+            }
+        } else if !matching.is_empty() {
+            next.hidden_imports
+                .retain(|identifier| !matching.contains(identifier));
+        } else if local.is_none() {
+            if next.local_pins.len() >= 64 {
+                return Err("You can save up to 64 favorite conversations.".into());
+            }
+            next.local_pins.push(identity);
+        }
+        next.validate()?;
+        Ok(next)
     }
 }
 
@@ -517,6 +580,55 @@ async fn run_secret_tool(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_favorite_toggles_preserve_snapshot_and_follow_unique_identity() {
+        let threads = vec![Thread {
+            key: "first".into(),
+            recipients: vec!["+12025550123".into()],
+            ..Default::default()
+        }];
+        let original = ImportedPinState::reviewed(
+            snapshot(&["+12025550123"]),
+            vec![Some("first".into())],
+            &threads,
+        )
+        .unwrap();
+        let hidden = original.toggled_favorite("first", &threads).unwrap();
+        assert!(hidden.favorite_thread_keys(&threads).is_empty());
+        assert_eq!(hidden.snapshot, original.snapshot);
+        let restored = hidden.toggled_favorite("first", &threads).unwrap();
+        assert_eq!(restored.favorite_thread_keys(&threads), vec!["first"]);
+        let local = ImportedPinState::default()
+            .toggled_favorite("first", &threads)
+            .unwrap();
+        assert_eq!(local.local_pins, vec!["direct:+12025550123"]);
+        let mut moved = threads.clone();
+        moved[0].key = "new-backend-id".into();
+        assert_eq!(local.favorite_thread_keys(&moved), vec!["new-backend-id"]);
+        moved.push(Thread {
+            key: "ambiguous".into(),
+            ..moved[0].clone()
+        });
+        assert!(local.favorite_thread_keys(&moved).is_empty());
+        assert!(
+            local
+                .toggled_favorite("first", &threads)
+                .unwrap()
+                .local_pins
+                .is_empty()
+        );
+        let full = ImportedPinState {
+            local_pins: (0..64).map(|n| format!("thread:fixture-{n}")).collect(),
+            ..Default::default()
+        };
+        assert!(full.toggled_favorite("first", &threads).is_err());
+        let mut both = original.clone();
+        both.local_pins = local.local_pins;
+        let removed = both.toggled_favorite("first", &threads).unwrap();
+        assert!(removed.favorite_thread_keys(&threads).is_empty());
+        assert_eq!(removed.snapshot, original.snapshot);
+    }
 
     #[test]
     fn shared_v2_state_preserves_local_favorites_and_hidden_imports() {
