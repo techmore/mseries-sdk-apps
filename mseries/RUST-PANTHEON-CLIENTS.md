@@ -1,3 +1,19 @@
+## Native capture handoff and desktop activation — 2026-10-22
+
+Added mseries/stage-native-capture.sh and the user command
+mseries-stage-native-capture. --verify checks the exact tested package SHA256,
+package identity and architecture; --install delegates the explicit privileged
+stage operation to the existing installer. Verification passes. No install or
+session restart was performed. The executor still has NoNewPrivs=1 and the
+old compositor is installed; owner installation/next-login acceptance is pending.
+
+The messaging switcher now passes GDK's desktop launch context to GIO, supporting
+normal Wayland activation rather than launching without context. Its status says
+Opening rather than claiming observed window focus. Strict Clippy, optimized
+package build and private fake-client tab activation pass. The updated switcher
+is installed; actual owner-window focus remains unverified. The acceptance ledger
+now includes the switcher and current keyboard/reading-size evidence.
+
 ## Merged BlueFerry phone-ID build prepared — 2026-10-22
 
 Live public GetStatus reports API v2 with MAP available, but no phone_profile_id;

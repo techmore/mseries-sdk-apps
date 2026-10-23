@@ -10,12 +10,14 @@ fn launch(desktop: &str, feedback: &gtk::Label) {
                 .to_string()
         })
         .and_then(|app| {
-            app.launch(&[], None::<&gio::AppLaunchContext>)
+            let context = gtk::gdk::Display::default().map(|display| display.app_launch_context());
+            app.launch(&[], context.as_ref())
                 .map_err(|error| error.to_string())
         });
     match result {
-        Ok(()) => feedback
-            .set_text("Switched to the selected app. Reopen this switcher to choose another."),
+        Ok(()) => {
+            feedback.set_text("Opening the selected app. Reopen this switcher to choose another.")
+        }
         Err(error) => {
             feedback.set_text("Could not open this app. Check its installation and try again.");
             feedback.set_tooltip_text(Some(&error));
