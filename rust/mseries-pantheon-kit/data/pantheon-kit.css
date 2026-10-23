@@ -68,3 +68,18 @@
 .pantheon-avatar {
     border-radius: 50%;
 }
+
+/* Messages keeps desktop font scaling and adds a modest reading-size increase. */
+.mseries-messages {
+    font-size: 1.12em;
+    background: mix(@theme_bg_color, #dba96b, 0.10);
+}
+.mseries-messages .pantheon-history {
+    background: mix(@theme_base_color, #dba96b, 0.12);
+}
+.messaging-channel-messages {
+    background: mix(@theme_bg_color, #dba96b, 0.12);
+}
+.messaging-channel-signal {
+    background: mix(@theme_bg_color, #6b96ca, 0.15);
+}

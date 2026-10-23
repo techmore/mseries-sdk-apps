@@ -1,3 +1,29 @@
+## Larger reading text and Messages/Signal switcher — 2026-10-22
+
+Owner requested larger text, distinct channel backgrounds and approved a tab-style
+switcher between the existing clients. Messages uses 1.12em root text and a warm
+theme-relative tint; both the Rust preview and installed qualified Python client
+received the scoped styling (the latter only the two requested style edits, with
+backups). Signal now increases legacy 12–16px UI text by 2px, modern body tokens
+by about 11–13%, and uses cool primary surfaces (#eef3fa light / #202936 dark).
+Display pixel scaling is unchanged. The installed Signal archive matches the
+expected selective transform; its other 1503 packed files remain unchanged.
+
+The new Rust SDK-based mseries-conversations binary installs as Messages & Signal.
+Its tab bar uses normal desktop-app activation for the two existing windows and
+changes its own warm/cool surface with the selected tab. Initial display does not
+launch either client until a tab or Show button is used. This is a switcher, not
+an embedded or combined Signal conversation view. Default cargo run still opens
+Messages. Debian/user installation includes and validates both launchers.
+
+Validation: strict all-target Clippy; full Messages light/dark GUI runs; two Python
+stylesheet tests; ten Signal palette/typography/cache tests. Warm Messages and cool
+switcher captures were reviewed. A private Xvfb/D-Bus probe with fake desktop apps
+verified both actual tab clicks launched only their respective fixture commands
+(receipt /tmp/messaging-switcher-probe). Installed clients were not restarted.
+Reopening them loads the text/background changes; actual owner-window activation
+and visual preference still require acceptance. Other existing live gates remain.
+
 ## GTK accessibility contract checks — 2026-10-22
 
 The private Messages GUI harness now enables GTK_A11Y=test rather than disabling

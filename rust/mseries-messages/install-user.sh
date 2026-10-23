@@ -18,6 +18,8 @@ dpkg-deb -x "$pkg" "$stage"
 bin="$HOME/.local/bin/mseries-messages-rs"
 data="${XDG_DATA_HOME:-$HOME/.local/share}"
 install -Dm755 "$stage/usr/bin/mseries-messages-rs" "$bin"
+install -Dm755 "$stage/usr/bin/mseries-conversations" "$HOME/.local/bin/mseries-conversations"
+install -Dm644 "$stage/usr/share/applications/io.elementary.mseries.Conversations.desktop" "$data/applications/io.elementary.mseries.Conversations.desktop"
 install -Dm644 "$stage/usr/share/applications/io.elementary.mseries.MessagesRust.desktop" \
   "$data/applications/io.elementary.mseries.MessagesRust.desktop"
 # Launch reliably even when the desktop session omits ~/.local/bin from PATH.
@@ -28,6 +30,13 @@ p = Path(sys.argv[1])
 command = sys.argv[2].replace('\\', '\\\\').replace('"', '\\"').replace('`', '\\`').replace('$', '\\$').replace('%', '%%')
 p.write_text('\n'.join('Exec="' + command + '"' if line.startswith('Exec=') else line
                         for line in p.read_text().splitlines()) + '\n')
+DESKTOP
+python3 - "$data/applications/io.elementary.mseries.Conversations.desktop" "$HOME/.local/bin/mseries-conversations" <<'DESKTOP'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+command = sys.argv[2].replace('\\', '\\\\').replace('"', '\\"').replace('`', '\\`').replace('$', '\\$').replace('%', '%%')
+p.write_text('\n'.join('Exec="' + command + '"' if line.startswith('Exec=') else line for line in p.read_text().splitlines()) + '\n')
 DESKTOP
 install -Dm644 "$stage/usr/share/icons/hicolor/scalable/apps/io.elementary.mseries.Messages.svg" \
   "$data/icons/hicolor/scalable/apps/io.elementary.mseries.Messages.svg"

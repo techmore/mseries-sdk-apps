@@ -125,6 +125,7 @@ class Messages(Gtk.Application):
         provider.load_from_string(self.stylesheet)
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self.window = Gtk.ApplicationWindow(application=self, title=_('Messages'), default_width=1080, default_height=720)
+        self.window.add_css_class('ms-window')
         self.window.set_icon_name(APP_ID)
         self.window.set_size_request(420, 420)
         self.window.connect('close-request', self.close)

@@ -779,6 +779,8 @@ impl App {
         latest_button.set_visible(false);
         mseries_pantheon_kit::set_accessible_label(&latest_button, "Jump to latest messages");
 
+        message_scroll.add_css_class("pantheon-history");
+
         let editor = gtk::TextView::builder()
             .wrap_mode(gtk::WrapMode::WordChar)
             .accepts_tab(false)
@@ -838,6 +840,7 @@ impl App {
             .application(application)
             .title("Messages")
             .build();
+        window.add_css_class("mseries-messages");
         window.set_default_size(1040, 730);
         window.set_titlebar(Some(&header));
         window.set_child(Some(&root));

@@ -20,6 +20,8 @@ trap 'rm -rf "$stage"' EXIT
 
 (cd "$repo_root/rust" && cargo build --release --locked -p mseries-messages)
 target_dir="$(cd "$repo_root/rust" && cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')"
+install -Dm755 "$target_dir/release/mseries-conversations" "$stage/usr/bin/mseries-conversations"
+install -Dm644 "$here/data/io.elementary.mseries.Conversations.desktop" "$stage/usr/share/applications/io.elementary.mseries.Conversations.desktop"
 install -Dm755 "$target_dir/release/mseries-messages" "$stage/usr/bin/mseries-messages-rs"
 install -Dm644 "$here/data/$id.desktop" "$stage/usr/share/applications/$id.desktop"
 install -Dm644 "$here/data/$id.metainfo.xml" "$stage/usr/share/metainfo/$id.metainfo.xml"
