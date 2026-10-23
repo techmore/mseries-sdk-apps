@@ -33,6 +33,10 @@ pub struct SigMessage {
     pub attachment_types: Vec<String>,
     pub sticker: bool,
     pub shared_contact: bool,
+    /// Disappearing-message timer in seconds (0 = none) and, when the timer has
+    /// started, the millisecond it started.
+    pub expire_seconds: i64,
+    pub expiration_start_ms: i64,
     pub deleted: bool,
     pub sender_service_id: Option<String>,
     pub sender_e164: Option<String>,
@@ -44,6 +48,8 @@ pub struct SignalData {
     pub messages: Vec<SigMessage>,
     /// Why messages were left out, by reason.
     pub skipped: BTreeMap<&'static str, usize>,
+    /// What the content-less messages carried instead (counts by field name).
+    pub empty_kinds: BTreeMap<String, usize>,
 }
 
 /// A private copy of the Signal database that is removed when dropped.
@@ -240,6 +246,7 @@ fn read_conversations(conn: &Connection) -> Result<Vec<SigConversation>, String>
 fn read_messages(conn: &Connection, data: &mut SignalData) -> Result<(), String> {
     let mut messages = Vec::new();
     let mut skipped: BTreeMap<&'static str, usize> = BTreeMap::new();
+    let mut empty_kinds: BTreeMap<String, usize> = BTreeMap::new();
     read_rows(
         conn,
         "messages",
@@ -295,11 +302,15 @@ fn read_messages(conn: &Connection, data: &mut SignalData) -> Result<(), String>
             let expire = json_i64(&json, "expireTimer")
                 .or_else(|| row.get("expireTimer").and_then(|v| v.parse().ok()))
                 .unwrap_or(0);
-            if expire > 0 {
-                {
-                    note("disappearing");
-                    return Ok(());
-                }
+            let expiration_start = json_i64(&json, "expirationStartTimestamp").unwrap_or(0);
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis() as i64);
+            // The sender's timer is honoured: a message whose timer has already run
+            // out is gone from Signal too, the rest keep their remaining time.
+            if expire > 0 && expiration_start > 0 && expiration_start + expire * 1000 <= now_ms {
+                note("already expired");
+                return Ok(());
             }
             let sent_at = match row
                 .get("sent_at")
@@ -353,6 +364,24 @@ fn read_messages(conn: &Connection, data: &mut SignalData) -> Result<(), String>
             if !deleted && body.trim().is_empty() && attachment_types.is_empty() && !sticker && !shared_contact {
                 {
                     note("no content");
+                    let kind = [
+                        "preview",
+                        "quote",
+                        "bodyAttachment",
+                        "giftBadge",
+                        "payment",
+                        "poll",
+                        "storyReaction",
+                        "reactions",
+                        "editHistory",
+                    ]
+                    .into_iter()
+                    .find(|k| {
+                        json.get(*k)
+                            .is_some_and(|v| !v.is_null() && v.as_array().is_none_or(|a| !a.is_empty()))
+                    })
+                    .unwrap_or("nothing else");
+                    *empty_kinds.entry(kind.to_string()).or_insert(0) += 1;
                     return Ok(());
                 }
             }
@@ -365,6 +394,8 @@ fn read_messages(conn: &Connection, data: &mut SignalData) -> Result<(), String>
                 attachment_types,
                 sticker,
                 shared_contact,
+                expire_seconds: expire.max(0),
+                expiration_start_ms: if expire > 0 { expiration_start.max(0) } else { 0 },
                 deleted,
                 sender_service_id: json_str(&json, "sourceServiceId").or_else(|| nonempty(row.get("sourceServiceId").map(String::as_str))),
                 sender_e164: json_str(&json, "source").or_else(|| nonempty(row.get("source").map(String::as_str))),
@@ -374,6 +405,7 @@ fn read_messages(conn: &Connection, data: &mut SignalData) -> Result<(), String>
     )?;
     data.messages = messages;
     data.skipped = skipped;
+    data.empty_kinds = empty_kinds;
     Ok(())
 }
 
@@ -384,4 +416,95 @@ pub fn read_all(conn: &Connection) -> Result<SignalData, String> {
     };
     read_messages(conn, &mut data)?;
     Ok(data)
+}
+
+fn ymd(ms: i64) -> String {
+    // Days since 1970-01-01 to a civil date (Howard Hinnant's algorithm).
+    let z = ms.div_euclid(86_400_000) + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+/// Counts only: what the Signal database holds and what the importer would keep.
+pub fn describe(conn: &Connection, data: &SignalData) -> Result<String, String> {
+    let scalar = |sql: &str| conn.query_row(sql, [], |r| r.get::<_, i64>(0)).map_err(|e| e.to_string());
+    let mut out = String::new();
+    let grouped = |sql: &str| -> Result<Vec<(String, i64)>, String> {
+        let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, Option<String>>(0)?.unwrap_or_else(|| "(none)".into()),
+                    r.get::<_, i64>(1)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<_, _>>().map_err(|e| e.to_string())
+    };
+    out.push_str(&format!("conversation rows: {}\n", scalar("SELECT count(*) FROM conversations")?));
+    for (kind, n) in grouped("SELECT type, count(*) FROM conversations GROUP BY type")? {
+        out.push_str(&format!("  type {kind}: {n}\n"));
+    }
+    let tables: Vec<String> = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '%_fts%' ORDER BY name",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0)).map_err(|e| e.to_string())?;
+        rows.collect::<Result<_, _>>().map_err(|e| e.to_string())?
+    };
+    let mut filled = Vec::new();
+    for table in tables {
+        let n = scalar(&format!("SELECT count(*) FROM \"{table}\""))?;
+        if n > 0 {
+            filled.push(format!("{table}={n}"));
+        }
+    }
+    out.push_str(&format!("tables with rows: {}\n", filled.join(", ")));
+    out.push_str(&format!("message rows: {}\n", scalar("SELECT count(*) FROM messages")?));
+    for (kind, n) in grouped("SELECT type, count(*) FROM messages GROUP BY type ORDER BY count(*) DESC")? {
+        out.push_str(&format!("  type {kind}: {n}\n"));
+    }
+    let (mut first, mut last) = (i64::MAX, 0);
+    let mut per_conversation: HashMap<&str, usize> = HashMap::new();
+    for m in &data.messages {
+        first = first.min(m.sent_at);
+        last = last.max(m.sent_at);
+        *per_conversation.entry(m.conversation_id.as_str()).or_insert(0) += 1;
+    }
+    out.push_str(&format!("importable messages: {}\n", data.messages.len()));
+    if !data.messages.is_empty() {
+        out.push_str(&format!("  earliest {} · latest {}\n", ymd(first), ymd(last)));
+    }
+    let kind_of: HashMap<&str, bool> = data.conversations.iter().map(|c| (c.id.as_str(), c.is_group)).collect();
+    out.push_str(&format!("chats with importable messages: {}\n", per_conversation.len()));
+    let mut counts: Vec<(&str, usize)> = per_conversation.into_iter().collect();
+    counts.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+    for (i, (id, n)) in counts.iter().take(8).enumerate() {
+        let kind = match kind_of.get(id) {
+            Some(true) => "group",
+            Some(false) => "1:1",
+            None => "no conversation row",
+        };
+        out.push_str(&format!("  #{i}: {kind}, {n} messages\n"));
+    }
+    for (reason, n) in &data.skipped {
+        out.push_str(&format!("left out ({reason}): {n}\n"));
+    }
+    for (kind, n) in &data.empty_kinds {
+        out.push_str(&format!("  of the no-content ones, carrying {kind}: {n}\n"));
+    }
+    let timed = data.messages.iter().filter(|m| m.expire_seconds > 0).count();
+    out.push_str(&format!(
+        "importable messages that are disappearing (kept with their timer): {timed}\n"
+    ));
+    Ok(out)
 }

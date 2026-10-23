@@ -347,7 +347,7 @@ fn message_text(m: &SigMessage, names_by_service_id: &HashMap<&str, &str>) -> St
     lines.join("\n")
 }
 
-fn record(m: &SigMessage, author: &str, text: String) -> Value {
+fn record(m: &SigMessage, author: &str, text: String, now_ms: i64) -> Value {
     json!({
         "text": text,
         "author": author,
@@ -359,8 +359,9 @@ fn record(m: &SigMessage, author: &str, text: String) -> Value {
         "viewOpened": false,
         "localRead": true,
         "readAt": 0,
-        "expirationSeconds": 0,
-        "expirationStart": 0,
+        "expirationSeconds": m.expire_seconds,
+        // A timer that had not started yet starts now, as if the message were read.
+        "expirationStart": if m.expire_seconds > 0 { if m.expiration_start_ms > 0 { m.expiration_start_ms } else { now_ms } } else { 0 },
         "status": "sent",
         "attachments": [],
         "reactions": {},
@@ -543,6 +544,9 @@ pub fn import_with(cfg: &Config, secrets: &dyn Secrets, observer: &mut dyn Obser
 
     progress.stage = Stage::Writing;
     observer.progress(&progress);
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as i64);
     let mut catalog = pantheon.catalog.clone();
     let mut backed_up = false;
     for (conversation, messages) in grouped {
@@ -572,7 +576,7 @@ pub fn import_with(cfg: &Config, secrets: &dyn Secrets, observer: &mut dyn Obser
                             .or_else(|| m.sender_service_id.clone())
                             .unwrap_or_default()
                     };
-                    record(m, &author, message_text(m, &names_by_service_id))
+                    record(m, &author, message_text(m, &names_by_service_id), now_ms)
                 })
                 .collect();
             let existing = pantheon.snapshots.get(&id);
@@ -685,4 +689,13 @@ pub fn probe(cfg: &Config, secrets: &dyn Secrets) -> Result<String, String> {
         }
     }
     Ok(out)
+}
+
+/// Counts only: what Signal's database holds and what the importer would keep.
+pub fn stats(cfg: &Config, secrets: &dyn Secrets) -> Result<String, String> {
+    let key_hex = signal_database_key(cfg, secrets)?;
+    let copy = DatabaseCopy::make(&cfg.signal_dir, &cfg.scratch_dir)?;
+    let conn = signal_db::open_encrypted(&copy.db, &key_hex)?;
+    let data = signal_db::read_all(&conn)?;
+    signal_db::describe(&conn, &data)
 }

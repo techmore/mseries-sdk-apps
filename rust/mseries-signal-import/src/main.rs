@@ -67,6 +67,7 @@ fn install_ctrl_c(flag: &Arc<AtomicBool>) {
 const USAGE: &str = "usage: mseries-signal-import <import|probe> [options]
 
   import   copy the Signal Desktop history into Signal Pantheon (safe to repeat)
+  stats    count what the Signal database holds and what would be imported (counts only)
   probe    show how the Pantheon store is laid out (counts and shapes only)
 
 options:
@@ -82,7 +83,7 @@ fn parse() -> Result<(String, Config), String> {
     let home = PathBuf::from(env::var_os("HOME").ok_or("HOME is not set")?);
     let mut args = env::args().skip(1);
     let command = args.next().ok_or(USAGE)?;
-    if command != "import" && command != "probe" {
+    if !["import", "probe", "stats"].contains(&command.as_str()) {
         return Err(USAGE.into());
     }
     let mut cfg = Config {
@@ -125,7 +126,9 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let result = if command == "probe" {
+    let result = if command == "stats" {
+        import::stats(&cfg, &SecretTool)
+    } else if command == "probe" {
         import::probe(&cfg, &SecretTool)
     } else {
         let cancel = Arc::new(AtomicBool::new(false));
