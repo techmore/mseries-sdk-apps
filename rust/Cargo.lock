@@ -1593,6 +1593,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "msdk"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "mseries-diskspace"
 version = "0.1.0"
 dependencies = [
@@ -1601,6 +1608,18 @@ dependencies = [
  "libc",
  "pangocairo",
  "rayon",
+]
+
+[[package]]
+name = "mseries-greeter"
+version = "0.1.0"
+dependencies = [
+ "futures-channel",
+ "futures-util",
+ "gtk4",
+ "msdk",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

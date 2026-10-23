@@ -1,0 +1,33 @@
+{
+  "app": { "id": "io.github.techmore.DiskSpace", "name": "Disk Space", "icon": "drive-harddisk" },
+  "capabilities": ["filesystem:user-chosen", "trash"],
+  "state": { "path": "text", "scanning": "bool", "progress": "number", "children": "list", "has_result": "bool" },
+  "messages": ["ChooseFolder", "CancelScan", "OpenItem", "TrashItem", "Drill"],
+  "window": {
+    "title": "Disk Space",
+    "header": [
+      { "type": "Button", "label": "Choose folder", "icon": "folder-open", "on": "ChooseFolder", "button_style": "suggested" },
+      { "type": "Button", "label": "Cancel scan", "on": "CancelScan", "visible_if": "scanning" }
+    ],
+    "body": {
+      "type": "Box", "direction": "column", "spacing": "medium",
+      "children": [
+        { "type": "Text", "text": "{path}", "text_style": "heading" },
+        { "type": "Progress", "label": "Scan progress", "bind": "progress", "visible_if": "scanning" },
+        {
+          "type": "Box", "direction": "row", "spacing": "large", "visible_if": "has_result",
+          "children": [
+            { "type": "Custom", "name": "Sunburst", "reason": "no circular treemap component in the vocabulary", "bind": "children" },
+            {
+              "type": "List", "items": "children", "on_select": "Drill",
+              "row": { "type": "Card", "title": "{name}", "children": [ { "type": "Text", "text": "{size}", "text_style": "muted" } ] },
+              "empty": { "type": "EmptyState", "title": "This folder is empty" }
+            }
+          ]
+        },
+        { "type": "EmptyState", "title": "Choose a folder to analyse", "description": "Disk Space shows what is using your storage.", "icon": "drive-harddisk", "visible_if": "has_result",
+          "action": { "type": "Button", "label": "Choose folder", "on": "ChooseFolder" } }
+      ]
+    }
+  }
+}

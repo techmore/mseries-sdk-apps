@@ -1,0 +1,29 @@
+{
+  "app": { "id": "io.github.techmore.QuickNotes", "name": "Quick Notes", "icon": "accessories-text-editor" },
+  "capabilities": ["filesystem:data"],
+  "state": { "query": "text", "notes": "list", "has_selection": "bool", "body": "text" },
+  "messages": ["AddNote", "DeleteNote", "SelectNote", "EditBody", "Search"],
+  "window": {
+    "title": "Quick Notes",
+    "header": [
+      { "type": "Button", "label": "New note", "icon": "list-add", "on": "AddNote", "shortcut": "Ctrl+N" },
+      { "type": "Button", "label": "Delete note", "icon": "edit-delete", "on": "DeleteNote", "button_style": "destructive", "visible_if": "has_selection" }
+    ],
+    "body": {
+      "type": "Split",
+      "sidebar": {
+        "type": "Box", "direction": "column", "spacing": "small",
+        "children": [
+          { "type": "Entry", "label": "Search notes", "bind": "query", "entry_kind": "search", "on_change": "Search" },
+          {
+            "type": "List", "items": "notes", "on_select": "SelectNote",
+            "row": { "type": "Text", "text": "{title}", "text_style": "body" },
+            "empty": { "type": "EmptyState", "title": "No notes yet", "description": "Press Ctrl+N to write one.", "icon": "document-new",
+                       "action": { "type": "Button", "label": "New note", "on": "AddNote", "button_style": "suggested" } }
+          }
+        ]
+      },
+      "content": { "type": "Entry", "label": "Note text", "bind": "body", "entry_kind": "multiline", "on_change": "EditBody", "visible_if": "has_selection" }
+    }
+  }
+}
