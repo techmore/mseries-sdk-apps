@@ -76,23 +76,74 @@ impl<T: Tree> ChatSource for AtspiSource<'_, T> {
     }
 
     fn transcript(&self, max_lines: usize) -> Transcript {
+        // Chat toolkits put a time/status line after each message, so read twice as many snippets to get the messages.
         let texts = self.scan(|scan| match scan {
-            Some(scan) => tree::read_lines(self.tree, &scan.candidates, max_lines),
+            Some(scan) => tree::read_lines(self.tree, &scan.candidates, max_lines * 2 + 2),
             None => Vec::new(),
         });
+        let mut lines = attribute(texts);
+        let skip = lines.len().saturating_sub(max_lines);
+        lines.drain(..skip);
         Transcript {
             source: TranscriptSource::Fallback,
-            // The accessibility tree does not say who wrote a line, so none is attributed to the owner.
-            lines: texts
-                .into_iter()
-                .map(|text| Line {
-                    speaker: "Contact".into(),
-                    from_owner: false,
-                    text,
-                })
-                .collect(),
+            lines,
         }
     }
+}
+
+/// A chat bubble's footer as the accessibility tree shows it, for example `09:14 · Delivered` or
+/// `9:13 AM · +1555… · Disappears in 3600 s`: a clock time, then ` · ` separated details.
+fn footer_details(line: &str) -> Option<Vec<&str>> {
+    let mut parts = line.split(" · ");
+    let time = parts.next()?.trim();
+    let details: Vec<&str> = parts.map(str::trim).collect();
+    let (hours, rest) = time.split_once(':')?;
+    let minutes = rest.get(..2)?;
+    let tail = rest[2..].trim();
+    let clock = (1..=2).contains(&hours.len())
+        && hours.chars().all(|c| c.is_ascii_digit())
+        && minutes.chars().all(|c| c.is_ascii_digit())
+        && matches!(tail, "" | "AM" | "PM" | "am" | "pm");
+    (clock && !details.is_empty()).then_some(details)
+}
+
+/// Delivery states only the sender sees; they mark a bubble as the owner's own.
+fn is_owner_status(detail: &str) -> bool {
+    let detail = detail.to_lowercase();
+    [
+        "delivered",
+        "sent",
+        "read",
+        "viewed",
+        "sending",
+        "failed",
+        "not delivered",
+    ]
+    .iter()
+    .any(|status| detail.starts_with(status))
+}
+
+/// Turns the snippets (oldest first) into messages: a footer line is not a message, it says who wrote the one before it.
+/// Without a footer a message is taken to be the contact's.
+fn attribute(snippets: Vec<String>) -> Vec<Line> {
+    let mut lines: Vec<Line> = Vec::new();
+    for text in snippets {
+        match footer_details(&text) {
+            Some(details) => {
+                if let Some(last) = lines.last_mut() {
+                    let owner = details.iter().any(|detail| is_owner_status(detail));
+                    last.from_owner = owner;
+                    last.speaker = if owner { "Me" } else { "Contact" }.into();
+                }
+            }
+            None => lines.push(Line {
+                speaker: "Contact".into(),
+                from_owner: false,
+                text,
+            }),
+        }
+    }
+    lines
 }
 
 #[cfg(test)]
@@ -149,6 +200,67 @@ mod tests {
         assert_eq!(packet.tiers[1].source, "fallback");
         // Only the two messages were read; the text typed in the composer never was.
         assert_eq!(tree.text_reads.get(), 2);
+    }
+
+    #[test]
+    fn footers_are_not_messages_and_say_who_wrote_the_message_before_them() {
+        let lines = attribute(vec![
+            "Hahahahaha".into(),
+            "09:13 · +15550001111 · Disappears in 43122 s".into(),
+            "also free stuff".into(),
+            "09:14 · Delivered · Disappears in 43191 s".into(),
+            "What time?".into(),
+            "9:15 AM · Sent".into(),
+            "see you at 6".into(),
+        ]);
+        let shape: Vec<(&str, bool)> = lines
+            .iter()
+            .map(|line| (line.text.as_str(), line.from_owner))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                ("Hahahahaha", false),
+                ("also free stuff", true),
+                ("What time?", true),
+                ("see you at 6", false)
+            ]
+        );
+        assert_eq!(lines[1].speaker, "Me");
+        assert_eq!(lines[0].speaker, "Contact");
+    }
+
+    #[test]
+    fn ordinary_text_with_a_time_in_it_is_still_a_message() {
+        for text in [
+            "Meet at 9:30 · bring snacks?",
+            "It is 10:15",
+            "12:00 · noon sharp",
+            "9:3 · x",
+        ] {
+            let is_footer = footer_details(text).is_some();
+            // Only a clock followed by details is a footer; "12:00 · noon sharp" is accepted as one, the rest are not.
+            assert_eq!(is_footer, text == "12:00 · noon sharp", "{text}");
+        }
+    }
+
+    #[test]
+    fn a_chat_transcript_keeps_the_newest_messages_not_the_newest_snippets() {
+        let mut all: Vec<&str> = Vec::new();
+        let footers: Vec<String> = (0..20)
+            .map(|i| format!("09:{:02} · +1555 · Disappears in 9 s", i))
+            .collect();
+        let bodies: Vec<String> = (0..20).map(|i| format!("message {i}")).collect();
+        for i in 0..20 {
+            all.push(&bodies[i]);
+            all.push(&footers[i]);
+        }
+        let (tree, _) = FakeTree::chat(&all, role::ENTRY, "Message");
+        let source = AtspiSource::new(&tree, window("chat.app", "Chat"));
+        let packet = build_packet(&source, &allow("chat.app"), &marked).unwrap();
+        assert_eq!(packet.lines.len(), 12);
+        assert_eq!(packet.lines.last().unwrap().text, "message 19");
+        assert_eq!(packet.lines.first().unwrap().text, "message 8");
     }
 
     #[test]
