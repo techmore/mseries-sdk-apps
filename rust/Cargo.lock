@@ -1886,10 +1886,12 @@ dependencies = [
 name = "msdk-gtk"
 version = "0.1.0"
 dependencies = [
+ "cc",
  "futures-channel",
  "futures-util",
  "gtk4",
  "msdk",
+ "pkg-config",
  "serde_json",
 ]
 
