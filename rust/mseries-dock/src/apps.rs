@@ -71,13 +71,14 @@ pub fn load_installed() -> Vec<AppEntry> {
         std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
     dirs.extend(sys.split(':').filter(|d| !d.is_empty()).map(PathBuf::from));
     let mut out: Vec<AppEntry> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for d in dirs {
-        read_dir(&d.join("applications"), &mut out);
+        read_dir(&d.join("applications"), &mut out, &mut seen);
     }
     out
 }
 
-fn read_dir(dir: &Path, out: &mut Vec<AppEntry>) {
+fn read_dir(dir: &Path, out: &mut Vec<AppEntry>, seen: &mut std::collections::HashSet<String>) {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return;
     };
@@ -91,7 +92,8 @@ fn read_dir(dir: &Path, out: &mut Vec<AppEntry>) {
         let Some(id) = p.file_name().and_then(|n| n.to_str()).map(String::from) else {
             continue;
         };
-        if out.iter().any(|e| e.id == id) {
+        // Reserve even hidden ids: user overrides suppress system launchers.
+        if !seen.insert(id.clone()) {
             continue;
         }
         if let Ok(text) = std::fs::read_to_string(&p)
