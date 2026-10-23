@@ -75,8 +75,8 @@ pub fn catalogue() -> Value {
     json!({
         "components": vocab::COMPONENTS.iter().map(|c| json!({ "name": c.name, "about": c.about })).collect::<Vec<_>>(),
         "surfaces": vocab::SURFACES.iter().map(|s| json!({ "name": s.name, "role": s.role })).collect::<Vec<_>>(),
-        "services": vocab::SERVICES.iter().map(|s| json!({ "name": s.name, "about": s.about })).collect::<Vec<_>>(),
-        "feeds": vocab::FEEDS.iter().map(|f| json!({ "name": f.name, "about": f.about })).collect::<Vec<_>>(),
+        "services": vocab::services().into_iter().map(|s| json!({ "name": s.name, "about": s.about })).collect::<Vec<_>>(),
+        "feeds": vocab::feeds().into_iter().map(|f| json!({ "name": f.name, "about": f.about })).collect::<Vec<_>>(),
         "enums": vocab::ENUMS.iter().map(|(n, _)| *n).collect::<Vec<_>>(),
         "actions": vocab::ACTIONS,
     })
@@ -122,7 +122,7 @@ pub fn complete(doc: &Value, pointer: &str) -> Vec<Completion> {
         Some("messages") if segs.len() == 2 => {
             return vocab::PAYLOADS.iter().map(|p| c(p, "message payload")).collect();
         }
-        Some("feeds") if segs.len() == 2 => return vocab::FEEDS.iter().map(|f| c(f.name, f.about)).collect(),
+        Some("feeds") if segs.len() == 2 => return vocab::feeds().into_iter().map(|f| c(f.name, f.about)).collect(),
         Some("update") => return complete_update(doc, &segs, &state(doc)),
         Some("surfaces") => {}
         _ => return vec![],
@@ -282,7 +282,7 @@ fn complete_update(doc: &Value, segs: &[String], state: &[(String, String)]) -> 
             Some("append") | Some("patch") | Some("remove") | Some("clear") => {
                 state.iter().filter(|(_, t)| t.starts_with("list<")).map(|(k, t)| c(k, t)).collect()
             }
-            Some("call") => vocab::SERVICES.iter().map(|s| c(s.name, s.about)).collect(),
+            Some("call") => vocab::services().into_iter().map(|s| c(s.name, s.about)).collect(),
             Some("then") | Some("error") => doc
                 .get("messages")
                 .and_then(Value::as_object)
@@ -369,6 +369,12 @@ pub fn explain(code: &str) -> Option<&'static str> {
         "missing-field" => "An appended record leaves a field unset. Set every field.",
         "unknown-service" => {
             "Services are fixed names. `msdk describe` lists them; `msdk describe process.run` shows arguments."
+        }
+        "transcript-record-mismatch" => {
+            "A Transcript needs a record type with id, kind and text, all text. kind selects how an entry is drawn: user, assistant, code, tool or permission."
+        }
+        "stack-child-needs-id" => {
+            "A Stack shows the child whose id equals the bound text. Give each child an id (in text form: `.id(\"Chat\")` after it) and list the same names as the Tabs options."
         }
         "unknown-feed" => {
             "Feeds are fixed names such as windows.list. `msdk describe windows.list` shows the record fields it needs."

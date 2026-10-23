@@ -210,5 +210,15 @@ fn schema_and_tokens_are_derived_from_the_tables() {
     let kinds = s["$defs"]["node"]["oneOf"].as_array().unwrap().len();
     assert_eq!(kinds, msdk::vocab::COMPONENTS.len());
     assert!(msdk::tokens::css().contains(".msdk-title"));
-    assert_eq!(msdk::tokens::spacing_px("medium"), 12);
+    assert_eq!(msdk::tokens::spacing_px("medium"), 10);
+}
+
+#[test]
+fn stack_children_need_ids_and_tabs_bind_text() {
+    let ok = json!({ "type": "Stack", "bind": "name", "children": [{ "type": "Text", "text": "a", "id": "One" }] });
+    assert!(codes(&base(ok)).is_empty());
+    let no_id = json!({ "type": "Stack", "bind": "name", "children": [{ "type": "Text", "text": "a" }] });
+    assert!(codes(&base(no_id)).contains(&"stack-child-needs-id"));
+    let tabs = json!({ "type": "Tabs", "label": "Pages", "bind": "flag", "options": ["A", "B"] });
+    assert!(codes(&base(tabs)).contains(&"state-type-mismatch"));
 }

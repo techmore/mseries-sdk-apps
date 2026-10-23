@@ -19,6 +19,22 @@ use crate::render::{self, D, Dispatcher, Refresh};
 pub type Event = (String, Option<Value>);
 
 /// Builds the app's Rust logic once the host exists; it gets a sender for events from its own threads.
+/// System access an app can plug in: named services (`call`) and live feeds. Crates such as the T3 client implement it;
+/// `FixtureServices` answers from a JSON file so an app can run before its real backend exists.
+pub trait Services {
+    /// Handles `service`; returns false when this provider does not own it. Replies go to `tx` as events.
+    fn call(
+        &self,
+        service: &str,
+        args: &std::collections::BTreeMap<String, Value>,
+        then: Option<String>,
+        error: Option<String>,
+        tx: UnboundedSender<Event>,
+    ) -> bool;
+    /// Starts `feed`, calling `push` with the whole list now and whenever it changes. False when not owned.
+    fn start_feed(&self, feed: &str, push: Rc<dyn Fn(Value)>) -> bool;
+}
+
 pub type LogicFactory = Box<dyn FnOnce(UnboundedSender<Event>) -> Box<dyn Logic>>;
 
 pub struct Host {
@@ -26,6 +42,8 @@ pub struct Host {
     store: RefCell<Store>,
     logic: RefCell<Box<dyn Logic>>,
     custom_logic: bool,
+    services: Option<Rc<dyn Services>>,
+    extra: RefCell<std::collections::HashMap<String, gtk::Window>>,
     refreshers: RefCell<Vec<Refresh>>,
     window: gtk::ApplicationWindow,
     holder: gtk::Box,
@@ -110,6 +128,19 @@ impl Host {
         logic: Option<LogicFactory>,
         watch: bool,
     ) -> Option<Rc<Host>> {
+        Host::open_with(app, doc, path, surface, logic, None, watch)
+    }
+
+    /// As [`Host::open_doc`], with a plug-in services provider.
+    pub fn open_with(
+        app: &gtk::Application,
+        doc: Value,
+        path: Option<&Path>,
+        surface: &str,
+        logic: Option<LogicFactory>,
+        services: Option<Rc<dyn Services>>,
+        watch: bool,
+    ) -> Option<Rc<Host>> {
         if report(&msdk::check(&doc)) {
             return None;
         }
@@ -159,12 +190,16 @@ impl Host {
         column.append(&holder);
         overlay.set_child(Some(&column));
         overlay.add_overlay(&toast);
+        window.add_css_class("msdk-app");
         window.set_child(Some(&overlay));
         let host = Rc::new(Host {
             store: RefCell::new(initial_store(&doc)),
             doc: RefCell::new(doc),
             logic: RefCell::new(logic),
             custom_logic,
+            services,
+            extra: RefCell::new(Default::default()),
+
             refreshers: RefCell::new(Vec::new()),
             window,
             holder,
@@ -219,6 +254,25 @@ impl Host {
             .cloned()
             .unwrap_or_default();
         for (key, name) in feeds {
+            if let Some(feed) = name.as_str()
+                && feed != "windows.list"
+                && let Some(sv) = &self.services
+            {
+                let (weak, key) = (self.me.borrow().clone(), key.clone());
+                let started = sv.start_feed(
+                    feed,
+                    Rc::new(move |list| {
+                        if let Some(h) = weak.upgrade() {
+                            h.set(&key, list);
+                            h.post("_feed", Some(json!(key)));
+                        }
+                    }),
+                );
+                if !started {
+                    eprintln!("msdk-run: nothing provides the feed `{feed}`");
+                }
+                continue;
+            }
             if name.as_str() == Some("windows.list") {
                 let weak = self.me.borrow().clone();
                 crate::services::watch_windows(move |list| {
@@ -252,15 +306,25 @@ impl Host {
         self.window.set_title(Some(title));
         match kind {
             "window" | "dialog" => {
+                // The standard chrome: a slightly toned silver band, window controls at the top left, an options
+                // menu beside them, the title in the middle and the app's own actions on the right.
                 let header = gtk::HeaderBar::new();
-                for n in surf["header"]
+                header.add_css_class("msdk-titlebar");
+                header.set_decoration_layout(Some("close,minimize,maximize:"));
+                header.pack_start(&self.options_button(&doc));
+                let items: Vec<&Value> = surf["header"]
                     .as_array()
                     .or(surf["actions"].as_array())
                     .into_iter()
                     .flatten()
-                {
+                    .collect();
+                for n in items.into_iter().rev() {
                     let b = render::build_node(n, &d);
-                    header.pack_start(&b.widget);
+                    if n["type"] == "Tabs" {
+                        header.set_title_widget(Some(&b.widget));
+                    } else {
+                        header.pack_end(&b.widget);
+                    }
                     refreshers.extend(b.refresh);
                 }
                 self.window.set_titlebar(Some(&header));
@@ -291,6 +355,16 @@ impl Host {
                 b.widget.add_css_class("msdk-card");
             }
             b.widget.set_vexpand(true);
+            if matches!(kind, "window" | "dialog") {
+                b.widget
+                    .set_margin_start(msdk::tokens::layout_px("content_padding_x"));
+                b.widget
+                    .set_margin_end(msdk::tokens::layout_px("content_padding_x"));
+                b.widget
+                    .set_margin_top(msdk::tokens::layout_px("content_padding_y"));
+                b.widget
+                    .set_margin_bottom(msdk::tokens::layout_px("content_padding_y"));
+            }
             self.holder.append(&b.widget);
             refreshers.extend(b.refresh);
         }
@@ -339,6 +413,154 @@ impl Host {
         self.rebuild();
     }
 
+    /// The options menu beside the window controls: Settings (when the app has a `settings` dialog) and About.
+    fn options_button(&self, doc: &Value) -> gtk::MenuButton {
+        let button = gtk::MenuButton::builder()
+            .icon_name("open-menu-symbolic")
+            .build();
+        button.add_css_class("flat");
+        button.set_tooltip_text(Some("Options"));
+        button.update_property(&[gtk::accessible::Property::Label("Options")]);
+        let popover = gtk::Popover::new();
+        let column = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        let item = |label: &str| {
+            let b = gtk::Button::with_label(label);
+            b.add_css_class("flat");
+            b.set_halign(gtk::Align::Fill);
+            b
+        };
+        if doc["surfaces"]["settings"]["kind"] == "dialog" {
+            let b = item("Settings…");
+            let (weak, pop) = (self.me.borrow().clone(), popover.clone());
+            b.connect_clicked(move |_| {
+                pop.popdown();
+                if let Some(h) = weak.upgrade() {
+                    h.open_surface("settings");
+                }
+            });
+            column.append(&b);
+        }
+        let about = item("About");
+        let (weak, pop) = (self.me.borrow().clone(), popover.clone());
+        about.connect_clicked(move |_| {
+            pop.popdown();
+            if let Some(h) = weak.upgrade() {
+                h.show_about();
+            }
+        });
+        column.append(&about);
+        popover.set_child(Some(&column));
+        button.set_popover(Some(&popover));
+        button
+    }
+
+    fn show_about(&self) {
+        let doc = self.doc.borrow();
+        let app = &doc["app"];
+        let about = gtk::AboutDialog::builder()
+            .transient_for(&self.window)
+            .modal(true)
+            .program_name(app["name"].as_str().unwrap_or(""))
+            .logo_icon_name(app["icon"].as_str().unwrap_or("application-x-executable"))
+            .build();
+        if let Some(v) = app["version"].as_str() {
+            about.set_version(Some(v));
+        }
+        if let Some(w) = app["website"].as_str() {
+            about.set_website(Some(w));
+        }
+        if app["license"].is_string() {
+            about.set_license_type(gtk::License::Gpl30);
+        }
+        about.present();
+    }
+
+    /// Renders the window to a PNG (the `shot` call of the introspection API).
+    pub fn screenshot(&self, path: &Path) -> Result<(), String> {
+        let paintable = gtk::WidgetPaintable::new(Some(&self.window));
+        let (w, h) = (self.window.width(), self.window.height());
+        if w <= 0 || h <= 0 {
+            return Err("the window has no size yet".into());
+        }
+        let snapshot = gtk::Snapshot::new();
+        paintable.snapshot(snapshot.upcast_ref::<gdk::Snapshot>(), w as f64, h as f64);
+        let node = snapshot.to_node().ok_or("nothing to draw")?;
+        let renderer = self
+            .window
+            .native()
+            .and_then(|n| n.renderer())
+            .ok_or("no renderer")?;
+        renderer
+            .render_texture(&node, None)
+            .save_to_png(path)
+            .map_err(|e| e.to_string())
+    }
+
+    /// Opens a `dialog` or `popover` surface in its own window, transient for the main one. The store is shared.
+    fn open_surface(&self, name: &str) {
+        if let Some(w) = self.extra.borrow().get(name) {
+            w.present();
+            return;
+        }
+        let doc = self.doc.borrow().clone();
+        let Some(surf) = doc["surfaces"].get(name) else {
+            return eprintln!("msdk-run: no surface `{name}`");
+        };
+        let kind = surf["kind"].as_str().unwrap_or("");
+        if !matches!(kind, "dialog" | "popover") {
+            return eprintln!(
+                "msdk-run: `{name}` is a {kind}; only dialogs and popovers open on demand"
+            );
+        }
+        let dialog = kind == "dialog";
+        let win = gtk::Window::builder()
+            .transient_for(&self.window)
+            .modal(dialog)
+            .decorated(dialog)
+            .title(surf["title"].as_str().unwrap_or(name))
+            .default_width(360)
+            .build();
+        let d = self.dispatcher();
+        let column = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        column.set_margin_top(16);
+        column.set_margin_bottom(16);
+        column.set_margin_start(16);
+        column.set_margin_end(16);
+        let mut refreshers: Vec<Refresh> = Vec::new();
+        if let Some(body) = surf.get("body") {
+            let b = render::build_node(body, &d);
+            column.append(&b.widget);
+            refreshers.extend(b.refresh);
+        }
+        if dialog {
+            let actions = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            actions.set_halign(gtk::Align::End);
+            for n in surf["actions"].as_array().into_iter().flatten() {
+                let b = render::build_node(n, &d);
+                actions.append(&b.widget);
+                refreshers.extend(b.refresh);
+            }
+            column.append(&actions);
+        }
+        win.set_child(Some(&column));
+        let snapshot = self.store.borrow().clone();
+        for r in &refreshers {
+            r(&snapshot);
+        }
+        self.refreshers.borrow_mut().extend(refreshers);
+        let (weak, key) = (self.me.borrow().clone(), name.to_string());
+        win.connect_close_request(move |_| {
+            if let Some(h) = weak.upgrade() {
+                h.extra.borrow_mut().remove(&key);
+            }
+            gtk::glib::Propagation::Proceed
+        });
+        self.extra
+            .borrow_mut()
+            .insert(name.to_string(), win.clone());
+        win.present();
+    }
+
     fn show_error(&self, text: &str) {
         self.banner.set_text(text);
         self.banner.set_visible(true);
@@ -382,8 +604,11 @@ impl Host {
         match e {
             Effect::Toast(t) => self.show_toast(&t),
             Effect::Quit => self.window.close(),
-            Effect::Open(_) | Effect::Close(_) => {
-                eprintln!("msdk-run: open/close of other surfaces is not implemented yet")
+            Effect::Open(name) => self.open_surface(&name),
+            Effect::Close(name) => {
+                if let Some(w) = self.extra.borrow_mut().remove(&name) {
+                    w.destroy();
+                }
             }
             Effect::Call {
                 service,
@@ -392,6 +617,11 @@ impl Host {
                 error,
             } => {
                 let tx = self.tx.clone();
+                if let Some(sv) = &self.services
+                    && sv.call(&service, &args, then.clone(), error.clone(), tx.clone())
+                {
+                    return;
+                }
                 let fail =
                     move |tx: &UnboundedSender<Event>, error: &Option<String>, why: String| {
                         if let Some(m) = error {

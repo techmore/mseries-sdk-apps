@@ -142,6 +142,7 @@ pub const COMPONENTS: &[Component] = &[
             opt("entry_kind", Kind::Enum("entry_kind")),
             opt("on_change", Kind::Msg(Payload::Text)),
             opt("on_submit", Kind::Msg(Payload::None)),
+            opt("enter_sends", Kind::Bool),
         ],
     },
     Component {
@@ -197,7 +198,34 @@ pub const COMPONENTS: &[Component] = &[
             req("empty", Kind::Node),
             opt("on_select", Kind::Msg(Payload::Text)),
             opt("direction", Kind::Enum("direction")),
+            opt("group_by", Kind::Field),
         ],
+    },
+    Component {
+        name: "Transcript",
+        about: "A conversation: entries with a `kind` (user, assistant, code, tool, permission). Permission entries show Allow and Deny buttons that send the entry id. The record needs id, kind and text.",
+        props: &[
+            req("items", Kind::Bind(Want::List)),
+            req("key", Kind::Field),
+            opt("on_allow", Kind::Msg(Payload::Text)),
+            opt("on_deny", Kind::Msg(Payload::Text)),
+            opt("empty", Kind::Node),
+        ],
+    },
+    Component {
+        name: "Tabs",
+        about: "A segmented switcher for a few pages. Put it in a window's header to get tabs in the title bar; it shows `options` and sets the bound text state.",
+        props: &[
+            req("label", Kind::Str),
+            req("bind", Kind::Bind(Want::Text)),
+            req("options", Kind::Strs),
+            opt("on_change", Kind::Msg(Payload::Text)),
+        ],
+    },
+    Component {
+        name: "Stack",
+        about: "Pages: shows the child whose `id` equals the bound text state (pair it with Tabs). Every child needs an id.",
+        props: &[req("bind", Kind::Bind(Want::Text)), opt("children", Kind::Nodes)],
     },
     Component {
         name: "Card",
@@ -232,7 +260,7 @@ pub const COMPONENTS: &[Component] = &[
     Component {
         name: "Split",
         about: "Sidebar and detail layout.",
-        props: &[req("sidebar", Kind::Node), req("content", Kind::Node)],
+        props: &[req("sidebar", Kind::Node), req("content", Kind::Node), opt("autohide", Kind::Bool)],
     },
     Component {
         name: "Custom",
@@ -319,13 +347,6 @@ pub const SERVICES: &[Service] = &[
         about: "Focus (and unminimise) a window.",
     },
     Service {
-        name: "windows.close",
-        capability: "windows",
-        args: &[("id", Want::Text)],
-        then: Payload::None,
-        about: "Ask a window to close.",
-    },
-    Service {
         name: "windows.launch",
         capability: "windows",
         args: &[("app", Want::Text)],
@@ -354,10 +375,121 @@ pub const FEEDS: &[Feed] = &[Feed {
 pub const ACTIONS: &[&str] =
     &["set", "toggle", "add", "append", "patch", "remove", "clear", "call", "toast", "open", "close", "quit", "when"];
 
+/// Services and feeds that Rust crates (or a manifest file) add at run time, for example the T3 client's `t3.threads`.
+static REGISTRY: std::sync::RwLock<(Vec<&'static Service>, Vec<&'static Feed>)> =
+    std::sync::RwLock::new((Vec::new(), Vec::new()));
+
+fn leak(s: &str) -> &'static str {
+    Box::leak(s.to_string().into_boxed_str())
+}
+
+pub fn register_service(s: Service) {
+    if let Ok(mut r) = REGISTRY.write()
+        && !r.0.iter().any(|x| x.name == s.name)
+        && !SERVICES.iter().any(|x| x.name == s.name)
+    {
+        r.0.push(Box::leak(Box::new(s)));
+    }
+}
+
+pub fn register_feed(f: Feed) {
+    if let Ok(mut r) = REGISTRY.write()
+        && !r.1.iter().any(|x| x.name == f.name)
+        && !FEEDS.iter().any(|x| x.name == f.name)
+    {
+        r.1.push(Box::leak(Box::new(f)));
+    }
+}
+
+/// Built-in services followed by registered ones.
+pub fn services() -> Vec<&'static Service> {
+    let mut v: Vec<&'static Service> = SERVICES.iter().collect();
+    if let Ok(r) = REGISTRY.read() {
+        v.extend(r.0.iter().copied());
+    }
+    v
+}
+
+pub fn feeds() -> Vec<&'static Feed> {
+    let mut v: Vec<&'static Feed> = FEEDS.iter().collect();
+    if let Ok(r) = REGISTRY.read() {
+        v.extend(r.1.iter().copied());
+    }
+    v
+}
+
 pub fn service(name: &str) -> Option<&'static Service> {
-    SERVICES.iter().find(|s| s.name == name)
+    services().into_iter().find(|s| s.name == name)
 }
 
 pub fn feed(name: &str) -> Option<&'static Feed> {
-    FEEDS.iter().find(|f| f.name == name)
+    feeds().into_iter().find(|f| f.name == name)
+}
+
+fn want_of(s: &str) -> Result<Want, String> {
+    Ok(match s {
+        "text" => Want::Text,
+        "bool" => Want::Bool,
+        "number" => Want::Number,
+        "list" => Want::List,
+        "any" => Want::Any,
+        other => return Err(format!("unknown argument type `{other}`")),
+    })
+}
+
+/// Registers the services and feeds a manifest declares. Format:
+/// `{"services":[{"name","capability","about","then":"none|text|bool","args":{"thread":"text"}}],
+///   "feeds":[{"name","capability","about","fields":{"id":"text"}}]}`.
+/// A crate that provides services ships this file next to its code so `msdk check` knows them without loading the crate.
+pub fn load_manifest(v: &serde_json::Value) -> Result<usize, String> {
+    let mut n = 0;
+    let known_cap = |c: &str| CAPABILITIES.contains(&c);
+    for s in v["services"].as_array().into_iter().flatten() {
+        let name = s["name"].as_str().ok_or("a service needs a name")?;
+        let cap = s["capability"].as_str().ok_or_else(|| format!("{name}: capability missing"))?;
+        if !known_cap(cap) {
+            return Err(format!("{name}: unknown capability `{cap}`"));
+        }
+        let mut args: Vec<(&'static str, Want)> = Vec::new();
+        for (k, t) in s["args"].as_object().into_iter().flatten() {
+            args.push((leak(k), want_of(t.as_str().unwrap_or(""))?));
+        }
+        let then = match s["then"].as_str().unwrap_or("none") {
+            "none" => Payload::None,
+            "text" => Payload::Text,
+            "bool" => Payload::Bool,
+            other => return Err(format!("{name}: bad then payload `{other}`")),
+        };
+        register_service(Service {
+            name: leak(name),
+            capability: leak(cap),
+            args: Box::leak(args.into_boxed_slice()),
+            then,
+            about: leak(s["about"].as_str().unwrap_or("")),
+        });
+        n += 1;
+    }
+    for f in v["feeds"].as_array().into_iter().flatten() {
+        let name = f["name"].as_str().ok_or("a feed needs a name")?;
+        let cap = f["capability"].as_str().ok_or_else(|| format!("{name}: capability missing"))?;
+        if !known_cap(cap) {
+            return Err(format!("{name}: unknown capability `{cap}`"));
+        }
+        let mut fields: Vec<(&'static str, &'static str)> = Vec::new();
+        for (k, t) in f["fields"].as_object().into_iter().flatten() {
+            let t = t.as_str().unwrap_or("");
+            if !SCALARS.contains(&t) {
+                return Err(format!("{name}: field `{k}` has bad type `{t}`"));
+            }
+            fields.push((leak(k), leak(t)));
+        }
+        register_feed(Feed {
+            name: leak(name),
+            capability: leak(cap),
+            fields: Box::leak(fields.into_boxed_slice()),
+            about: leak(f["about"].as_str().unwrap_or("")),
+        });
+        n += 1;
+    }
+    Ok(n)
 }

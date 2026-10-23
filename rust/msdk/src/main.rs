@@ -36,6 +36,7 @@ fn main() -> ExitCode {
             }
         },
         Some("complete") if args.len() > 2 => {
+            load_services(Some(&args[1]), &args);
             let doc = match load(&args[1]) {
                 Ok((d, _)) => d,
                 Err(e) => {
@@ -49,6 +50,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some("fmt") if args.len() > 1 => run_fmt(&args[1..]),
+        Some("render") if args.len() > 1 => run_render(&args[1..]),
         Some("text") if args.len() > 1 => convert(&args[1], true),
         Some("json") if args.len() > 1 => convert(&args[1], false),
         Some("gate") if args.len() > 1 => run_gate(&args[1..]),
@@ -61,7 +63,7 @@ fn main() -> ExitCode {
         Some("new") if args.len() > 2 => run_new(&args[1..]),
         _ => {
             eprintln!(
-                "usage: msdk check [--json] <file.ui.json>...\n       msdk describe [Name] | explain <code> | complete <file> <json-pointer>\n       msdk gate <file.ui.json> [gates.json]\n       msdk fmt [--check|--stdout] <file.msdk>... | text <file.ui.json> | json <file.msdk>\n       msdk templates | new <template> <dir> [--text] [--id ID] [--name NAME]\n       msdk schema | components | tokens [--json]"
+                "usage: msdk check [--json] <file.ui.json>...\n       msdk describe [Name] | explain <code> | complete <file> <json-pointer>\n       msdk gate <file.ui.json> [gates.json]\n       msdk render <file> [--surface NAME] [--state JSON] [--json]\n       msdk fmt [--check|--stdout] <file.msdk>... | text <file.ui.json> | json <file.msdk>\n       msdk templates | new <template> <dir> [--text] [--id ID] [--name NAME]\n       msdk schema | components | tokens [--json]"
             );
             ExitCode::from(2)
         }
@@ -77,7 +79,8 @@ fn run_check(args: &[String]) -> ExitCode {
     let json = args.iter().any(|a| a == "--json");
     let mut failed = false;
     let mut report = Vec::new();
-    for file in args.iter().filter(|a| *a != "--json") {
+    for file in files_of(args) {
+        load_services(Some(file), args);
         let (doc, parsed) = match load(file) {
             Ok(v) => v,
             Err(e) => {
@@ -121,6 +124,7 @@ fn run_check(args: &[String]) -> ExitCode {
 }
 
 fn run_gate(args: &[String]) -> ExitCode {
+    load_services(args.first().map(String::as_str), args);
     let read = |p: &str| {
         std::fs::read_to_string(p)
             .map_err(|e| e.to_string())
@@ -270,4 +274,83 @@ fn run_fmt(args: &[String]) -> ExitCode {
         }
     }
     if bad { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+}
+
+/// Loads plug-in service manifests: every `*.services.json` next to `file`, plus any `--services path` flags.
+fn load_services(file: Option<&str>, args: &[String]) {
+    let mut paths: Vec<std::path::PathBuf> = Vec::new();
+    if let Some(dir) = file.and_then(|f| std::path::Path::new(f).parent()) {
+        let dir = if dir.as_os_str().is_empty() { std::path::Path::new(".") } else { dir };
+        if let Ok(rd) = std::fs::read_dir(dir) {
+            paths.extend(rd.flatten().map(|e| e.path()).filter(|p| p.to_string_lossy().ends_with(".services.json")));
+        }
+    }
+    for (i, a) in args.iter().enumerate() {
+        if a == "--services"
+            && let Some(p) = args.get(i + 1)
+        {
+            paths.push(p.into());
+        }
+    }
+    for p in paths {
+        match std::fs::read_to_string(&p)
+            .map_err(|e| e.to_string())
+            .and_then(|t| serde_json::from_str(&t).map_err(|e| e.to_string()))
+            .and_then(|v| msdk::vocab::load_manifest(&v))
+        {
+            Ok(_) => {}
+            Err(e) => eprintln!("{}: {e}", p.display()),
+        }
+    }
+}
+
+/// The positional arguments with flags (and the value after `--services`) removed.
+fn files_of(args: &[String]) -> Vec<&String> {
+    let mut out = Vec::new();
+    let mut skip = false;
+    for a in args {
+        if skip {
+            skip = false;
+        } else if a == "--services" {
+            skip = true;
+        } else if !a.starts_with("--") {
+            out.push(a);
+        }
+    }
+    out
+}
+
+/// `msdk render app.msdk [--surface main] [--state '{"key":value}'] [--json]`: what the app shows, headless.
+fn run_render(args: &[String]) -> ExitCode {
+    let file = args[0].as_str();
+    load_services(Some(file), args);
+    let doc = match load(file) {
+        Ok((d, _)) => d,
+        Err(e) => {
+            eprintln!("{file}: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let opt = |flag: &str| args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
+    let surface = opt("--surface").unwrap_or_else(|| "main".into());
+    let overrides: Option<msdk::logic::Store> =
+        match opt("--state").map(|j| serde_json::from_str::<msdk::logic::Store>(&j)) {
+            Some(Ok(m)) => Some(m),
+            Some(Err(e)) => {
+                eprintln!("--state must be a JSON object: {e}");
+                return ExitCode::FAILURE;
+            }
+            None => None,
+        };
+    match msdk::inspect::render(&doc, &surface, overrides.as_ref()) {
+        Ok(tree) if args.iter().any(|a| a == "--json") => print_json(&tree),
+        Ok(tree) => {
+            print!("{}", msdk::inspect::outline(&tree));
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::FAILURE
+        }
+    }
 }

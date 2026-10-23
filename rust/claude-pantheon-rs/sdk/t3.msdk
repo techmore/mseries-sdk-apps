@@ -1,0 +1,190 @@
+// Claude for elementary OS (the T3 port), written in the SDK's text form.
+// Server access goes through the plug-in services declared in t3.services.json; everything else is rules.
+app "Claude for elementary OS" id io.github.techmore.ClaudePantheonRs icon claude-pantheon-rs
+needs "network:localhost", "network", "notifications", "filesystem:data"
+
+type Thread { id: Text, title: Text, project: Text, branch: Text, provider: Text, badge: Text }
+type Line { id: Text, kind: Text, text: Text }
+type Account { id: Text, name: Text, status: Text, session_pct: Number, weekly_pct: Number, session_text: Text, weekly_text: Text }
+type Issue { id: Text, repo: Text, number: Number, title: Text, lane: Text, priority: Text }
+type Status { id: Text, running: Number, waiting: Number, nearest: Text, oldest_prompt: Text }
+
+state {
+  threads: [Thread]
+  lines: [Line]
+  accounts: [Account]
+  issues: [Issue]
+  status: [Status]
+  selected: Text
+  has_thread: Bool
+  draft: Text
+  search: Text
+  provider: Text
+  routing: Text
+  pending_issue: Text
+  runner_on: Bool
+  notifications_on: Bool
+  page: Text
+}
+initial {
+  provider: "auto"
+  page: "Chat"
+  notifications_on: true
+}
+persist provider, runner_on, notifications_on
+
+feed threads = t3.threads
+feed lines = t3.entries
+feed accounts = t3.accounts
+feed issues = github.issues
+feed status = t3.status
+
+message NewThread, ThreadCreated(Text), SelectThread(Text), EditDraft(Text), Send, Search(Text)
+message AllowOnce(Text), Deny(Text), AllowOldest(Text)
+message SetPage(Text), ShowTray
+message StartIssue(Text), Routed(Text), RouteFailed(Text), Started(Text), ToggleRunner(Bool)
+message SetProvider(Text), SetNotifications(Bool), Reconnect
+
+on NewThread {
+  call t3.new_thread { provider: "{provider}" } then ThreadCreated
+}
+on ThreadCreated {
+  selected = $payload
+  has_thread = true
+  page = "Chat"
+  call t3.open { thread: "{selected}" }
+}
+on SelectThread {
+  selected = $payload
+  has_thread = true
+  page = "Chat"
+  call t3.open { thread: $payload }
+}
+on EditDraft { draft = $payload }
+on Search { search = $payload }
+on Send {
+  when has_thread {
+    call t3.send { thread: "{selected}", text: "{draft}" }
+    draft = ""
+  }
+}
+on AllowOnce { call t3.answer { id: $payload, decision: "allow_once" } }
+on Deny { call t3.answer { id: $payload, decision: "deny" } }
+// The row id is the status row; the plug-in answers the oldest waiting prompt.
+on AllowOldest { call t3.answer { id: $payload, decision: "allow_once" } }
+on SetPage { page = $payload }
+on ShowTray { open tray }
+on StartIssue {
+  pending_issue = $payload
+  routing = "Routing..."
+  call router.route { issue: $payload } then Routed error RouteFailed
+}
+on Routed {
+  routing = $payload
+  call t3.start_issue { issue: "{pending_issue}", plan: $payload } then Started
+}
+on RouteFailed {
+  routing = $payload
+  toast "Could not route that issue"
+}
+on Started {
+  selected = $payload
+  has_thread = true
+  page = "Chat"
+  toast "Started"
+}
+on ToggleRunner {
+  runner_on = $payload
+  call t3.runner { on: $payload }
+}
+on SetProvider { provider = $payload }
+on SetNotifications { notifications_on = $payload }
+on Reconnect { call t3.reconnect }
+
+window "Claude for elementary OS" {
+  header {
+    Tabs("Pages", bind: page, options: ["Chat", "Usage", "Work", "Settings"], onChange: SetPage)
+    Button("New thread", icon: "list-add", shortcut: "Ctrl+N") { NewThread }
+    Button("Reconnect", icon: "view-refresh", style: flat) { Reconnect }
+    Button("Status", icon: "dialog-information", style: flat) { ShowTray }
+  }
+  Split(autohide: true) {
+    sidebar {
+      VStack(spacing: small) {
+        SearchField("Search threads", bind: search, onChange: Search)
+        List(threads, key: id, groupBy: project, onSelect: SelectThread) {
+          row {
+            HStack(spacing: small) {
+              Text("{title}", style: body)
+              Text("{branch}", style: caption)
+              Text("{badge}", style: caption)
+            }
+          }
+          empty { EmptyState("No threads yet", description: "Press Ctrl+N to start one.", icon: "mail-message-new") }
+        }
+      }
+    }
+    content {
+      Stack(bind: page) {
+        VStack(spacing: small) {
+          Transcript(lines, key: id, onAllow: AllowOnce, onDeny: Deny) {
+            empty { EmptyState("Pick a thread", description: "Or start a new one.", icon: "mail-message-new") }
+          }
+          HStack(spacing: small) {
+            TextEditor("Message", bind: draft, onChange: EditDraft, onSubmit: Send, enterSends: true)
+            Button("Send", icon: "mail-send", style: suggested) { Send }
+          }
+        }.id("Chat")
+        VStack(spacing: medium) {
+          Text("Accounts and usage", style: title)
+          List(accounts, key: id) {
+            row {
+              Card("{name}") {
+                Text("{status}", style: caption)
+                Gauge("Session", bind: session_pct, stateText: "{session_text}", max: 100)
+                Gauge("Weekly", bind: weekly_pct, stateText: "{weekly_text}", max: 100)
+              }
+            }
+            empty { EmptyState("No accounts connected", description: "Pair the T3 server to see your providers.", icon: "avatar-default") }
+          }
+        }.id("Usage")
+        VStack(spacing: medium) {
+          Text("Work", style: title)
+          Switch("Run issues automatically", bind: runner_on, onChange: ToggleRunner)
+          Text("{routing}", style: caption)
+          List(issues, key: id) {
+            row {
+              HStack(spacing: small) {
+                Text("#{number} {title}", style: body)
+                Text("{lane} {priority}", style: caption)
+                Button("Start", style: suggested) { StartIssue }
+              }
+            }
+            empty { EmptyState("No issues ready", description: "Label an issue agent:ready to see it here.", icon: "emblem-default") }
+          }
+        }.id("Work")
+        VStack(spacing: medium) {
+          Text("Settings", style: title)
+          Dropdown("Default provider", bind: provider, options: ["auto", "claude", "codex", "grok", "opencode"], onChange: SetProvider)
+          Switch("Desktop notifications", bind: notifications_on, onChange: SetNotifications)
+        }.id("Settings")
+      }
+    }
+  }
+}
+
+popover tray {
+  VStack(spacing: small) {
+    Text("Agents", style: heading)
+    List(status, key: id) {
+      row {
+        VStack(spacing: small) {
+          Text("{running} running, {waiting} waiting", style: body)
+          Text("{nearest}", style: caption)
+          Button("Allow oldest prompt", style: suggested) { AllowOldest }
+        }
+      }
+      empty { EmptyState("Not connected") }
+    }
+  }
+}

@@ -62,6 +62,8 @@ struct Cx {
 #[derive(Clone, Default)]
 struct Scope {
     row: Option<Fields>,
+    /// The nearest enclosing `visible_if`, so controls on different pages are not counted together.
+    vis: Option<String>,
 }
 
 impl Cx {
@@ -200,6 +202,22 @@ fn check_app(app: Option<&Value>, cx: &mut Cx) {
     for k in ["id", "name", "icon"] {
         if !app.get(k).is_some_and(Value::is_string) {
             cx.err(&format!("/app/{k}"), "missing-property", format!("`app.{k}` must be a string"), None);
+        }
+    }
+    for k in app.keys() {
+        if !["id", "name", "icon", "version", "license", "website"].contains(&k.as_str()) {
+            let known = ["id", "name", "icon", "version", "license", "website"];
+            cx.err(
+                &format!("/app/{k}"),
+                "unknown-property",
+                format!("`app` has no property `{k}`"),
+                suggest(k, &known),
+            );
+        }
+    }
+    for k in ["version", "license", "website"] {
+        if app.get(k).is_some_and(|v| !v.is_string()) {
+            cx.err(&format!("/app/{k}"), "wrong-type", format!("`app.{k}` must be text"), None);
         }
     }
     if let Some(id) = app.get("id").and_then(Value::as_str) {
@@ -520,9 +538,16 @@ fn check_value(
         }
         Kind::Node => node(v, path, scope, depth + 1, cx),
         Kind::Nodes => match v.as_array() {
-            Some(items) => {
-                items.iter().enumerate().for_each(|(i, n)| node(n, &format!("{path}/{i}"), scope, depth + 1, cx))
-            }
+            Some(items) => items.iter().enumerate().for_each(|(i, n)| {
+                // Pages of a Stack are never visible together, so each page is its own scope for the primary-action rule.
+                let mut sc = scope.clone();
+                if owner == "Stack"
+                    && let Some(id) = n.get("id").and_then(Value::as_str)
+                {
+                    sc.vis = Some(format!("stack:{id}"));
+                }
+                node(n, &format!("{path}/{i}"), &sc, depth + 1, cx)
+            }),
             None => cx.err(path, "wrong-type", format!("`{}` must be an array of components", p.name), None),
         },
         Kind::Strs => {
@@ -639,10 +664,15 @@ fn node(v: &Value, path: &str, scope: &Scope, depth: usize, cx: &mut Cx) {
     {
         cx.err(&format!("{path}/id"), "duplicate-id", format!("id `{id}` is used twice"), None);
     }
+    let mut base = scope.clone();
+    if let Some(v) = obj.get("visible_if").and_then(Value::as_str) {
+        base.vis = Some(v.to_string());
+    }
+    let scope = &base;
     // A List's rows see the fields of its record type; everything else sees the outer scope.
     let mut item_type: Option<String> = None;
     let mut row_scope = scope.clone();
-    if ty == "List"
+    if matches!(ty, "List" | "Transcript")
         && let Some(items) = obj.get("items").and_then(Value::as_str)
         && let Some(t) = cx.lookup(items, scope)
         && let Some(rec) = t.strip_prefix("list<").and_then(|r| r.strip_suffix('>'))
@@ -674,11 +704,38 @@ fn node(v: &Value, path: &str, scope: &Scope, depth: usize, cx: &mut Cx) {
         let sc = if ty == "List" && p.name == "row" { &row_scope } else { scope };
         check_value(p, val, &vp, sc, depth, ty, item_type.as_deref(), cx);
     }
-    design_rules(ty, obj, path, cx);
+    if ty == "Stack" {
+        for (i, c) in obj.get("children").and_then(Value::as_array).into_iter().flatten().enumerate() {
+            if c.get("id").and_then(Value::as_str).is_none() {
+                cx.err(
+                    &format!("{path}/children/{i}"),
+                    "stack-child-needs-id",
+                    "every Stack child needs an `id`, the page name Tabs sets".into(),
+                    Some("add .id(\"Chat\") after the child".into()),
+                );
+            }
+        }
+    }
+    design_rules(ty, obj, path, scope, cx);
+    if ty == "Transcript"
+        && let Some(rec) = &item_type
+    {
+        let fields = cx.types.get(rec).cloned().unwrap_or_default();
+        for f in ["id", "kind", "text"] {
+            if fields.get(f).map(String::as_str) != Some("text") {
+                cx.err(
+                    &format!("{path}/items"),
+                    "transcript-record-mismatch",
+                    format!("record `{rec}` needs `{f}: text` for a Transcript"),
+                    Some(format!("add \"{f}\": \"text\" to types/{rec}")),
+                );
+            }
+        }
+    }
 }
 
 /// HIG rules from `.agents/skills/elementaryos-mseries-ui-specialist` that a machine can enforce.
-fn design_rules(ty: &str, obj: &Map<String, Value>, path: &str, cx: &mut Cx) {
+fn design_rules(ty: &str, obj: &Map<String, Value>, path: &str, scope: &Scope, cx: &mut Cx) {
     let style = obj.get("button_style").and_then(Value::as_str);
     if matches!(ty, "Button" | "IconButton") {
         if style == Some("destructive") && !obj.contains_key("confirm") {
@@ -690,9 +747,7 @@ fn design_rules(ty: &str, obj: &Map<String, Value>, path: &str, cx: &mut Cx) {
             );
         }
         if style == Some("suggested") {
-            *cx.suggested
-                .entry(obj.get("visible_if").and_then(Value::as_str).unwrap_or("").to_string())
-                .or_insert(0) += 1;
+            *cx.suggested.entry(scope.vis.clone().unwrap_or_default()).or_insert(0) += 1;
         }
     }
     if ty == "Entry"
@@ -763,7 +818,7 @@ fn check_feeds(feeds: Option<&Value>, _caps: Option<&Value>, cx: &mut Cx) {
             continue;
         };
         let Some(feed) = vocab::feed(name) else {
-            let names: Vec<&str> = vocab::FEEDS.iter().map(|f| f.name).collect();
+            let names: Vec<&str> = vocab::feeds().into_iter().map(|f| f.name).collect();
             cx.err(
                 &path,
                 "unknown-feed",
@@ -1088,7 +1143,7 @@ fn check_actions(v: &Value, path: &str, payload: Payload, cx: &mut Cx) {
                     continue;
                 };
                 let Some(svc) = vocab::service(name) else {
-                    let names: Vec<&str> = vocab::SERVICES.iter().map(|s| s.name).collect();
+                    let names: Vec<&str> = vocab::services().into_iter().map(|s| s.name).collect();
                     cx.err(
                         &format!("{ap}/call"),
                         "unknown-service",

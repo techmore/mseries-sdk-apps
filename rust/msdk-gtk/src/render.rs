@@ -99,6 +99,7 @@ fn build(node: &Value, d: &D, row: &Row) -> Built {
             content.append(&gtk::Label::new(s(node, "label")));
             b.set_child(Some(&content));
             style_button(&b, s(node, "button_style"));
+            b.set_valign(gtk::Align::Center);
             wire_click(&b, node, d, row);
             a11y(&b, s(node, "label"));
             b.upcast()
@@ -182,6 +183,82 @@ fn build(node: &Value, d: &D, row: &Row) -> Built {
             dd.upcast()
         }
         "List" => list(node, d, row, &mut refresh),
+        "Transcript" => transcript(node, d, row, &mut refresh),
+        "Tabs" => {
+            let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+            row_box.add_css_class("linked");
+            let (bind, on) = (
+                s(node, "bind").unwrap_or("").to_string(),
+                s(node, "on_change").map(String::from),
+            );
+            let mut group: Option<gtk::ToggleButton> = None;
+            let mut buttons: Vec<(String, gtk::ToggleButton)> = Vec::new();
+            for opt in node
+                .get("options")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+            {
+                let b = gtk::ToggleButton::with_label(opt);
+                if let Some(g) = &group {
+                    b.set_group(Some(g));
+                } else {
+                    group = Some(b.clone());
+                }
+                let (dd, bk, name, on) = (d.clone(), bind.clone(), opt.to_string(), on.clone());
+                b.connect_toggled(move |w| {
+                    if !w.is_active()
+                        || dd
+                            .get(&bk)
+                            .and_then(|v| v.as_str().map(String::from))
+                            .as_deref()
+                            == Some(name.as_str())
+                    {
+                        return;
+                    }
+                    dd.set(&bk, json!(name));
+                    if let Some(m) = &on {
+                        dd.send(m, Some(json!(name)));
+                    }
+                });
+                row_box.append(&b);
+                buttons.push((opt.to_string(), b));
+            }
+            refresh.push(Rc::new(move |st| {
+                let cur = st.get(&bind).map(display).unwrap_or_default();
+                for (name, b) in &buttons {
+                    if *name == cur && !b.is_active() {
+                        b.set_active(true);
+                    }
+                }
+            }));
+            row_box.upcast()
+        }
+        "Stack" => {
+            let stack = gtk::Stack::new();
+            stack.set_transition_type(gtk::StackTransitionType::Crossfade);
+            stack.set_vexpand(true);
+            for c in node
+                .get("children")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                let ch = build(c, d, row);
+                refresh.extend(ch.refresh);
+                stack.add_named(&ch.widget, Some(s(c, "id").unwrap_or("")));
+            }
+            let bind = s(node, "bind").unwrap_or("").to_string();
+            let st2 = stack.clone();
+            refresh.push(Rc::new(move |st| {
+                let cur = st.get(&bind).map(display).unwrap_or_default();
+                if st2.child_by_name(&cur).is_some() {
+                    st2.set_visible_child_name(&cur);
+                }
+            }));
+            stack.upcast()
+        }
         "Card" => {
             let b = gtk::Box::new(gtk::Orientation::Vertical, 6);
             b.add_css_class("msdk-card");
@@ -277,23 +354,58 @@ fn build(node: &Value, d: &D, row: &Row) -> Built {
             b.upcast()
         }
         "Split" => {
-            let paned = gtk::Paned::new(gtk::Orientation::Horizontal);
+            // Panes run edge to edge; each carries its own padding. The sidebar is tinted and has a divider.
+            let (px, py) = (
+                msdk::tokens::layout_px("content_padding_x"),
+                msdk::tokens::layout_px("content_padding_y"),
+            );
+            let (mut side, mut main) = (None, None);
             for (slot, start) in [("sidebar", true), ("content", false)] {
                 if let Some(n) = node.get(slot) {
                     let ch = build(n, d, row);
                     refresh.extend(ch.refresh);
+                    let pane = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                    ch.widget.set_margin_start(px);
+                    ch.widget.set_margin_end(px);
+                    ch.widget.set_margin_top(py);
+                    ch.widget.set_margin_bottom(py);
+                    ch.widget.set_vexpand(true);
+                    pane.append(&ch.widget);
+                    pane.set_size_request(
+                        if start {
+                            msdk::tokens::layout_px("sidebar_width") - 20
+                        } else {
+                            -1
+                        },
+                        -1,
+                    );
                     if start {
-                        paned.set_start_child(Some(&ch.widget));
-                        paned.set_resize_start_child(false);
-                        ch.widget.set_size_request(260, -1);
+                        pane.add_css_class("msdk-sidebar");
+                        side = Some(pane);
                     } else {
-                        paned.set_end_child(Some(&ch.widget));
-                        ch.widget.set_hexpand(true);
+                        pane.set_hexpand(true);
+                        main = Some(pane);
                     }
                 }
             }
-            paned.set_position(280);
-            paned.upcast()
+            match (side, main) {
+                (Some(side), Some(main))
+                    if node.get("autohide").and_then(Value::as_bool) == Some(true)
+                        && msdk::tokens::feature("sidebar_autohide") =>
+                {
+                    crate::autohide::build(&side, &main)
+                }
+                (Some(side), Some(main)) => {
+                    let paned = gtk::Paned::new(gtk::Orientation::Horizontal);
+                    paned.set_start_child(Some(&side));
+                    paned.set_resize_start_child(false);
+                    paned.set_shrink_start_child(false);
+                    paned.set_end_child(Some(&main));
+                    paned.set_position(msdk::tokens::layout_px("sidebar_width"));
+                    paned.upcast()
+                }
+                _ => gtk::Box::new(gtk::Orientation::Horizontal, 0).upcast(),
+            }
         }
         _ => {
             let l = gtk::Label::new(Some(&format!(
@@ -424,6 +536,23 @@ fn entry(node: &Value, d: &D, refresh: &mut Vec<Refresh>) -> gtk::Widget {
             .right_margin(8)
             .build();
         a11y(&view, s(node, "label"));
+        if node.get("enter_sends").and_then(Value::as_bool) == Some(true)
+            && let Some(m) = on_submit.clone()
+        {
+            // Enter sends; Shift+Enter inserts a line break.
+            let (dd, key) = (d.clone(), gtk::EventControllerKey::new());
+            key.connect_key_pressed(move |_, k, _, state| {
+                if matches!(k, gtk::gdk::Key::Return | gtk::gdk::Key::KP_Enter)
+                    && !state.contains(gtk::gdk::ModifierType::SHIFT_MASK)
+                {
+                    dd.send(&m, None);
+                    gtk::glib::Propagation::Stop
+                } else {
+                    gtk::glib::Propagation::Proceed
+                }
+            });
+            view.add_controller(key);
+        }
         let buf = view.buffer();
         let (dd, bk) = (d.clone(), bind.clone());
         buf.connect_changed(move |b| {
@@ -450,9 +579,13 @@ fn entry(node: &Value, d: &D, refresh: &mut Vec<Refresh>) -> gtk::Widget {
         }));
         let sw = gtk::ScrolledWindow::builder()
             .child(&view)
-            .vexpand(true)
+            .vexpand(false)
             .hexpand(true)
+            .min_content_height(72)
+            .max_content_height(190)
+            .propagate_natural_height(true)
             .build();
+        sw.add_css_class("msdk-editor");
         return sw.upcast();
     }
     let e: gtk::Entry = if kind == "search" {
@@ -524,6 +657,7 @@ fn list(node: &Value, d: &D, row: &Row, refresh: &mut Vec<Refresh>) -> gtk::Widg
         node.get("row").cloned().unwrap_or(Value::Null),
         s(node, "on_select").map(String::from),
     );
+    let group_by = s(node, "group_by").map(String::from);
     let last: Rc<RefCell<Option<Value>>> = Rc::new(RefCell::new(None));
     let kids: Rc<RefCell<Vec<Kid>>> = Rc::new(RefCell::new(Vec::new()));
     let d = d.clone();
@@ -539,7 +673,42 @@ fn list(node: &Value, d: &D, row: &Row, refresh: &mut Vec<Refresh>) -> gtk::Widg
             if let Some(e) = &empty_widget {
                 e.set_visible(arr.is_empty());
             }
+            // Sections: items are shown under a header per distinct `group_by` value, in order of first appearance.
+            let arr = match &group_by {
+                Some(g) => {
+                    let mut order: Vec<String> = Vec::new();
+                    for it in &arr {
+                        let v = it.get(g).map(display).unwrap_or_default();
+                        if !order.contains(&v) {
+                            order.push(v);
+                        }
+                    }
+                    let mut out = Vec::new();
+                    for v in order {
+                        out.push(json!({ "__section": v.clone() }));
+                        out.extend(
+                            arr.iter()
+                                .filter(|it| it.get(g).map(display).unwrap_or_default() == v)
+                                .cloned(),
+                        );
+                    }
+                    out
+                }
+                None => arr,
+            };
             for item in arr {
+                if let Some(title) = item.get("__section").and_then(Value::as_str) {
+                    let h = gtk::Label::builder()
+                        .label(if title.is_empty() { "Other" } else { title })
+                        .xalign(0.0)
+                        .margin_top(8)
+                        .build();
+                    h.add_css_class("msdk-caption");
+                    h.add_css_class("heading");
+                    list_box.append(&h);
+                    kids.borrow_mut().push((h.upcast(), Vec::new()));
+                    continue;
+                }
                 let key = item.get(&key_field).map(display);
                 let r = Row {
                     value: Some(item),
@@ -563,4 +732,102 @@ fn list(node: &Value, d: &D, row: &Row, refresh: &mut Vec<Refresh>) -> gtk::Widg
         }
     }));
     holder.upcast()
+}
+
+/// A conversation: each entry is drawn by its `kind`. Permission entries carry Allow and Deny buttons that send the entry id.
+fn transcript(node: &Value, d: &D, row: &Row, refresh: &mut Vec<Refresh>) -> gtk::Widget {
+    let column = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    column.set_margin_start(msdk::tokens::layout_px("content_padding_x"));
+    column.set_margin_end(msdk::tokens::layout_px("content_padding_x"));
+    column.set_margin_top(8);
+    column.set_margin_bottom(8);
+    let scroller = gtk::ScrolledWindow::builder()
+        .child(&column)
+        .vexpand(true)
+        .hexpand(true)
+        .build();
+    let empty = node.get("empty").map(|n| build(n, d, row));
+    let overlay = gtk::Overlay::new();
+    overlay.set_child(Some(&scroller));
+    if let Some(e) = &empty {
+        overlay.add_overlay(&e.widget);
+        refresh.extend(e.refresh.iter().cloned());
+    }
+    let empty_widget = empty.map(|e| e.widget);
+    let items_key = s(node, "items").unwrap_or("").to_string();
+    let (on_allow, on_deny) = (
+        s(node, "on_allow").map(String::from),
+        s(node, "on_deny").map(String::from),
+    );
+    let last: Rc<RefCell<Option<Value>>> = Rc::new(RefCell::new(None));
+    let d = d.clone();
+    refresh.push(Rc::new(move |st| {
+        let items = st.get(&items_key).cloned().unwrap_or(json!([]));
+        if last.borrow().as_ref() == Some(&items) {
+            return;
+        }
+        while let Some(c) = column.first_child() {
+            column.remove(&c);
+        }
+        let arr = items.as_array().cloned().unwrap_or_default();
+        if let Some(e) = &empty_widget {
+            e.set_visible(arr.is_empty());
+        }
+        for it in &arr {
+            let text = it.get("text").map(display).unwrap_or_default();
+            let id = it.get("id").map(display).unwrap_or_default();
+            let label = |css: &str, xalign: f32| {
+                let l = gtk::Label::builder()
+                    .label(&text)
+                    .wrap(true)
+                    .wrap_mode(gtk::pango::WrapMode::WordChar)
+                    .xalign(xalign)
+                    .selectable(true)
+                    .build();
+                l.add_css_class(css);
+                l
+            };
+            let w: gtk::Widget = match it
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or("assistant")
+            {
+                "user" => {
+                    let l = label("msdk-bubble-user", 0.0);
+                    l.set_halign(gtk::Align::End);
+                    l.upcast()
+                }
+                "code" => label("msdk-code", 0.0).upcast(),
+                "tool" => label("msdk-tool", 0.0).upcast(),
+                "permission" => {
+                    let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
+                    card.add_css_class("msdk-card");
+                    card.append(&label("msdk-body", 0.0));
+                    let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+                    for (title, msg, css) in [
+                        ("Allow once", on_allow.clone(), "suggested-action"),
+                        ("Deny", on_deny.clone(), "destructive-action"),
+                    ] {
+                        let b = gtk::Button::with_label(title);
+                        b.add_css_class(css);
+                        b.add_css_class("msdk-control");
+                        if let Some(m) = msg {
+                            let (dd, id) = (d.clone(), id.clone());
+                            b.connect_clicked(move |_| dd.send(&m, Some(json!(id))));
+                        }
+                        buttons.append(&b);
+                    }
+                    card.append(&buttons);
+                    card.upcast()
+                }
+                _ => label("msdk-bubble", 0.0).upcast(),
+            };
+            column.append(&w);
+        }
+        // Keep the newest entry in view.
+        let adj = scroller.vadjustment();
+        gtk::glib::idle_add_local_once(move || adj.set_value(adj.upper() - adj.page_size()));
+        *last.borrow_mut() = Some(items);
+    }));
+    overlay.upcast()
 }

@@ -6,8 +6,8 @@ use crate::vocab::Prop;
 pub fn positional(component: &str) -> Option<&'static str> {
     Some(match component {
         "Text" => "text",
-        "Button" | "IconButton" | "Entry" | "Switch" | "Dropdown" | "Progress" | "Gauge" => "label",
-        "List" => "items",
+        "Button" | "IconButton" | "Entry" | "Switch" | "Dropdown" | "Progress" | "Gauge" | "Tabs" => "label",
+        "List" | "Transcript" => "items",
         "Card" | "EmptyState" => "title",
         "Custom" => "name",
         _ => return None,

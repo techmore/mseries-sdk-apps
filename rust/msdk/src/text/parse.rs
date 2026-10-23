@@ -154,6 +154,7 @@ impl P {
                 "app" => {
                     let name = self.name("the app's display name")?;
                     let (mut id, mut icon) = (None, None);
+                    let mut extra: Vec<(&'static str, String)> = Vec::new();
                     while let Tok::Word(w) = self.peek().clone() {
                         match w.as_str() {
                             "id" => {
@@ -164,13 +165,26 @@ impl P {
                                 self.next();
                                 icon = Some(self.name("an icon name")?);
                             }
+                            "version" | "license" | "website" => {
+                                self.next();
+                                let key: &'static str = match w.as_str() {
+                                    "version" => "version",
+                                    "license" => "license",
+                                    _ => "website",
+                                };
+                                extra.push((key, self.name("a value")?));
+                            }
                             _ => break,
                         }
                     }
                     let (Some(id), Some(icon)) = (id, icon) else {
                         return self.fail("`app` needs `id ...` and `icon ...`");
                     };
-                    doc.insert("app".into(), json!({ "id": id, "name": name, "icon": icon }));
+                    let mut app = json!({ "id": id, "name": name, "icon": icon });
+                    for (k, v) in extra {
+                        app[k] = json!(v);
+                    }
+                    doc.insert("app".into(), app);
                     self.mark("/app", line);
                 }
                 "needs" => {

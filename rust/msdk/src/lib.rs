@@ -9,6 +9,7 @@
 pub mod agent;
 mod check;
 pub mod gate;
+pub mod inspect;
 pub mod logic;
 pub mod schema;
 pub mod templates;
@@ -44,11 +45,11 @@ pub fn vocabulary() -> serde_json::Value {
         "components": components,
         "surfaces": surfaces,
         "enums": enums,
-        "services": SERVICES.iter().map(|s| (s.name.to_string(), serde_json::json!({
+        "services": services().into_iter().map(|s| (s.name.to_string(), serde_json::json!({
             "about": s.about, "capability": s.capability, "then_payload": s.then.name(),
             "args": s.args.iter().map(|(n, w)| ((*n).to_string(), serde_json::json!(format!("{w:?}").to_lowercase()))).collect::<serde_json::Map<_, _>>(),
         }))).collect::<serde_json::Map<_, _>>(),
-        "feeds": FEEDS.iter().map(|f| (f.name.to_string(), serde_json::json!({
+        "feeds": feeds().into_iter().map(|f| (f.name.to_string(), serde_json::json!({
             "about": f.about, "capability": f.capability,
             "fields": f.fields.iter().map(|(n, t)| ((*n).to_string(), serde_json::json!(t))).collect::<serde_json::Map<_, _>>(),
         }))).collect::<serde_json::Map<_, _>>(),

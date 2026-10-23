@@ -4,7 +4,10 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 
 use gtk::prelude::*;
-use msdk_gtk::host::Host;
+use std::rc::Rc;
+
+use msdk_gtk::fixture::FixtureServices;
+use msdk_gtk::host::{Host, Services};
 
 fn main() -> gtk::glib::ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -15,7 +18,9 @@ fn main() -> gtk::glib::ExitCode {
                 .position(|x| x == *a)
                 .is_some_and(|i| i == 0 || args[i - 1] != "--surface")
     }) else {
-        eprintln!("usage: msdk-run <app.ui.json> [--surface NAME] [--watch]");
+        eprintln!(
+            "usage: msdk-run <app.ui.json|app.msdk> [--surface NAME] [--watch] [--services manifest.json] [--fixture data.json] [--screenshot out.png]"
+        );
         return gtk::glib::ExitCode::from(2);
     };
     let surface = args
@@ -34,12 +39,86 @@ fn main() -> gtk::glib::ExitCode {
         .application_id(format!("{id}.Preview"))
         .flags(gtk::gio::ApplicationFlags::NON_UNIQUE)
         .build();
-    let keep = RefCell::new(None);
-    app.connect_activate(
-        move |app| match Host::open(app, &path, &surface, None, watch) {
-            Some(h) => *keep.borrow_mut() = Some(h),
-            None => app.quit(),
+    let opt = |flag: &str| {
+        args.iter()
+            .position(|a| a == flag)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    };
+    // Plug-in service manifests: every *.services.json next to the app, plus --services.
+    let mut manifests: Vec<PathBuf> = Vec::new();
+    if let Some(dir) = path.parent() {
+        let dir = if dir.as_os_str().is_empty() {
+            std::path::Path::new(".")
+        } else {
+            dir
+        };
+        manifests.extend(
+            std::fs::read_dir(dir)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.to_string_lossy().ends_with(".services.json")),
+        );
+    }
+    manifests.extend(opt("--services").map(PathBuf::from));
+    for m in manifests {
+        if let Err(e) = std::fs::read_to_string(&m)
+            .map_err(|e| e.to_string())
+            .and_then(|t| serde_json::from_str(&t).map_err(|e| e.to_string()))
+            .and_then(|v| msdk::vocab::load_manifest(&v))
+        {
+            eprintln!("{}: {e}", m.display());
+        }
+    }
+    let services: Option<Rc<dyn Services>> = match opt("--fixture") {
+        Some(f) => match FixtureServices::load(std::path::Path::new(&f)) {
+            Ok(s) => Some(Rc::new(s)),
+            Err(e) => {
+                eprintln!("{f}: {e}");
+                return gtk::glib::ExitCode::FAILURE;
+            }
         },
-    );
+        None => None,
+    };
+    let shot = opt("--screenshot");
+    let keep = RefCell::new(None);
+    app.connect_activate(move |app| {
+        let doc = match msdk::text::load(&path) {
+            Ok((d, _)) => d,
+            Err(e) => {
+                eprintln!("{}: {e}", path.display());
+                return app.quit();
+            }
+        };
+        match Host::open_with(
+            app,
+            doc,
+            Some(&path),
+            &surface,
+            None,
+            services.clone(),
+            watch,
+        ) {
+            Some(h) => {
+                if let Some(out) = shot.clone() {
+                    let (h2, app2) = (h.clone(), app.clone());
+                    gtk::glib::timeout_add_local_once(
+                        std::time::Duration::from_millis(1800),
+                        move || {
+                            match h2.screenshot(std::path::Path::new(&out)) {
+                                Ok(()) => println!("wrote {out}"),
+                                Err(e) => eprintln!("screenshot: {e}"),
+                            }
+                            app2.quit();
+                        },
+                    );
+                }
+                *keep.borrow_mut() = Some(h);
+            }
+            None => app.quit(),
+        }
+    });
     app.run_with_args::<&str>(&[])
 }

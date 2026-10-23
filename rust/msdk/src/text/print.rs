@@ -85,7 +85,13 @@ pub fn print(doc: &Value) -> R<String> {
     };
     if let Some(app) = root.get("app") {
         let g = |k: &str| app.get(k).and_then(Value::as_str).ok_or(format!("app.{k} is missing"));
-        section(&mut out, format!("app {} id {} icon {}", quote(g("name")?), bare(g("id")?), bare(g("icon")?)));
+        let mut line = format!("app {} id {} icon {}", quote(g("name")?), bare(g("id")?), bare(g("icon")?));
+        for k in ["version", "license", "website"] {
+            if let Some(v) = app.get(k).and_then(Value::as_str) {
+                line.push_str(&format!(" {k} {}", if k == "website" { quote(v) } else { bare(v) }));
+            }
+        }
+        section(&mut out, line);
     }
     if let Some(caps) = root.get("capabilities").and_then(Value::as_array).filter(|c| !c.is_empty()) {
         section(
