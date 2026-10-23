@@ -154,7 +154,13 @@ fn default_messages() -> Vec<(String, String, i64, String, String)> {
             "secret view once",
             json!({"isViewOnce": true}),
         ),
-        message("c-alice", "incoming", 1_700_000_008_000, "vanishes", json!({"expireTimer": 3600})),
+        message(
+            "c-alice",
+            "incoming",
+            1_700_000_008_000,
+            "vanishes",
+            json!({"expireTimer": 60, "expirationStartTimestamp": 1_700_000_008_000_i64}),
+        ),
         message("c-alice", "keychange", 1_700_000_009_000, "", json!({})),
         message("c-alice", "incoming", 1_700_000_010_000, "story reply", json!({"storyId": "x"})),
         message("c-alice", "incoming", 1_700_000_011_000, "", json!({})),
@@ -274,7 +280,7 @@ fn imports_into_a_fresh_conversation_set_and_is_idempotent() {
     assert_eq!(report.conversations_created, 3, "alice, bob and the group");
     assert_eq!(report.messages_added, 6);
     assert_eq!(report.skipped.get("view-once"), Some(&1));
-    assert_eq!(report.skipped.get("disappearing"), Some(&1));
+    assert_eq!(report.skipped.get("already expired"), Some(&1));
     assert_eq!(report.skipped.get("story"), Some(&1));
     assert_eq!(report.skipped.get("not a chat message"), Some(&1));
     assert_eq!(report.skipped.get("no content"), Some(&1));
@@ -520,4 +526,55 @@ fn cancel_stops_between_conversations_and_the_next_run_finishes() {
     assert!(!finished.cancelled);
     assert_eq!(finished.messages_added, 3, "only what the cancelled run had not written");
     assert_eq!(catalog(&pantheon), vec![ALICE.0, BOB.0, GROUP]);
+}
+
+#[test]
+fn disappearing_messages_keep_their_timer_and_expired_ones_stay_out() {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    let signal = scratch("timer-signal");
+    let pantheon = scratch("timer-pantheon");
+    build_signal(
+        &signal,
+        vec![
+            message(
+                "c-alice",
+                "incoming",
+                now - 5_000,
+                "still here",
+                json!({"expireTimer": 3600, "expirationStartTimestamp": now - 5_000, "sourceServiceId": ALICE.1}),
+            ),
+            message(
+                "c-alice",
+                "incoming",
+                now - 4_000,
+                "not started",
+                json!({"expireTimer": 600, "sourceServiceId": ALICE.1}),
+            ),
+            message(
+                "c-alice",
+                "incoming",
+                now - 9_000_000,
+                "gone",
+                json!({"expireTimer": 60, "expirationStartTimestamp": now - 9_000_000}),
+            ),
+        ],
+    );
+    build_pantheon(&pantheon, None);
+    let report = import::import(&config("timer", &signal, &pantheon), &secrets()).unwrap();
+    assert_eq!(report.messages_added, 2);
+    assert_eq!(report.skipped.get("already expired"), Some(&1));
+    let messages = snapshot(&pantheon, ALICE.0).unwrap()["messages"].clone();
+    let messages = messages.as_array().unwrap();
+    assert_eq!(
+        (messages[0]["expirationSeconds"].as_i64(), messages[0]["expirationStart"].as_i64()),
+        (Some(3600), Some(now - 5_000))
+    );
+    assert_eq!(messages[1]["expirationSeconds"], 600);
+    assert!(
+        messages[1]["expirationStart"].as_i64().unwrap() >= now,
+        "an unstarted timer starts at import"
+    );
 }
