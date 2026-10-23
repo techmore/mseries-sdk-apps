@@ -1,5 +1,15 @@
 ## Native capture handoff and desktop activation — 2026-10-22
 
+## Status: INCOMPLETE — deferred by owner (2026-10-22)
+
+Both the Signal Pantheon integration and Rust Messages experience are incomplete.
+The owner rejected the current Messages & Signal launcher experience and deferred
+further app work. Automated checks and installed previews do not constitute owner
+acceptance. Resume only on an explicit request. Remaining work includes the
+visible integration design, live client/phone acceptance, screenshot acceptance
+after a new login, and the open parity/accessibility/localization/release gates.
+Preserve the existing clients and source; do not mark these apps finished.
+
 Added mseries/stage-native-capture.sh and the user command
 mseries-stage-native-capture. --verify checks the exact tested package SHA256,
 package identity and architecture; --install delegates the explicit privileged

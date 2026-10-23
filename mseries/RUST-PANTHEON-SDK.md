@@ -1,9 +1,16 @@
 # Rust Pantheon application SDK and migration inventory
 
+## Required app-building workflow
+
+Read [APP-BUILDING-GUIDE.md](APP-BUILDING-GUIDE.md) before scaffolding or porting
+an app. It includes the reusable build prompt, early running-example/checkpoint
+policy, template requirements, incremental build loop and completion criteria.
+User-visible experience comes first; supporting SDK work must serve that delivery.
+
 ## Direction
 
 Use one shared Rust SDK for our first-party GTK 4 + Granite application
-surfaces. T3 (`rust/claude-pantheon-rs`) is the template: it is the most
+surfaces. T3 (`rust/claude-pantheon-rs`) is a reference implementation: it is the most
 complete Rust desktop application in this repository and already uses the GTK
 4.20 / Granite 7.8 bindings that match the current M-Series image.
 
