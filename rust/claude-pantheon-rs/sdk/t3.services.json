@@ -1,19 +1,136 @@
 {
   "services": [
-    { "name": "t3.new_thread", "capability": "network:localhost", "then": "text", "args": { "provider": "text" }, "about": "Create a thread on the T3 server; the reply is the new thread id." },
-    { "name": "t3.open", "capability": "network:localhost", "args": { "thread": "text" }, "about": "Open a thread: the t3.entries feed then shows its transcript." },
-    { "name": "t3.send", "capability": "network:localhost", "args": { "thread": "text", "text": "text" }, "about": "Send a message to a thread." },
-    { "name": "t3.answer", "capability": "network:localhost", "args": { "id": "text", "decision": "text" }, "about": "Answer a permission prompt: allow_once, allow_thread or deny." },
-    { "name": "t3.start_issue", "capability": "network:localhost", "then": "text", "args": { "issue": "text", "plan": "text" }, "about": "Start a thread for an issue using a routing plan; the reply is the thread id." },
-    { "name": "t3.runner", "capability": "network:localhost", "args": { "on": "bool" }, "about": "Turn the issue runner (scheduled tasks) on or off." },
-    { "name": "t3.reconnect", "capability": "network:localhost", "about": "Drop and re-open the server connection." },
-    { "name": "router.route", "capability": "network", "then": "text", "args": { "issue": "text" }, "about": "The local model reads an issue and answers with a plan: lane, provider and a short brief." }
+    {
+      "name": "t3.new_thread",
+      "capability": "network:localhost",
+      "then": "text",
+      "args": {
+        "provider": "text"
+      },
+      "about": "Create a thread on the T3 server; the reply is the new thread id."
+    },
+    {
+      "name": "t3.open",
+      "capability": "network:localhost",
+      "args": {
+        "thread": "text"
+      },
+      "about": "Open a thread: the t3.entries feed then shows its transcript."
+    },
+    {
+      "name": "t3.send",
+      "capability": "network:localhost",
+      "args": {
+        "thread": "text",
+        "text": "text"
+      },
+      "about": "Send a message to a thread."
+    },
+    {
+      "name": "t3.answer",
+      "capability": "network:localhost",
+      "args": {
+        "id": "text",
+        "decision": "text"
+      },
+      "about": "Answer a permission prompt: allow_once, allow_thread or deny."
+    },
+    {
+      "name": "t3.start_issue",
+      "capability": "network:localhost",
+      "then": "text",
+      "args": {
+        "issue": "text",
+        "plan": "text"
+      },
+      "about": "Start a thread for an issue using a routing plan; the reply is the thread id."
+    },
+    {
+      "name": "t3.runner",
+      "capability": "network:localhost",
+      "args": {
+        "on": "bool"
+      },
+      "about": "Turn the issue runner (scheduled tasks) on or off."
+    },
+    {
+      "name": "t3.reconnect",
+      "capability": "network:localhost",
+      "about": "Drop and re-open the server connection."
+    },
+    {
+      "name": "router.route",
+      "capability": "network",
+      "then": "text",
+      "args": {
+        "issue": "text"
+      },
+      "about": "The local model reads an issue and answers with a plan: lane, provider and a short brief."
+    }
   ],
   "feeds": [
-    { "name": "t3.threads", "capability": "network:localhost", "fields": { "id": "text", "title": "text", "project": "text", "branch": "text", "provider": "text", "badge": "text" }, "about": "Threads from the T3 server, sorted by project." },
-    { "name": "t3.entries", "capability": "network:localhost", "fields": { "id": "text", "kind": "text", "text": "text" }, "about": "Transcript of the open thread." },
-    { "name": "t3.accounts", "capability": "network:localhost", "fields": { "id": "text", "name": "text", "status": "text", "session_pct": "number", "weekly_pct": "number", "session_text": "text", "weekly_text": "text" }, "about": "Provider accounts with plan-window usage." },
-    { "name": "github.issues", "capability": "network", "fields": { "id": "text", "repo": "text", "number": "number", "title": "text", "lane": "text", "priority": "text" }, "about": "Issues labelled agent:ready in the pinned repositories." },
-    { "name": "t3.status", "capability": "network:localhost", "fields": { "id": "text", "running": "number", "waiting": "number", "nearest": "text", "oldest_prompt": "text" }, "about": "One row: running tasks, waiting prompts, the window nearest exhaustion." }
+    {
+      "name": "t3.threads",
+      "capability": "network:localhost",
+      "fields": {
+        "id": "text",
+        "title": "text",
+        "project": "text",
+        "branch": "text",
+        "provider": "text",
+        "badge": "text",
+        "detail": "text"
+      },
+      "about": "Threads from the T3 server, sorted by project."
+    },
+    {
+      "name": "t3.entries",
+      "capability": "network:localhost",
+      "fields": {
+        "id": "text",
+        "kind": "text",
+        "text": "text"
+      },
+      "about": "Transcript of the open thread."
+    },
+    {
+      "name": "t3.accounts",
+      "capability": "network:localhost",
+      "fields": {
+        "id": "text",
+        "name": "text",
+        "status": "text",
+        "session_pct": "number",
+        "weekly_pct": "number",
+        "session_text": "text",
+        "weekly_text": "text"
+      },
+      "about": "Provider accounts with plan-window usage."
+    },
+    {
+      "name": "github.issues",
+      "capability": "network",
+      "fields": {
+        "id": "text",
+        "repo": "text",
+        "number": "number",
+        "title": "text",
+        "lane": "text",
+        "priority": "text"
+      },
+      "about": "Issues labelled agent:ready in the pinned repositories."
+    },
+    {
+      "name": "t3.status",
+      "capability": "network:localhost",
+      "fields": {
+        "id": "text",
+        "running": "number",
+        "waiting": "number",
+        "nearest": "text",
+        "oldest_prompt": "text"
+      },
+      "about": "One row: running tasks, waiting prompts, the window nearest exhaustion."
+    }
   ]
 }

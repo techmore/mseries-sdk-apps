@@ -379,6 +379,8 @@ dependencies = [
  "futures-util",
  "granite-rs",
  "gtk4",
+ "msdk",
+ "msdk-gtk",
  "pulldown-cmark",
  "rayon",
  "serde",

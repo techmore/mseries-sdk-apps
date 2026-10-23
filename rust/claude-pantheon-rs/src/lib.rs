@@ -18,6 +18,7 @@ pub mod palette;
 pub mod probe;
 pub mod render;
 pub mod repos;
+pub mod sdk_services;
 pub mod settings;
 pub mod sidebar;
 pub mod skeleton;
