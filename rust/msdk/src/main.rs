@@ -36,11 +36,8 @@ fn main() -> ExitCode {
             }
         },
         Some("complete") if args.len() > 2 => {
-            let doc = match std::fs::read_to_string(&args[1])
-                .map_err(|e| e.to_string())
-                .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).map_err(|e| e.to_string()))
-            {
-                Ok(d) => d,
+            let doc = match load(&args[1]) {
+                Ok((d, _)) => d,
                 Err(e) => {
                     eprintln!("{}: {e}", args[1]);
                     return ExitCode::FAILURE;
@@ -51,6 +48,9 @@ fn main() -> ExitCode {
             }
             ExitCode::SUCCESS
         }
+        Some("fmt") if args.len() > 1 => run_fmt(&args[1..]),
+        Some("text") if args.len() > 1 => convert(&args[1], true),
+        Some("json") if args.len() > 1 => convert(&args[1], false),
         Some("gate") if args.len() > 1 => run_gate(&args[1..]),
         Some("templates") => {
             for t in templates::TEMPLATES {
@@ -61,7 +61,7 @@ fn main() -> ExitCode {
         Some("new") if args.len() > 2 => run_new(&args[1..]),
         _ => {
             eprintln!(
-                "usage: msdk check [--json] <file.ui.json>...\n       msdk describe [Name] | explain <code> | complete <file> <json-pointer>\n       msdk gate <file.ui.json> [gates.json]\n       msdk templates | new <template> <dir> [--id ID] [--name NAME]\n       msdk schema | components | tokens [--json]"
+                "usage: msdk check [--json] <file.ui.json>...\n       msdk describe [Name] | explain <code> | complete <file> <json-pointer>\n       msdk gate <file.ui.json> [gates.json]\n       msdk fmt [--check|--stdout] <file.msdk>... | text <file.ui.json> | json <file.msdk>\n       msdk templates | new <template> <dir> [--text] [--id ID] [--name NAME]\n       msdk schema | components | tokens [--json]"
             );
             ExitCode::from(2)
         }
@@ -78,19 +78,15 @@ fn run_check(args: &[String]) -> ExitCode {
     let mut failed = false;
     let mut report = Vec::new();
     for file in args.iter().filter(|a| *a != "--json") {
-        let doc = match std::fs::read_to_string(file)
-            .map_err(|e| e.to_string())
-            .and_then(|t| serde_json::from_str(&t).map_err(|e| format!("line {}: {e}", e.line())))
-        {
+        let (doc, parsed) = match load(file) {
             Ok(v) => v,
             Err(e) => {
                 failed = true;
                 if json {
-                    report.push(
-                        serde_json::json!({ "file": file, "severity": "error", "code": "bad-json", "message": e }),
-                    );
+                    report
+                        .push(serde_json::json!({ "file": file, "severity": "error", "code": "syntax", "message": e }));
                 } else {
-                    println!("{file}: error[bad-json] {e}");
+                    println!("{file}: error[syntax] {e}");
                 }
                 continue;
             }
@@ -101,9 +97,17 @@ fn run_check(args: &[String]) -> ExitCode {
             if json {
                 let mut o = d.to_json();
                 o["file"] = file.clone().into();
+                o["line"] = parsed
+                    .as_ref()
+                    .and_then(|p| p.line_for(&d.path))
+                    .map(|l| l.into())
+                    .unwrap_or(serde_json::Value::Null);
                 report.push(o);
             } else {
-                println!("{file}: {d}");
+                match parsed.as_ref().and_then(|p| p.line_for(&d.path)) {
+                    Some(l) => println!("{file}:{l}: {d}"),
+                    None => println!("{file}: {d}"),
+                }
             }
         }
         if !json && !diags.iter().any(|d| d.severity == Severity::Error) {
@@ -122,8 +126,8 @@ fn run_gate(args: &[String]) -> ExitCode {
             .map_err(|e| e.to_string())
             .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).map_err(|e| e.to_string()))
     };
-    let doc = match read(&args[0]) {
-        Ok(d) => d,
+    let doc = match load(&args[0]) {
+        Ok((d, _)) => d,
         Err(e) => {
             eprintln!("{}: {e}", args[0]);
             return ExitCode::FAILURE;
@@ -165,20 +169,105 @@ fn run_new(args: &[String]) -> ExitCode {
         eprintln!("{} already exists", dir.display());
         return ExitCode::FAILURE;
     }
+    let as_text = args.iter().any(|a| a == "--text");
+    let rendered = t.render(&id, &name);
+    let (ui_file, ui_body) = if as_text {
+        match serde_json::from_str::<serde_json::Value>(&rendered)
+            .map_err(|e| e.to_string())
+            .and_then(|d| msdk::text::print(&d))
+        {
+            Ok(text) => ("app.msdk", text),
+            Err(e) => {
+                eprintln!("{e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        ("app.ui.json", rendered)
+    };
     let write = |f: &str, body: String| std::fs::write(dir.join(f), body);
     if let Err(e) = std::fs::create_dir_all(dir)
-        .and_then(|_| write("app.ui.json", t.render(&id, &name)))
+        .and_then(|_| write(ui_file, ui_body.clone()))
         .and_then(|_| write("app.gates.json", t.gates.to_string()))
-        .and_then(|_| write("README.md", t.readme(&name)))
+        .and_then(|_| write("README.md", t.readme(&name).replace("app.ui.json", ui_file)))
     {
         eprintln!("{e}");
         return ExitCode::FAILURE;
     }
     println!(
-        "created {} from `{}` (id {id}); next: cd {} && msdk check app.ui.json && msdk gate app.ui.json app.gates.json",
+        "created {} from `{}` (id {id}); next: cd {} && msdk check {ui_file} && msdk gate {ui_file} app.gates.json",
         dir.display(),
         t.name,
         dir.display()
     );
     ExitCode::SUCCESS
+}
+
+/// Loads a description from `.msdk` text or JSON.
+fn load(path: &str) -> Result<(serde_json::Value, Option<msdk::text::Parsed>), String> {
+    msdk::text::load(std::path::Path::new(path))
+}
+
+/// `msdk text file.ui.json` / `msdk json file.msdk`: print the other spelling.
+fn convert(file: &str, to_text: bool) -> ExitCode {
+    let doc = match load(file) {
+        Ok((d, _)) => d,
+        Err(e) => {
+            eprintln!("{file}: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if to_text {
+        match msdk::text::print(&doc) {
+            Ok(t) => print!("{t}"),
+            Err(e) => {
+                eprintln!("{file}: cannot print as text: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        println!("{}", serde_json::to_string_pretty(&doc).unwrap_or_default());
+    }
+    ExitCode::SUCCESS
+}
+
+/// `msdk fmt [--check] [--stdout] file.msdk...`: rewrite text files in the canonical layout.
+fn run_fmt(args: &[String]) -> ExitCode {
+    let (check_only, stdout) = (args.iter().any(|a| a == "--check"), args.iter().any(|a| a == "--stdout"));
+    let mut bad = false;
+    for file in args.iter().filter(|a| !a.starts_with("--")) {
+        let original = match std::fs::read_to_string(file) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("{file}: {e}");
+                bad = true;
+                continue;
+            }
+        };
+        let formatted =
+            match msdk::text::parse(&original).map_err(|e| e.to_string()).and_then(|p| msdk::text::print(&p.doc)) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("{file}: {e}");
+                    bad = true;
+                    continue;
+                }
+            };
+        if stdout {
+            print!("{formatted}");
+        } else if check_only {
+            if formatted != original {
+                println!("{file}: would reformat");
+                bad = true;
+            }
+        } else if formatted != original {
+            if let Err(e) = std::fs::write(file, &formatted) {
+                eprintln!("{file}: {e}");
+                bad = true;
+            } else {
+                println!("{file}: formatted");
+            }
+        }
+    }
+    if bad { ExitCode::FAILURE } else { ExitCode::SUCCESS }
 }

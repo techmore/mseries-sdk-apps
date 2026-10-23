@@ -12,6 +12,7 @@ pub mod gate;
 pub mod logic;
 pub mod schema;
 pub mod templates;
+pub mod text;
 pub mod tokens;
 pub mod vocab;
 

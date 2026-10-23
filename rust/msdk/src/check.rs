@@ -717,7 +717,7 @@ fn design_rules(ty: &str, obj: &Map<String, Value>, path: &str, cx: &mut Cx) {
 }
 
 /// Closest candidate by edit distance, when it is close enough to be a likely typo.
-fn suggest(word: &str, candidates: &[&str]) -> Option<String> {
+pub(crate) fn suggest(word: &str, candidates: &[&str]) -> Option<String> {
     let (best, dist) = candidates
         .iter()
         .map(|c| (*c, edit_distance(&word.to_lowercase(), &c.to_lowercase())))

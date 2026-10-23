@@ -1,7 +1,6 @@
 {
   "sdk": 1,
   "app": { "id": "io.github.techmore.Template", "name": "Template Setup", "icon": "preferences-desktop" },
-  "capabilities": [],
   "state": { "step1": "bool", "step2": "bool", "step3": "bool", "name": "text", "agree": "bool", "can_continue": "bool", "summary": "text" },
   "initial": { "step1": true },
   "messages": { "EditName": "text", "SetAgree": "bool", "Next1": "none", "Back2": "none", "Next2": "none", "Back3": "none", "Finish": "none" },

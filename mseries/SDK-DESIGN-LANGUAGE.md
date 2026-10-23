@@ -1,6 +1,10 @@
 # Design language for the SDK: SwiftUI/QML-style text (proposal, 2026-10-23)
 
-Status: **proposal, not built.** The owner's direction: write apps in a concise, SwiftUI- or QML-like language that small models
+Status: **parser, printer and formatter built (2026-10-23).** `msdk fmt`, `msdk text`, `msdk json`, `msdk new <template> <dir> --text`, and `.msdk` files work with `check`, `gate`, `complete` and `msdk-run`. Every template and example round-trips JSON to text and back unchanged, and formatting is idempotent (tests in `rust/msdk/tests/text.rs`).
+
+The grammar as built differs from the sketch below in these ways: bindings are named arguments (`bind: query`), not `$query`; list rows use the same `"{title}"` templates as JSON (no `note in` closure yet); sections are `app`, `needs`, `logic`, `type`, `state`, `initial`, `persist`, `feed`, `message`, `on`, and the surfaces; state keys keep their snake_case names so the same gates work on both forms.
+
+Original status note: The owner's direction: write apps in a concise, SwiftUI- or QML-like language that small models
 already know, and still render through our Rust Pantheon stack. This note defines the shape so the choice can be made once and
 tested at the benchmark decision point.
 
@@ -95,6 +99,74 @@ the preferred spelling.
 `msdk gen` emits, from the same AST: `struct State`, `enum Msg` with payload variants, a `trait Logic` stub for the hard parts, and
 the view as a Rust builder. That is the "make Rust objects" requirement and the release-mode compile target (the interpreter is the
 development path).
+
+## 5b. A Ruby-style dialect (owner likes it; proposal)
+
+The same AST can be written in a Ruby-flavoured DSL: `do ... end` blocks, `:symbols`, `key: value` hashes, almost no punctuation.
+Models know this shape well from Rails routes, RSpec, Rake and Sinatra, and the owner works in Rails daily.
+
+```ruby
+app "Quick Notes", id: "io.github.techmore.QuickNotes", icon: "accessories-text-editor" do
+  needs "filesystem:data"
+
+  record :Note, id: :text, title: :text, when: :text, body: :text
+
+  state do
+    query         :text
+    notes         list_of(:Note), persist: true
+    selected      :text,          persist: true
+    body          :text
+    has_selection :bool
+  end
+
+  message :add_note, :delete_note, :select_note => :text, :edit_body => :text, :search => :text
+
+  on :add_note do
+    append :notes, id: id!, title: "New note", when: now!, body: ""
+    set has_selection: true
+  end
+  on :delete_note do
+    remove :notes, where: "{selected}"
+    set has_selection: false
+    toast "Note deleted"
+  end
+  on(:search) { set query: payload }
+
+  window "Quick Notes" do
+    header do
+      button "New note", icon: "list-add", key: "Ctrl+N", on: :add_note
+      button "Delete note", style: :destructive, confirm: "Delete this note?", on: :delete_note, visible: :has_selection
+    end
+    split_view do
+      sidebar do
+        v_stack spacing: :small do
+          search_field "Search notes", bind: :query, on_change: :search
+          list :notes, key: :id, on_select: :select_note do
+            row   { text "{title}" }
+            empty { empty_state "No notes yet", icon: "document-new" }
+          end
+        end
+      end
+      content { text_editor "Note text", bind: :body, on_change: :edit_body, visible: :has_selection }
+    end
+  end
+end
+```
+
+Rules that keep it safe and checkable:
+
+- **It is parsed, not run.** No Ruby interpreter is involved (there is none on the laptop anyway); the dialect is a fixed grammar,
+  so there are no loops, conditionals, method definitions or string interpolation. Anything outside the subset is an error with a
+  line number and a pointer to the closest allowed form, which stops the model from "helpfully" writing real Ruby.
+- Component names become `snake_case` calls (`empty_state`, `split_view`), enum values and state keys become symbols, and
+  `payload`, `id!`, `now!` replace `$payload`, `$id`, `$now`.
+- `msdk fmt --dialect ruby|swift|json` converts between the three spellings, and `msdk new --dialect ruby` starts from a template.
+
+Cost: a lexer and parser of the same size as the SwiftUI-style front end (about 600 lines) plus a printer; nothing downstream.
+
+Which spelling is primary is a question for the benchmark, not for taste: run the same six specs on Qwen ~4B in JSON, the SwiftUI-style
+text and this dialect, and keep the one it gets right most often (any of them can stay as an input form). Until then the SwiftUI-style
+text is built and the Ruby dialect is specified only.
 
 ## 6. Decision and next steps
 

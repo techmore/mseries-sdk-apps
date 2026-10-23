@@ -26,10 +26,9 @@ fn main() -> gtk::glib::ExitCode {
         .unwrap_or_else(|| "main".into());
     let watch = args.iter().any(|a| a == "--watch");
     let path = PathBuf::from(file);
-    let id = std::fs::read_to_string(&path)
+    let id = msdk::text::load(&path)
         .ok()
-        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-        .and_then(|d| d["app"]["id"].as_str().map(String::from))
+        .and_then(|(d, _)| d["app"]["id"].as_str().map(String::from))
         .unwrap_or_else(|| "io.github.techmore.MsdkRun".into());
     let app = gtk::Application::builder()
         .application_id(format!("{id}.Preview"))
