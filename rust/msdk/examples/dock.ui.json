@@ -1,0 +1,26 @@
+{
+  "sdk": 1,
+  "app": { "id": "io.github.techmore.Dock", "name": "Dock", "icon": "preferences-desktop" },
+  "capabilities": ["windows"],
+  "types": {
+    "Win": { "id": "text", "app_id": "text", "title": "text", "focused": "bool", "minimized": "bool" },
+    "Item": { "id": "text", "name": "text", "icon": "text", "indicator": "text", "badge": "text" }
+  },
+  "state": { "windows": "list<Win>", "items": "list<Item>" },
+  "feeds": { "windows": "windows.list" },
+  "logic": "rust",
+  "messages": { "Activate": "text" },
+  "surfaces": {
+    "dock": {
+      "kind": "panel",
+      "anchor": "bottom",
+      "size": 64,
+      "hide_mode": "overlapping_focus_window",
+      "body": {
+        "type": "List", "items": "items", "key": "id", "direction": "row",
+        "row": { "type": "IconButton", "label": "{name}", "icon": "{icon}", "on": "Activate", "indicator": "{indicator}", "badge": "{badge}" },
+        "empty": { "type": "EmptyState", "title": "Nothing pinned", "description": "Open an app and pin it to keep it here." }
+      }
+    }
+  }
+}

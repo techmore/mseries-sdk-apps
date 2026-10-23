@@ -1,28 +1,33 @@
 {
+  "sdk": 1,
   "app": { "id": "io.github.techmore.Greeter", "name": "Sign in", "icon": "system-users" },
-  "capabilities": ["subprocess"],
+  "capabilities": ["session"],
   "state": {
-    "username": "text", "answer": "text", "notice": "text",
+    "username": "text", "answer": "text", "prompt": "text", "notice": "text",
     "needs_user": "bool", "needs_answer": "bool", "has_notice": "bool"
   },
-  "messages": ["EditUser", "EditAnswer", "SubmitUser", "SubmitAnswer", "ChangeUser", "Shutdown", "Restart"],
-  "window": {
-    "title": "Sign in",
-    "header": [
-      { "type": "Button", "label": "Restart", "icon": "system-reboot", "on": "Restart", "button_style": "flat" },
-      { "type": "Button", "label": "Shut down", "icon": "system-shutdown", "on": "Shutdown", "button_style": "flat" }
-    ],
-    "body": {
-      "type": "Box", "direction": "column", "spacing": "large",
-      "children": [
-        { "type": "Text", "text": "{username}", "text_style": "title" },
-        { "type": "Entry", "label": "User name", "bind": "username", "entry_kind": "text", "on_change": "EditUser", "visible_if": "needs_user" },
-        { "type": "Button", "label": "Continue", "on": "SubmitUser", "button_style": "suggested", "visible_if": "needs_user" },
-        { "type": "Entry", "label": "Password", "bind": "answer", "entry_kind": "password", "on_change": "EditAnswer", "visible_if": "needs_answer" },
-        { "type": "Button", "label": "Sign in", "on": "SubmitAnswer", "button_style": "suggested", "visible_if": "needs_answer" },
-        { "type": "Button", "label": "Not you?", "on": "ChangeUser", "button_style": "flat", "visible_if": "needs_answer" },
-        { "type": "Text", "text": "{notice}", "text_style": "caption", "visible_if": "has_notice" }
-      ]
+  "logic": "rust",
+  "messages": { "SubmitUser": "none", "SubmitAnswer": "none", "ChangeUser": "none", "Shutdown": "none", "Restart": "none" },
+  "surfaces": {
+    "main": {
+      "kind": "fullscreen",
+      "body": {
+        "type": "Box", "direction": "column", "spacing": "large",
+        "children": [
+          { "type": "Text", "text": "{username}", "text_style": "title" },
+          { "type": "Entry", "label": "User name", "bind": "username", "entry_kind": "text", "on_submit": "SubmitUser", "visible_if": "needs_user" },
+          { "type": "Button", "label": "Continue", "on": "SubmitUser", "button_style": "suggested", "visible_if": "needs_user" },
+          { "type": "Text", "text": "{prompt}", "text_style": "caption", "visible_if": "needs_answer" },
+          { "type": "Entry", "label": "Password", "bind": "answer", "entry_kind": "password", "on_submit": "SubmitAnswer", "visible_if": "needs_answer" },
+          { "type": "Button", "label": "Sign in", "on": "SubmitAnswer", "button_style": "suggested", "visible_if": "needs_answer" },
+          { "type": "Button", "label": "Not you?", "on": "ChangeUser", "button_style": "flat", "visible_if": "needs_answer" },
+          { "type": "Text", "text": "{notice}", "text_style": "caption", "visible_if": "has_notice" },
+          { "type": "Box", "direction": "row", "spacing": "small", "children": [
+            { "type": "Button", "label": "Restart", "icon": "system-reboot", "on": "Restart", "button_style": "flat" },
+            { "type": "Button", "label": "Shut down", "icon": "system-shutdown", "on": "Shutdown", "button_style": "flat" }
+          ] }
+        ]
+      }
     }
   }
 }

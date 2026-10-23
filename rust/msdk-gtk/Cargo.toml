@@ -1,0 +1,21 @@
+[package]
+name = "msdk-gtk"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-only"
+description = "Interpreter runtime for msdk app descriptions: renders them with GTK4, runs update rules, reloads live"
+
+[lib]
+name = "msdk_gtk"
+
+[[bin]]
+name = "msdk-run"
+path = "src/main.rs"
+
+[dependencies]
+msdk = { path = "../msdk" }
+serde_json = "1"
+gtk = { package = "gtk4", version = "0.11", features = ["v4_20"] }
+futures-channel = "0.3"
+futures-util = { version = "0.3", default-features = false }

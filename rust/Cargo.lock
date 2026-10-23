@@ -1600,6 +1600,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "msdk-gtk"
+version = "0.1.0"
+dependencies = [
+ "futures-channel",
+ "futures-util",
+ "gtk4",
+ "msdk",
+ "serde_json",
+]
+
+[[package]]
 name = "mseries-diskspace"
 version = "0.1.0"
 dependencies = [
