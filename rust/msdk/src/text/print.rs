@@ -166,6 +166,54 @@ pub fn print(doc: &Value) -> R<String> {
             section(&mut out, format!("on {} {{\n{}}}", bare(msg), actions(acts, 1)?));
         }
     }
+    if let Some(agent) = root.get("agent").and_then(Value::as_object) {
+        out.push('\n');
+        for (name, about) in agent.get("scopes").and_then(Value::as_object).into_iter().flatten() {
+            section(&mut out, format!("scope {} {}", quote(name), quote(about.as_str().unwrap_or(""))));
+        }
+        for (name, e) in agent.get("entities").and_then(Value::as_object).into_iter().flatten() {
+            let fields: Vec<&str> = e["expose"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+            section(
+                &mut out,
+                format!("entity {name} scope {} {{ {} }}", quote(e["scope"].as_str().unwrap_or("")), fields.join(", ")),
+            );
+        }
+        for (name, i) in agent.get("intents").and_then(Value::as_object).into_iter().flatten() {
+            let head = match i.get("param") {
+                Some(p) => format!(
+                    "intent {name}({}: {})",
+                    p["name"].as_str().unwrap_or("value"),
+                    if p["type"].as_str() == Some("bool") { "Bool" } else { "Text" }
+                ),
+                None => format!("intent {name}"),
+            };
+            let mut body = vec![];
+            if let Some(m) = i.get("message").and_then(Value::as_str) {
+                body.push(format!("via {m}"));
+            }
+            if let Some(s) = i.get("scope").and_then(Value::as_str) {
+                body.push(format!("scope {}", quote(s)));
+            }
+            if let Some(r) = i.get("risk").and_then(Value::as_str) {
+                body.push(format!("risk {r}"));
+            }
+            if i.get("confirm").and_then(Value::as_bool) == Some(true) {
+                body.push("confirm".into());
+            }
+            if let Some(keys) = i.get("shows").and_then(Value::as_array).filter(|k| !k.is_empty()) {
+                body.push(format!("show {}", keys.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", ")));
+            }
+            for k in ["verify", "about"] {
+                if let Some(v) = i.get(k).and_then(Value::as_str) {
+                    body.push(format!("{k} {}", quote(v)));
+                }
+            }
+            section(
+                &mut out,
+                format!("{head} {{\n{}\n}}", body.iter().map(|l| format!("  {l}")).collect::<Vec<_>>().join("\n")),
+            );
+        }
+    }
     if let Some(surfaces) = root.get("surfaces").and_then(Value::as_object) {
         for (name, s) in surfaces {
             out.push('\n');

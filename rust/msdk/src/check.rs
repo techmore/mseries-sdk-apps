@@ -123,6 +123,7 @@ pub fn check(doc: &Value) -> Vec<Diagnostic> {
         "update",
         "logic",
         "surfaces",
+        "agent",
     ];
     for key in root.keys() {
         if !TOP.contains(&key.as_str()) {
@@ -152,6 +153,10 @@ pub fn check(doc: &Value) -> Vec<Diagnostic> {
     check_messages(root.get("messages"), &mut cx);
     check_feeds(root.get("feeds"), root.get("capabilities"), &mut cx);
     check_logic(root, &mut cx);
+    for f in crate::intents::diagnose(root) {
+        let sev = if f.error { Severity::Error } else { Severity::Warning };
+        cx.out.push(Diagnostic { severity: sev, path: f.path, code: f.code, message: f.message, fix: f.fix });
+    }
     check_persist(root.get("persist"), &mut cx);
     check_initial(root.get("initial"), &mut cx);
     match root.get("surfaces").and_then(Value::as_object) {

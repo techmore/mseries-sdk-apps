@@ -327,6 +327,43 @@ pub fn explain(code: &str) -> Option<&'static str> {
         "bad-state-type" => {
             "State and record fields are text, bool or number; lists are list<RecordName> where RecordName is under `types`."
         }
+        "agent-bad-scope-name" => "A scope is lowercase dotted words like notes.create, with at least two parts.",
+        "agent-scope-needs-description" => {
+            "Each scope needs one plain sentence; it is what the owner reads in the consent prompt."
+        }
+        "agent-undeclared-scope" => {
+            "Every entity and intent names a scope declared with `scope \"name\" \"description\"`."
+        }
+        "agent-unused-scope" => "A declared scope that nothing uses; remove it so the consent list stays honest.",
+        "agent-unknown-entity-type" => "An entity must be a record declared under `type`.",
+        "agent-unknown-field" => {
+            "The entity lists a field its record does not have. The fix line suggests the nearest field."
+        }
+        "agent-entity-exposes-nothing" => "List the fields an agent may read; fields not listed are never readable.",
+        "agent-secret-field" => "Fields named like passwords, tokens or keys can never be exposed to agents.",
+        "agent-unknown-message" => {
+            "An intent triggers an existing message (`via Name`, default its own name); agents cannot do what the UI cannot."
+        }
+        "agent-param-mismatch" => {
+            "A message has at most one payload, so an intent has at most one parameter and it must be that payload's type (Text or Bool)."
+        }
+        "agent-bad-risk" => {
+            "Risk is read, reversible, external (leaves the machine) or privileged (changes the system)."
+        }
+        "agent-needs-confirm" => {
+            "External and privileged intents must say `confirm` so the owner sees the concrete final action."
+        }
+        "agent-needs-verify" => {
+            "Anything that is not a read needs `verify \"...\"`: how the result is checked after the call."
+        }
+        "agent-risk-understated" => {
+            "The intent's update rule calls a service that can do more than the declared risk allows. Raise the risk."
+        }
+        "agent-unknown-state" => "`show` names state keys the confirmation displays; each must exist under `state`.",
+        "agent-confirm-shows-nothing" => {
+            "A confirmed intent with no parameter must `show` the state that makes up the action (for example the draft), or the owner confirms blind."
+        }
+        "agent-needs-about" => "`about` becomes the tool description an agent reads; write one clear sentence.",
         "bad-payload" => "A message payload is none, text or bool.",
         "unknown-state" => {
             "The name is not in `state` (or, inside a List row, not a field of the row's record). Declare it or fix the spelling."

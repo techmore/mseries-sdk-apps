@@ -28,7 +28,8 @@
     {
      "call": "t3.open"
     }
-   ]
+   ],
+   "intent": "SelectThread"
   },
   {
    "name": "sending clears the draft and calls the server",
@@ -53,7 +54,8 @@
     {
      "call": "t3.send"
     }
-   ]
+   ],
+   "intent": "Send"
   },
   {
    "name": "nothing is sent without a thread",
@@ -111,7 +113,8 @@
     {
      "call": "router.route"
     }
-   ]
+   ],
+   "intent": "StartIssue"
   },
   {
    "name": "the routing plan starts the thread",
@@ -218,6 +221,27 @@
     },
     {
      "call": "t3.open"
+    }
+   ],
+   "intent": "NewThread"
+  },
+  {
+   "name": "an agent can write the message box without sending",
+   "intent": "EditDraft",
+   "steps": [
+    {
+     "send": "SelectThread",
+     "payload": "t1"
+    },
+    {
+     "send": "EditDraft",
+     "payload": "hello from an agent"
+    }
+   ],
+   "expect": [
+    {
+     "state": "draft",
+     "equals": "hello from an agent"
     }
    ]
   }
