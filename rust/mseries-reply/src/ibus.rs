@@ -300,7 +300,7 @@ impl Shared {
         let a11y = self.a11y()?;
         let node = tree::focused_node(&*a11y, Limits::FOCUS).ok_or_else(|| {
             self.forget_a11y();
-            "No accessible focused field".to_string()
+            "No text field has keyboard focus. Click into the message box first.".to_string()
         })?;
         tree::check_field(&*a11y, &node, Limits::FOCUS).map_err(str::to_string)?;
         Ok(node)
@@ -435,16 +435,21 @@ impl Engine {
                         guard.content_type,
                     )
                 };
-                let safe = match (&text, &identity) {
-                    (Some(_), Some(identity)) => {
-                        // The app may have moved on since the offer; the draft belongs to one field only.
-                        content_type_ok(content_type) && self.shared.field_still_safe(identity)
+                // No accessibility calls here: the app is waiting for this reply, and its accessibility interface is
+                // served by the same thread, so asking it now would time out. The monitor started with the draft
+                // (see `watch_field`) has already dropped the draft if the field stopped being safe.
+                let reason = match (&text, &identity) {
+                    (None, _) => Some("the draft expired".to_string()),
+                    (_, None) => Some("no field was recorded".to_string()),
+                    (Some(_), Some(_)) if !content_type_ok(content_type) => {
+                        Some(format!("the app marked the field private {content_type:?}"))
                     }
-                    _ => false,
+                    _ => None,
                 };
+                let safe = reason.is_none();
                 self.shared.lock().swallow.insert(keyval);
-                if !safe {
-                    eprintln!("smart-reply: Tab ignored; the draft expired or the field changed");
+                if let Some(reason) = reason {
+                    eprintln!("smart-reply: key {keyval:#x} ignored; {reason}");
                 }
                 if let (true, Some(text)) = (safe, text) {
                     let _ = Self::hide_preedit_text(&emitter).await;
@@ -468,7 +473,12 @@ impl Engine {
         }
     }
 
-    fn focus_in(&self, #[zbus(header)] _header: zbus::message::Header<'_>) {}
+    fn focus_in(&self, #[zbus(header)] header: zbus::message::Header<'_>) {
+        eprintln!("smart-reply: FocusIn on {:?}", header.path());
+        if let Some(path) = header.path() {
+            self.shared.lock().engine = Some(path.clone().into());
+        }
+    }
 
     fn focus_out(&self) {
         self.lost_focus(None);
@@ -481,6 +491,7 @@ impl Engine {
         _object_path: &str,
         _client: &str,
     ) {
+        eprintln!("smart-reply: FocusInId on {:?}", header.path());
         if let Some(path) = header.path() {
             self.shared.lock().engine = Some(path.clone().into());
         }
@@ -491,7 +502,9 @@ impl Engine {
     }
 
     fn reset(&self) {}
-    fn enable(&self) {}
+    fn enable(&self) {
+        eprintln!("smart-reply: Enable");
+    }
     fn disable(&self) {
         self.shared.lock().engine = None;
     }
@@ -596,6 +609,7 @@ impl Factory {
         #[zbus(object_server)] server: &zbus::ObjectServer,
         name: &str,
     ) -> zbus::fdo::Result<OwnedObjectPath> {
+        eprintln!("smart-reply: CreateEngine {name}");
         if name != ENGINE_NAME {
             return Err(zbus::fdo::Error::InvalidArgs("Unknown engine".into()));
         }
@@ -697,9 +711,7 @@ async fn lease(shared: &Share) -> Result<Lease, String> {
         shared.discard();
     }
     // Refuse sensitive fields BEFORE switching input methods.
-    let identity = shared
-        .focused_field()
-        .map_err(|_| "Accessible field metadata unavailable or unsafe".to_string())?;
+    let identity = shared.focused_field()?;
     let inline = shared
         .a11y()
         .ok()
@@ -809,6 +821,37 @@ async fn begin(shared: &Share) -> Result<bool, String> {
     Ok(lease.inline)
 }
 
+/// While a draft is held, checks every half second that its field still has focus and is still safe, on a thread of its
+/// own so a slow app never stalls the IBus connection. Drops the draft the moment it is not.
+fn watch_field(shared: Share, epoch: u64, identity: NodeRef) {
+    std::thread::spawn(move || {
+        let mut misses = 0;
+        loop {
+            std::thread::sleep(Duration::from_millis(500));
+            let holding = {
+                let state = shared.lock();
+                state.epoch == epoch && state.held.is_holding()
+            };
+            if !holding {
+                return;
+            }
+            // One slow answer from a busy app is not a reason to lose the draft; two in a row are.
+            misses = if shared.field_still_safe(&identity) {
+                0
+            } else {
+                misses + 1
+            };
+            if misses >= 2 {
+                eprintln!(
+                    "smart-reply: draft dropped, the field is no longer focused and editable"
+                );
+                shared.discard();
+                return;
+            }
+        }
+    });
+}
+
 async fn finish(shared: &Share, text: &str) -> Result<(), String> {
     if !held::valid_offer(text) {
         shared.discard();
@@ -841,6 +884,7 @@ async fn finish(shared: &Share, text: &str) -> Result<(), String> {
         "Tab inserts the draft, Esc discards it".to_string()
     };
     show(&ibus, path, inline, &shown).await;
+    watch_field(shared.clone(), epoch, identity);
     let expiring = shared.clone();
     ibus.executor()
         .spawn(

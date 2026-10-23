@@ -266,7 +266,9 @@ pub fn read_lines<T: Tree>(tree: &T, candidates: &[T::Node], max_lines: usize) -
     newest_first
 }
 
-/// Finds the focused node inside the active window (the dictation input's `discover_focus`).
+/// Finds the focused text field inside the active window. GTK 4 reports FOCUSED on more than the widget that has the
+/// keyboard (a scroll pane around the conversation, for one), so a node only counts if it is also editable; the first
+/// such node in document order wins.
 pub fn focused_node<T: Tree>(tree: &T, limits: Limits) -> Option<T::Node> {
     let window = active_window(tree, limits)?;
     let mut budget = Budget::new(limits);
@@ -277,7 +279,7 @@ pub fn focused_node<T: Tree>(tree: &T, limits: Limits) -> Option<T::Node> {
         }
         if tree
             .states(&node)
-            .is_some_and(|states| states.has(state::FOCUSED))
+            .is_some_and(|states| states.has(state::FOCUSED) && states.has(state::EDITABLE))
         {
             return Some(node);
         }
@@ -529,6 +531,24 @@ mod tests {
         tree.nodes[window].states = 0;
         assert!(check_field(&tree, &composer, Limits::FOCUS).is_err());
         assert_eq!(active_window(&tree, Limits::READ), None);
+    }
+
+    #[test]
+    fn a_focused_container_before_the_text_field_does_not_hide_it() {
+        // GTK 4 marks a scroll pane around the conversation FOCUSED as well as the entry that has the keyboard.
+        let (mut tree, composer) = FakeTree::chat(&["hello"], role::ENTRY, "Message");
+        let window = tree.nodes[0].children[0];
+        let pane = tree.add(
+            Some(window),
+            FakeNode {
+                role: 88,
+                states: bits(&[state::FOCUSED]),
+                ..FakeNode::default()
+            },
+        );
+        tree.nodes[window].children.insert(0, pane);
+        tree.nodes[window].children.pop();
+        assert_eq!(focused_node(&tree, Limits::FOCUS), Some(composer));
     }
 
     #[test]
