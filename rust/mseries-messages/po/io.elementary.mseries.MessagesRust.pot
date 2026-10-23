@@ -6,11 +6,11 @@ msgstr "Project-Id-Version: mseries-messages 0.1.0\nContent-Type: text/plain; ch
 msgid "Advanced BlueFerry…"
 msgstr ""
 
-#: src/app.rs:2177
+#: src/app.rs:2183
 msgid "Apple Messages exported an empty pin list. Importing it clears this computer’s imported pin order."
 msgstr ""
 
-#: src/app.rs:2635
+#: src/app.rs:2658
 msgid "Attachment. Open Messages on your iPhone to view it."
 msgstr ""
 
@@ -22,39 +22,39 @@ msgstr ""
 msgid "Back"
 msgstr ""
 
-#: src/app.rs:781 src/app.rs:1380
+#: src/app.rs:781 src/app.rs:1386
 msgid "Back to conversations"
 msgstr ""
 
-#: src/app.rs:3059 src/app.rs:3078
+#: src/app.rs:3082 src/app.rs:3101
 msgid "BlueFerry has blocked replies to this conversation. Review its status before sending."
 msgstr ""
 
-#: src/app.rs:2200 src/app.rs:3346
+#: src/app.rs:2206 src/app.rs:3369
 msgid "Cancel"
 msgstr ""
 
-#: src/app.rs:3356
+#: src/app.rs:3379
 msgid "Choose a contact or enter a complete address."
 msgstr ""
 
-#: src/app.rs:2060
+#: src/app.rs:2066
 msgid "Choose a local Apple pin export file."
 msgstr ""
 
-#: src/app.rs:3065
+#: src/app.rs:3088
 msgid "Choose a valid phone number or email address first."
 msgstr ""
 
-#: src/app.rs:3578
+#: src/app.rs:3601
 msgid "Choose the address you want to message."
 msgstr ""
 
-#: src/app.rs:1382
+#: src/app.rs:1388
 msgid "Clear search / back in compact view"
 msgstr ""
 
-#: src/app.rs:539 src/app.rs:600 src/app.rs:2757
+#: src/app.rs:539 src/app.rs:600 src/app.rs:2780
 msgid "Connect iPhone"
 msgstr ""
 
@@ -66,7 +66,7 @@ msgstr ""
 msgid "Connecting to BlueFerry…"
 msgstr ""
 
-#: src/app.rs:1838
+#: src/app.rs:1844
 msgid "Conversation marked as read."
 msgstr ""
 
@@ -74,11 +74,11 @@ msgstr ""
 msgid "Conversations"
 msgstr ""
 
-#: src/app.rs:2965
+#: src/app.rs:2988
 msgid "Copy Text"
 msgstr ""
 
-#: src/app.rs:2967
+#: src/app.rs:2990
 msgid "Copy message text"
 msgstr ""
 
@@ -86,7 +86,7 @@ msgstr ""
 msgid "Copy recipient addresses"
 msgstr ""
 
-#: src/app.rs:2409
+#: src/app.rs:2415
 msgid "Could not mark conversation as read. Refresh to try again."
 msgstr ""
 
@@ -98,7 +98,7 @@ msgstr ""
 msgid "Could not open this app. Check its installation and try again."
 msgstr ""
 
-#: src/app.rs:3627
+#: src/app.rs:3650
 msgid "Enter a complete phone number or email address."
 msgstr ""
 
@@ -110,11 +110,11 @@ msgstr ""
 msgid "Favorites"
 msgstr ""
 
-#: src/app.rs:2201
+#: src/app.rs:2207
 msgid "Import Pins"
 msgstr ""
 
-#: src/app.rs:2051 src/app.rs:2121
+#: src/app.rs:2057 src/app.rs:2127
 msgid "Import iPhone Pins"
 msgstr ""
 
@@ -130,7 +130,7 @@ msgstr ""
 msgid "Jump to latest messages"
 msgstr ""
 
-#: src/app.rs:585 src/app.rs:1359 src/app.rs:1366
+#: src/app.rs:585 src/app.rs:1365 src/app.rs:1372
 msgid "Keyboard Shortcuts"
 msgstr ""
 
@@ -146,19 +146,19 @@ msgstr ""
 msgid "Load link preview"
 msgstr ""
 
-#: src/app.rs:2847
+#: src/app.rs:2870
 msgid "Loading preview…"
 msgstr ""
 
-#: src/app.rs:1809
+#: src/app.rs:1815
 msgid "Mark as Read"
 msgstr ""
 
-#: src/app.rs:1813
+#: src/app.rs:1819
 msgid "Mark conversation as read"
 msgstr ""
 
-#: src/app.rs:2136
+#: src/app.rs:2142
 msgid "Match Apple’s ordered pin list with conversations on this computer. Groups need your selection. This saves a local snapshot and does not change your iPhone."
 msgstr ""
 
@@ -170,7 +170,7 @@ msgstr ""
 msgid "Message composer"
 msgstr ""
 
-#: src/app.rs:2979
+#: src/app.rs:3002
 msgid "Message text copied."
 msgstr ""
 
@@ -182,19 +182,19 @@ msgstr ""
 msgid "Messages & Signal"
 msgstr ""
 
-#: src/app.rs:3352
+#: src/app.rs:3375
 msgid "Name, phone number, or email"
 msgstr ""
 
-#: src/app.rs:3335
+#: src/app.rs:3358
 msgid "New Message"
 msgstr ""
 
-#: src/app.rs:578 src/app.rs:579 src/app.rs:1377
+#: src/app.rs:578 src/app.rs:579 src/app.rs:1383
 msgid "New message"
 msgstr ""
 
-#: src/app.rs:545 src/app.rs:605 src/app.rs:2768
+#: src/app.rs:545 src/app.rs:605 src/app.rs:2791
 msgid "Open Advanced BlueFerry"
 msgstr ""
 
@@ -202,7 +202,7 @@ msgstr ""
 msgid "Opening the selected app. Reopen this switcher to choose another."
 msgstr ""
 
-#: src/app.rs:2843
+#: src/app.rs:2866
 msgid "Other previews are loading. Try again shortly."
 msgstr ""
 
@@ -210,7 +210,7 @@ msgstr ""
 msgid "Preview unavailable · open the link to view it."
 msgstr ""
 
-#: src/app.rs:582 src/app.rs:583 src/app.rs:1379
+#: src/app.rs:582 src/app.rs:583 src/app.rs:1385
 msgid "Refresh conversations"
 msgstr ""
 
@@ -222,15 +222,15 @@ msgstr ""
 msgid "Refresh every 30 seconds while this window is open"
 msgstr ""
 
-#: src/app.rs:1472
+#: src/app.rs:1478
 msgid "Refreshing conversations…"
 msgstr ""
 
-#: src/app.rs:2949
+#: src/app.rs:2972
 msgid "Reply"
 msgstr ""
 
-#: src/app.rs:2951
+#: src/app.rs:2974
 msgid "Reply to message"
 msgstr ""
 
@@ -238,7 +238,7 @@ msgstr ""
 msgid "Retry"
 msgstr ""
 
-#: src/app.rs:553 src/app.rs:2780
+#: src/app.rs:553 src/app.rs:2803
 msgid "Retry BlueFerry connection"
 msgstr ""
 
@@ -250,11 +250,11 @@ msgstr ""
 msgid "Review imported pins"
 msgstr ""
 
-#: src/app.rs:701 src/app.rs:707 src/app.rs:1378
+#: src/app.rs:701 src/app.rs:707 src/app.rs:1384
 msgid "Search conversations"
 msgstr ""
 
-#: src/app.rs:3541
+#: src/app.rs:3564
 msgid "Searching contacts…"
 msgstr ""
 
@@ -266,7 +266,7 @@ msgstr ""
 msgid "Send"
 msgstr ""
 
-#: src/app.rs:828 src/app.rs:1381
+#: src/app.rs:828 src/app.rs:1387
 msgid "Send message"
 msgstr ""
 
@@ -278,7 +278,7 @@ msgstr ""
 msgid "Send with Enter"
 msgstr ""
 
-#: src/app.rs:3185
+#: src/app.rs:3208
 msgid "Sending to your iPhone…"
 msgstr ""
 
@@ -298,7 +298,7 @@ msgstr ""
 msgid "Signal"
 msgstr ""
 
-#: src/app.rs:3371
+#: src/app.rs:3394
 msgid "Start Conversation"
 msgstr ""
 
@@ -310,11 +310,11 @@ msgstr ""
 msgid "Switch to Signal"
 msgstr ""
 
-#: src/app.rs:3437 src/app.rs:3460 src/app.rs:3488 src/app.rs:3545
+#: src/app.rs:3460 src/app.rs:3483 src/app.rs:3511 src/app.rs:3568
 msgid "The connected phone changed. Open a new message again."
 msgstr ""
 
-#: src/app.rs:3239
+#: src/app.rs:3262
 msgid "The message was transferred to your iPhone."
 msgstr ""
 
@@ -322,7 +322,7 @@ msgstr ""
 msgid "This app is not installed. Install its desktop integration, then try again."
 msgstr ""
 
-#: src/app.rs:3354
+#: src/app.rs:3377
 msgid "To"
 msgstr ""
 
@@ -330,11 +330,11 @@ msgstr ""
 msgid "Turn off to use Ctrl+Enter and keep Enter for new lines"
 msgstr ""
 
-#: src/app.rs:2042 src/app.rs:2092
+#: src/app.rs:2048 src/app.rs:2098
 msgid "Update BlueFerry and connect your iPhone before importing phone pins."
 msgstr ""
 
-#: src/app.rs:3041
+#: src/app.rs:3064
 msgid "Write a message before sending."
 msgstr ""
 
@@ -346,6 +346,6 @@ msgstr ""
 msgid "Your iPhone conversations"
 msgstr ""
 
-#: src/app.rs:3053
+#: src/app.rs:3076
 msgid "Your iPhone is offline. Your draft is kept while this window is open."
 msgstr ""

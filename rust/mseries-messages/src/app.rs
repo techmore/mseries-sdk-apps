@@ -963,6 +963,12 @@ impl App {
                 }
             });
         let weak = Rc::downgrade(self);
+        self.window.connect_is_active_notify(move |_| {
+            if let Some(app) = weak.upgrade() {
+                app.mark_selected_read_if_active();
+            }
+        });
+        let weak = Rc::downgrade(self);
         self.window.connect_close_request(move |_| {
             if let Some(app) = weak.upgrade() {
                 if let Some(poller) = app.refresh_poller.borrow().as_ref() {
@@ -2426,9 +2432,26 @@ impl App {
         self.render_conversation(thread.clone());
         self.show_selected_conversation();
         self.sync_favorite_selection();
-        if let Some(thread) = thread
-            .filter(|thread| self.window.is_active() && !thread.local_only && thread.unread() > 0)
-        {
+        self.mark_selected_read_if_active();
+    }
+
+    fn mark_selected_read_if_active(self: &Rc<Self>) {
+        if !self.window.is_active() {
+            return;
+        }
+        let thread = {
+            let state = self.state.borrow();
+            state
+                .threads
+                .iter()
+                .find(|thread| {
+                    state.selected.as_deref() == Some(thread.key.as_str())
+                        && !thread.local_only
+                        && thread.unread() > 0
+                })
+                .cloned()
+        };
+        if let Some(thread) = thread {
             self.mark_thread_read_once(&thread);
         }
     }
@@ -4173,6 +4196,49 @@ mod tests {
             baseline_reads + 4,
             "retry must issue a new request after failure"
         );
+        let inactive = gtk::Window::builder().title("Unread focus fixture").build();
+        inactive.present();
+        let until = std::time::Instant::now() + std::time::Duration::from_millis(100);
+        while std::time::Instant::now() < until {
+            gtk::glib::MainContext::default().iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let other_id = std::process::Command::new("xdotool")
+            .args(["search", "--name", "^Unread focus fixture$"])
+            .output()
+            .unwrap();
+        let other_id = String::from_utf8(other_id.stdout).unwrap();
+        assert!(
+            std::process::Command::new("xdotool")
+                .args(["windowfocus", "--sync", other_id.trim()])
+                .status()
+                .unwrap()
+                .success()
+        );
+        let until = std::time::Instant::now() + std::time::Duration::from_millis(100);
+        while std::time::Instant::now() < until {
+            gtk::glib::MainContext::default().iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(!app.window.is_active());
+        app.state.borrow_mut().threads[0].messages[0].read = false;
+        let before_activation = read_calls.get();
+        app.mark_selected_read_if_active();
+        assert_eq!(read_calls.get(), before_activation);
+        press_key("ctrl+f");
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while read_calls.get() == before_activation && std::time::Instant::now() < until {
+            gtk::glib::MainContext::default().iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(app.window.is_active());
+        assert_eq!(
+            read_calls.get(),
+            before_activation + 1,
+            "returning to the selected conversation must request read state"
+        );
+        inactive.close();
+        app.state.borrow_mut().threads[0].messages[0].read = true;
         let focused_row = app.list.row_at_index(0).unwrap();
         assert!(focused_row.grab_focus());
         let focused_key = app.order.borrow()[0].clone();
