@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Apple Dev
+GenericName=iPhone App Builder
+Comment=Build, run and ship iPhone apps with omarchy-apple-dev
+Exec=mseries-apple-dev %F
+Icon=org.techmore.mseries.AppleDev
+Terminal=false
+Categories=GTK;Development;IDE;
+Keywords=ios;iphone;ipad;swift;swiftui;xtool;xcode;testflight;flutter;
+StartupNotify=true

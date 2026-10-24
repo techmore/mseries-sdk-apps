@@ -1,0 +1,73 @@
+name: Rust Pantheon Apple Dev
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev, main]
+    paths:
+      - "rust/mseries-pantheon-kit/**"
+      - "rust/mseries-apple-dev/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - ".github/workflows/rust-pantheon-apple-dev.yml"
+  pull_request:
+    paths:
+      - "rust/mseries-pantheon-kit/**"
+      - "rust/mseries-apple-dev/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - ".github/workflows/rust-pantheon-apple-dev.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Apple Dev test/build/package (arm64)
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config cargo rustc rustfmt rust-clippy \
+            libgtk-4-dev libgranite-7-dev libvte-2.91-gtk4-dev \
+            desktop-file-utils appstream
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: rust-pantheon-apple-dev-${{ runner.arch }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: rust-pantheon-apple-dev-${{ runner.arch }}-
+
+      - name: Formatting and strict lint
+        run: |
+          cargo fmt --manifest-path rust/Cargo.toml -p mseries-pantheon-kit -p mseries-apple-dev --check
+          cargo clippy --manifest-path rust/Cargo.toml -p mseries-pantheon-kit -p mseries-apple-dev --locked -- -D warnings
+
+      - name: Unit tests
+        run: cargo test --manifest-path rust/Cargo.toml -p mseries-apple-dev --locked
+
+      - name: Build the Debian package
+        run: MSERIES_APPLE_DEV_OUTPUT_DIR="$RUNNER_TEMP/mseries-apple-dev" bash rust/mseries-apple-dev/build-deb.sh
+
+      - name: Validate desktop metadata
+        run: |
+          desktop-file-validate rust/mseries-apple-dev/data/org.techmore.mseries.AppleDev.desktop
+          appstreamcli validate --no-net rust/mseries-apple-dev/data/org.techmore.mseries.AppleDev.metainfo.xml
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mseries-apple-dev-deb-${{ github.run_id }}
+          path: ${{ runner.temp }}/mseries-apple-dev/*.deb
+          if-no-files-found: error

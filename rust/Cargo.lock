@@ -1909,6 +1909,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mseries-apple-dev"
+version = "0.1.0"
+dependencies = [
+ "granite-rs",
+ "gtk4",
+ "libc",
+ "mseries-pantheon-kit",
+ "serde",
+ "serde_json",
+ "vte4",
+]
+
+[[package]]
 name = "mseries-broker"
 version = "0.1.0"
 dependencies = [

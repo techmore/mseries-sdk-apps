@@ -1,0 +1,17 @@
+[package]
+name = "mseries-apple-dev"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+description = "Apple Dev: a native Pantheon window for building and shipping iPhone apps with omarchy-apple-dev"
+
+[dependencies]
+mseries-pantheon-kit = { path = "../mseries-pantheon-kit" }
+# Same GTK/Granite/VTE pins as mseries-system-monitor (see mseries/RUST-UPSTREAM-MAINTENANCE.md).
+gtk = { package = "gtk4", version = "0.11", features = ["v4_20"] }
+granite = { package = "granite-rs", version = "3.3", features = ["v7_8", "gtk_v4_20"] }
+vte4 = { version = "0.10", features = ["v0_76"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.techmore.mseries.AppleDev</id>
+  <name>Apple Dev</name>
+  <summary>Build, run and ship iPhone apps from Linux</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <description>
+    <p>A native Pantheon window for omarchy-apple-dev, the toolkit that builds SwiftUI and Flutter apps for iPhone on Linux without a Mac or an Xcode install.</p>
+    <ul>
+      <li>Toolchain: see what is installed, install or repair it, and sign in with an Apple ID.</li>
+      <li>Devices: connected iPhones, pairing, details, live logs and installs over Tailscale.</li>
+      <li>Projects: build, run, debug with LLDB, make App Store builds and upload to TestFlight.</li>
+    </ul>
+    <p>Every command runs in the built-in Activity terminal, so prompts and passwords work as in a terminal.</p>
+  </description>
+  <developer id="io.elementary.mseries">
+    <name>elementary OS M-Series</name>
+  </developer>
+  <launchable type="desktop-id">org.techmore.mseries.AppleDev.desktop</launchable>
+  <url type="homepage">https://github.com/techmore/ElementaryOS_MSeries</url>
+  <url type="bugtracker">https://github.com/techmore/ElementaryOS_MSeries/issues</url>
+  <provides>
+    <binary>mseries-apple-dev</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-23">
+      <description><p>Initial native preview.</p></description>
+    </release>
+  </releases>
+</component>
