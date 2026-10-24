@@ -4,7 +4,9 @@
 
 pub mod commands;
 pub mod devices;
+pub mod distro;
 pub mod project;
 pub mod settings;
+pub mod testflight;
 pub mod toolkit;
 pub mod ui;

@@ -25,11 +25,30 @@ pub enum After {
     AddProject(PathBuf),
     /// Refresh the project page (a new build artifact).
     RefreshProject,
+    /// Refresh the project page, then show this project's newest builds in App Store Connect.
+    CheckTestFlight(PathBuf),
 }
 
-/// Put the toolchain's own clang/lldb first and raise the open-file limit, as the toolkit README
-/// asks for every build ("Notes" and "Real projects").
-const PREAMBLE: &str = r#"set -o pipefail
+/// Environment shared by every job and the toolchain probe:
+/// - Swift's backtracer cannot protect its helper's path on a 16K-page kernel and says so on every
+///   command, so it is off.
+/// - Builds write gigabytes of temporaries; /tmp is RAM on M-series laptops, so they go to disk.
+/// - A libimobiledevice built from source into [`crate::toolkit::LIMD_PREFIX`] (when the distro's
+///   packages are missing or too old) is found by pkg-config, the loader and PATH.
+pub const ENV_SETUP: &str = r#"export SWIFT_BACKTRACE=enable=no
+TMPDIR="$HOME/.cache/apple-dev-tmp"; mkdir -p "$TMPDIR" 2>/dev/null && export TMPDIR || unset TMPDIR
+LIMD="$HOME/.local/opt/libimobiledevice"
+if [ -d "$LIMD/lib" ]; then
+  PATH="$LIMD/bin:$PATH"
+  LD_LIBRARY_PATH="$LIMD/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  PKG_CONFIG_PATH="$LIMD/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+  export PATH LD_LIBRARY_PATH PKG_CONFIG_PATH
+fi
+"#;
+
+/// [`ENV_SETUP`], then the toolchain's own clang/lldb first and a raised open-file limit, as the
+/// toolkit README asks for every build ("Notes" and "Real projects").
+const PREAMBLE_TAIL: &str = r#"set -o pipefail
 if command -v swift >/dev/null 2>&1; then
   PATH="$(dirname "$(readlink -f "$(command -v swift)")"):$HOME/.local/bin:$PATH"; export PATH
 fi
@@ -48,7 +67,13 @@ fn q(path: &Path) -> String {
 }
 
 fn job(title: impl Into<String>, cwd: &Path, command: String, after: After) -> Job {
-    Job { title: title.into(), cwd: cwd.into(), script: format!("{PREAMBLE}{command}\n"), env: Vec::new(), after }
+    Job {
+        title: title.into(),
+        cwd: cwd.into(),
+        script: format!("{ENV_SETUP}{PREAMBLE_TAIL}{command}\n"),
+        env: Vec::new(),
+        after,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -208,7 +233,7 @@ pub fn project_job(action: Action, project: &Project, toolkit: &Path, settings: 
             job(title, dir, cmd, After::RefreshProject)
         }
         Action::AppStoreBuild => job(title, dir, tk("ship.sh"), After::RefreshProject),
-        Action::Upload => job(title, dir, format!("{} --upload", tk("ship.sh")), After::RefreshProject),
+        Action::Upload => job(title, dir, format!("{} --upload", tk("ship.sh")), After::CheckTestFlight(dir.clone())),
         Action::TailnetInstall => {
             let ipa = project::latest_ipa(project).unwrap_or_default();
             let cmd = format!(
@@ -225,9 +250,12 @@ pub fn project_job(action: Action, project: &Project, toolkit: &Path, settings: 
         Action::FlutterInstall => {
             job(title, dir, format!("{} --install {}", tk("flutter/build.sh"), q(dir)), After::RefreshProject)
         }
-        Action::FlutterUpload => {
-            job(title, dir, format!("{} --upload {}", tk("flutter/ship.sh"), q(dir)), After::RefreshProject)
-        }
+        Action::FlutterUpload => job(
+            title,
+            dir,
+            format!("{} --upload {}", tk("flutter/ship.sh"), q(dir)),
+            After::CheckTestFlight(dir.clone()),
+        ),
         Action::MacBuild => job(title, dir, tk("ship-mac.sh"), After::RefreshProject),
         Action::MacNotarize => job(title, dir, format!("{} --notarize", tk("ship-mac.sh")), After::RefreshProject),
         Action::ConvertXcode => {
@@ -278,6 +306,50 @@ pub fn install_job(toolkit: &Path, mode: InstallMode, xip: Option<&Path>) -> Job
 
 pub fn repair_job(toolkit: &Path) -> Job {
     job("Repair toolchain", toolkit, "./install-toolchain.sh --repair".into(), After::RecheckToolchain)
+}
+
+/// Install the apt packages in the Activity terminal; sudo asks for the password there.
+pub fn apt_job(home: &Path, packages: &[String]) -> Job {
+    let list: Vec<String> = packages.iter().map(|p| shell_quote(p)).collect();
+    job("Install packages", home, format!("sudo apt-get install -y {}", list.join(" ")), After::RecheckToolchain)
+}
+
+/// Download a swift.org toolchain into `~/.local/share/swift` (signature checked against
+/// swift.org's keys in a throwaway keyring), link `~/.local/bin/swift` to it and, when an iOS SDK
+/// is already cached, re-register it with the new compiler (`install-toolchain.sh --repair`).
+pub fn swift_install_job(home: &Path, tarball: &crate::distro::Tarball, toolkit: Option<&Path>) -> Job {
+    let repair = toolkit
+        .map(|tk| {
+            format!(
+                "if [ -n \"$fresh\" ] && ls -d \"$HOME\"/.cache/xtool/darwin-*.xtoolsdk >/dev/null 2>&1; then\n  (cd {} && ./install-toolchain.sh --repair)\nfi\n",
+                q(tk)
+            )
+        })
+        .unwrap_or_default();
+    let script = format!(
+        r#"set -e
+name={name}; url={url}
+dest="$HOME/{dir}"; fresh=
+if [ ! -x "$dest/$name/usr/bin/swift" ]; then
+  command -v gpg >/dev/null || {{ echo "gpg is missing: install the packages under This Computer first (gnupg2)."; exit 1; }}
+  work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+  echo "Downloading $name from swift.org (about 1 GB)"
+  curl -fL --progress-bar -o "$work/swift.tar.gz" "$url"
+  curl -fsSL -o "$work/swift.tar.gz.sig" "$url.sig"
+  export GNUPGHOME="$work/gnupg"; mkdir -m 700 "$GNUPGHOME"
+  curl -fsSL https://www.swift.org/keys/all-keys.asc | gpg --batch --quiet --import
+  gpg --batch --verify "$work/swift.tar.gz.sig" "$work/swift.tar.gz"
+  mkdir -p "$dest"; tar -xzf "$work/swift.tar.gz" -C "$dest"; fresh=1
+fi
+mkdir -p "$HOME/.local/bin"; ln -sfn "$dest/$name/usr/bin/swift" "$HOME/.local/bin/swift"
+PATH="$dest/$name/usr/bin:$HOME/.local/bin:$PATH"; hash -r
+swift --version
+{repair}"#,
+        name = shell_quote(&tarball.name),
+        url = shell_quote(&tarball.url),
+        dir = crate::toolkit::SWIFT_DIR,
+    );
+    job(format!("Install Swift {}", tarball.swift), home, script, After::RecheckToolchain)
 }
 
 pub fn sign_in_job(home: &Path) -> Job {
@@ -402,13 +474,71 @@ mod tests {
         assert!(blocker(Action::Upload, &p, &s).is_none());
         let job = project_job(Action::Upload, &p, Path::new("/tk"), &s, None);
         assert!(job.script.ends_with("/tk/ship.sh --upload\n"));
+        assert_eq!(job.after, After::CheckTestFlight("/home/me/My Apps/Hello".into()));
         assert!(job.env.iter().any(|(k, v)| k == "ASC_KEY_ID" && v == "KEYID"));
     }
 
     #[test]
+    fn every_job_gets_the_shared_environment() {
+        let job = project_job(Action::Build, &xtool_project(), Path::new("/tk"), &Settings::default(), None);
+        assert!(job.script.starts_with("export SWIFT_BACKTRACE=enable=no\n"));
+        assert!(job.script.contains(r#"TMPDIR="$HOME/.cache/apple-dev-tmp""#));
+        for var in ["PATH=\"$LIMD/bin:", "LD_LIBRARY_PATH=\"$LIMD/lib", "PKG_CONFIG_PATH=\"$LIMD/lib/pkgconfig"] {
+            assert!(job.script.contains(var), "{var}");
+        }
+        assert!(job.script.find("LIMD=").unwrap() < job.script.find("xtool dev build").unwrap());
+    }
+
+    #[test]
+    fn env_setup_runs_in_bash() {
+        let home = std::env::temp_dir().join(format!("apple-dev-env-{}", std::process::id()));
+        std::fs::create_dir_all(home.join(".local/opt/libimobiledevice/lib")).unwrap();
+        let out = std::process::Command::new("bash")
+            .args([
+                "--noprofile",
+                "--norc",
+                "-c",
+                &format!("{ENV_SETUP}echo \"$SWIFT_BACKTRACE|$TMPDIR|$PKG_CONFIG_PATH|${{PATH%%:*}}\""),
+            ])
+            .env("HOME", &home)
+            .env_remove("PKG_CONFIG_PATH")
+            .output()
+            .unwrap();
+        let h = home.display();
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            format!(
+                "enable=no|{h}/.cache/apple-dev-tmp|{h}/.local/opt/libimobiledevice/lib/pkgconfig|{h}/.local/opt/libimobiledevice/bin"
+            )
+        );
+        assert!(home.join(".cache/apple-dev-tmp").is_dir());
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn swift_install_verifies_links_and_repairs() {
+        let t = crate::distro::swift_tarball("6.4.1", "26.04", "aarch64").unwrap();
+        let job = swift_install_job(Path::new("/h"), &t, Some(Path::new("/tk")));
+        assert_eq!(job.title, "Install Swift 6.4.1");
+        assert!(job.script.contains("name=swift-6.4.1-RELEASE-ubuntu26.04-aarch64;"));
+        assert!(job.script.contains("gpg --batch --verify"));
+        assert!(job.script.contains(r#"ln -sfn "$dest/$name/usr/bin/swift" "$HOME/.local/bin/swift""#));
+        assert!(job.script.contains("(cd /tk && ./install-toolchain.sh --repair)"));
+        assert!(!swift_install_job(Path::new("/h"), &t, None).script.contains("--repair"));
+        let out = std::process::Command::new("bash").args(["-n", "-c", &job.script]).output().unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    }
+
+    #[test]
+    fn apt_job_quotes_packages() {
+        let job = apt_job(Path::new("/h"), &["llvm".into(), "libz3-dev".into()]);
+        assert!(job.script.ends_with("sudo apt-get install -y llvm libz3-dev\n"));
+        assert_eq!(job.after, After::RecheckToolchain);
+    }
+
+    #[test]
     fn device_build_passes_the_team() {
-        let mut s = Settings::default();
-        s.team_id = "ABCDE12345".into();
+        let s = Settings { team_id: "ABCDE12345".into(), ..Settings::default() };
         let job = project_job(Action::DeviceBuild, &xtool_project(), Path::new("/tk"), &s, None);
         assert!(job.script.ends_with("/tk/ship.sh --device ABCDE12345\n"));
     }

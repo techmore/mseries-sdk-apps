@@ -132,8 +132,7 @@ mod tests {
     fn round_trips_and_tolerates_missing_fields() {
         let dir = std::env::temp_dir().join(format!("apple-dev-settings-{}", std::process::id()));
         let file = dir.join("settings.json");
-        let mut s = Settings::default();
-        s.asc_key_id = "ABCDE12345".into();
+        let mut s = Settings { asc_key_id: "ABCDE12345".into(), ..Settings::default() };
         assert!(s.add_project("/tmp/Hello".into()));
         assert!(!s.add_project("/tmp/Hello".into()));
         s.save_to(&file).unwrap();
@@ -148,10 +147,12 @@ mod tests {
 
     #[test]
     fn asc_needs_all_three_values_and_a_real_key_file() {
-        let mut s = Settings::default();
-        s.asc_key_id = "KEY".into();
-        s.asc_issuer_id = "ISSUER".into();
-        s.asc_key_path = "/definitely/not/here.p8".into();
+        let mut s = Settings {
+            asc_key_id: "KEY".into(),
+            asc_issuer_id: "ISSUER".into(),
+            asc_key_path: "/definitely/not/here.p8".into(),
+            ..Settings::default()
+        };
         assert!(!s.asc_ready());
         s.asc_key_path = "/etc/hostname".into();
         assert!(s.asc_ready() || !Path::new("/etc/hostname").exists());

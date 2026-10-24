@@ -171,8 +171,14 @@ pub fn scan() -> Vec<Device> {
 }
 
 fn ideviceinfo(udid: &str) -> Option<Device> {
+    // The user-prefix build (RUNPATH set) wins, as on the jobs' PATH.
+    let program = crate::toolkit::limd_prefix()
+        .map(|p| p.join("bin/ideviceinfo"))
+        .filter(|p| p.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "ideviceinfo".into());
     let get = |key: &str| {
-        run_with_timeout("ideviceinfo", &["-u", udid, "-k", key], None, Duration::from_secs(3))
+        run_with_timeout(&program, &["-u", udid, "-k", key], None, Duration::from_secs(3))
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
     };

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Render Apple Dev's pages to PNGs (light and dark) under Xvfb with the fixture project and a
-# fixture iPhone, for visual review and pull requests. Uses the debug build.
+# fixture iPhone and TestFlight reply, for visual review and pull requests. Uses the debug build.
 #   rust/mseries-apple-dev/snapshot.sh OUT_DIR
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -14,6 +14,7 @@ for page in toolchain devices project; do
     printf '{"projects":["%s"],"selected":"%s","width":1180,"height":800}\n' "$here/fixtures/HelloOmarchy" "$selected" >"$work/settings.json"
     xvfb-run -a -s "-screen 0 1400x960x24" env GSK_RENDERER=cairo GDK_BACKEND=x11 \
       MSERIES_APPLE_DEV_CONFIG="$work/settings.json" MSERIES_APPLE_DEV_FIXTURE_DEVICES="$here/fixtures/devices.json" \
+      MSERIES_APPLE_DEV_FIXTURE_TESTFLIGHT="$here/fixtures/testflight.json" \
       MSERIES_APPLE_DEV_DARK=$([[ $scheme == dark ]] && echo 1 || echo 0) \
       MSERIES_APPLE_DEV_SNAPSHOT="$out/$page-$scheme.png" MSERIES_APPLE_DEV_SNAPSHOT_DELAY=${DELAY:-4000} \
       dbus-run-session -- "$bin" 2>&1 | grep -viE "egl|mesa|dri3|dbus" || true

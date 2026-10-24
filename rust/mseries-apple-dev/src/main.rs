@@ -2,8 +2,9 @@
 //!
 //! Debug aids: `MSERIES_APPLE_DEV_SNAPSHOT=/path.png` renders the window to a PNG after
 //! `MSERIES_APPLE_DEV_SNAPSHOT_DELAY` ms (default 2500) and quits; `MSERIES_APPLE_DEV_DARK=1|0`
-//! forces the colour scheme; `MSERIES_APPLE_DEV_SNAPSHOT_ACTION=win.build` triggers a window action first; `MSERIES_APPLE_DEV_CONFIG` and `MSERIES_APPLE_DEV_FIXTURE_DEVICES`
-//! point at fixture settings and devices.
+//! forces the colour scheme; `MSERIES_APPLE_DEV_SNAPSHOT_ACTION=win.build` triggers a window action first; `MSERIES_APPLE_DEV_CONFIG`, `MSERIES_APPLE_DEV_FIXTURE_DEVICES`
+//! and `MSERIES_APPLE_DEV_FIXTURE_TESTFLIGHT` point at fixture settings, devices and an App Store
+//! Connect reply.
 
 use granite::prelude::SettingsExt;
 use gtk::{gio, glib, prelude::*};

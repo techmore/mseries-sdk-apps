@@ -7,16 +7,19 @@ use super::dialogs;
 use super::widgets::{self, button, label, page, page_header, row, section, tilde};
 use crate::commands::{self, Action, After, Job, Section};
 use crate::devices::{self, Device};
+use crate::distro;
 use crate::project::{self, Kind, Project};
 use crate::settings::{Settings, home};
+use crate::testflight::{self, Builds, Level};
 use crate::toolkit::{self, CheckId, CheckState, Report};
 use granite::prelude::{PlaceholderExt, ToastExt};
 use gtk::{gdk, gio, glib, pango, prelude::*};
 use mseries_pantheon_kit::{DockBadge, Polling, set_accessible_label, set_box_spacing_text_units};
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 type WindowAction = Box<dyn Fn(&Rc<AppWindow>)>;
 type DeviceJob = fn(&Path, &str) -> Job;
@@ -36,6 +39,17 @@ const CSS: &str = r#"
 .apple-dev-sidebar-footer { padding: 0.35em; }
 .apple-dev-console vte-terminal { padding: 0.35em 0.75em; }
 "#;
+
+/// App Store Connect state of a project's builds, shown after an upload.
+#[derive(Debug, Clone)]
+enum TestFlightView {
+    Checking,
+    Done { result: Result<Builds, String>, checked: SystemTime },
+}
+
+/// While Apple processes a build, ask again this often, at most this many times (20 minutes).
+const TESTFLIGHT_POLL: Duration = Duration::from_secs(30);
+const TESTFLIGHT_POLLS: u32 = 40;
 
 #[derive(Debug, Clone, PartialEq)]
 enum Side {
@@ -100,6 +114,9 @@ pub struct AppWindow {
     badge: DockBadge,
     unseen: Cell<u64>,
     poller: RefCell<Option<Polling>>,
+    testflight: RefCell<HashMap<PathBuf, TestFlightView>>,
+    /// Checks left for a project whose newest build is still processing.
+    testflight_polls: RefCell<HashMap<PathBuf, u32>>,
 }
 
 impl AppWindow {
@@ -312,6 +329,8 @@ impl AppWindow {
             badge: DockBadge::new(APP_ID),
             unseen: Cell::new(0),
             poller: RefCell::new(None),
+            testflight: RefCell::new(HashMap::new()),
+            testflight_polls: RefCell::new(HashMap::new()),
         });
 
         w.tailnet_entry.set_text(&w.settings.borrow().tailnet_host);
@@ -647,6 +666,12 @@ impl AppWindow {
                         self.render_project();
                     }
                 }
+                After::CheckTestFlight(path) => {
+                    self.check_testflight(path, true);
+                    if matches!(Side::from_key(&self.settings.borrow().selected), Side::Project(_)) {
+                        self.render_project();
+                    }
+                }
                 After::Nothing => {}
             }
         } else if job.after == After::RecheckToolchain {
@@ -837,25 +862,7 @@ impl AppWindow {
         let Some(report) = report else { return };
 
         if !report.host.arch_based {
-            let (group, list) = section("This Computer");
-            let (r, t, _, _) = row(
-                Some("dialog-information-symbolic"),
-                &format!("{} is not Arch-based", report.host.pretty_name),
-                "The installer skips its pacman steps here. Install the packages in docs/DISTROS.md and put a swift.org Swift 6.4 toolchain on PATH, then run Install.",
-            );
-            let read = button("Read Guide", &[]);
-            let doc = report.toolkit.as_ref().map(|t| t.join("docs/DISTROS.md")).filter(|p| p.is_file());
-            let weak = Rc::downgrade(self);
-            read.connect_clicked(move |_| {
-                let Some(w) = weak.upgrade() else { return };
-                match &doc {
-                    Some(path) => widgets::open_path(&w.window, path),
-                    None => widgets::open_uri(&w.window, &format!("{}/blob/main/docs/DISTROS.md", toolkit::UPSTREAM)),
-                }
-            });
-            t.append(&read);
-            list.append(&r);
-            page.append(&group);
+            page.append(&self.this_computer(&report));
         }
 
         // The toolkit checkout.
@@ -920,16 +927,12 @@ impl AppWindow {
                 CheckState::Missing => ("dialog-warning-symbolic", "apple-dev-warn"),
             };
             let (r, t, _, _) = row(None, check.title, &check.detail);
-            let image = gtk::Image::from_icon_name(icon);
-            image.add_css_class(class);
-            image.set_tooltip_text(Some(match check.state {
+            let tooltip = match check.state {
                 CheckState::Ready => "Ready",
                 CheckState::Attention => "Needs attention",
                 CheckState::Missing => "Not set up",
-            }));
-            if let Some(content) = r.child().and_downcast::<gtk::Box>() {
-                content.prepend(&image);
-            }
+            };
+            prepend_status(&r, icon, class, tooltip);
             let tk = report.toolkit.clone();
             let action: Option<(&str, Job)> = match (check.id, check.state, &tk) {
                 (CheckId::AppleId, CheckState::Missing, _) if report.state(CheckId::Xtool) == CheckState::Ready => {
@@ -1022,6 +1025,284 @@ impl AppWindow {
                 }
             });
         });
+    }
+
+    /// Non-Arch hosts: the apt packages and the swift.org Swift that match the iOS SDK.
+    fn this_computer(self: &Rc<Self>, report: &Report) -> gtk::Box {
+        let (group, list) = section("This Computer");
+        let host = &report.host;
+        if host.apt {
+            let full = distro::apt_command(distro::APT_PACKAGES);
+            let prefix_note = if report.limd_prefix.is_some() {
+                format!(" libimobiledevice comes from ~/{}.", toolkit::LIMD_PREFIX)
+            } else {
+                String::new()
+            };
+            let (detail, ready, missing) = match &report.apt_missing {
+                Some(m) if m.is_empty() => (format!("All installed.{prefix_note}"), true, Vec::new()),
+                Some(m) => (
+                    format!(
+                        "{} to install: {}. Install runs apt in Activity; sudo asks for your password there.{prefix_note}",
+                        plural(m.len(), "package"),
+                        m.join(" ")
+                    ),
+                    false,
+                    m.clone(),
+                ),
+                None => (format!("Install with: {full}"), false, Vec::new()),
+            };
+            let (r, t, _, d) = row(None, &format!("Packages for {}", host.pretty_name), &detail);
+            d.set_selectable(true);
+            if ready {
+                prepend_status(&r, "emblem-ok-symbolic", "apple-dev-ok", "Ready");
+            } else {
+                prepend_status(&r, "dialog-warning-symbolic", "apple-dev-warn", "Not set up");
+            }
+            let copy = button("Copy", &["flat"]);
+            copy.set_tooltip_text(Some(&full));
+            let weak = Rc::downgrade(self);
+            copy.connect_clicked(move |_| {
+                if let Some(w) = weak.upgrade() {
+                    w.window.clipboard().set_text(&full);
+                    w.toast("Copied the apt command");
+                }
+            });
+            t.append(&copy);
+            if !missing.is_empty() {
+                let install = button("Install", &["suggested-action"]);
+                let weak = Rc::downgrade(self);
+                install.connect_clicked(move |_| {
+                    if let Some(w) = weak.upgrade() {
+                        w.run_job(commands::apt_job(&home(), &missing));
+                    }
+                });
+                t.append(&install);
+            }
+            list.append(&r);
+        }
+
+        let xcode = report.xcode.clone().unwrap_or_else(|| distro::default_xcode().to_string());
+        let tarball = host
+            .ubuntu
+            .as_deref()
+            .zip(distro::swift_for_xcode(&xcode))
+            .and_then(|(ubuntu, swift)| distro::swift_tarball(swift, ubuntu, std::env::consts::ARCH));
+        match tarball {
+            Some(t) => {
+                let installed = distro::swift_matches(&report.swift_version, &t.swift);
+                let sdk_note =
+                    if report.xcode.is_some() { "" } else { " No iOS SDK yet: use the Xcode .xip of this version." };
+                let detail = if installed {
+                    format!("{}. Matches the iOS SDK from Xcode {xcode}.", report.swift_version)
+                } else if report.swift_version.is_empty() {
+                    format!(
+                        "Not installed. Install downloads the swift.org build for Ubuntu {} {} (signature checked) into ~/{} and links ~/.local/bin/swift. No sudo.{sdk_note}",
+                        host.ubuntu.as_deref().unwrap_or_default(),
+                        std::env::consts::ARCH,
+                        toolkit::SWIFT_DIR
+                    )
+                } else {
+                    format!(
+                        "{} does not match Xcode {xcode}. Install puts Swift {} in ~/{} and points ~/.local/bin/swift at it.{sdk_note}",
+                        report.swift_version,
+                        t.swift,
+                        toolkit::SWIFT_DIR
+                    )
+                };
+                let (r, tr, _, _) = row(None, &format!("Swift {} for Xcode {xcode}", t.swift), &detail);
+                if installed {
+                    prepend_status(&r, "emblem-ok-symbolic", "apple-dev-ok", "Ready");
+                } else {
+                    prepend_status(&r, "dialog-warning-symbolic", "apple-dev-warn", "Not set up");
+                    let install = button("Install Swift", &["suggested-action"]);
+                    install.set_tooltip_text(Some(&t.url));
+                    let weak = Rc::downgrade(self);
+                    let tk = report.toolkit.clone();
+                    install.connect_clicked(move |_| {
+                        if let Some(w) = weak.upgrade() {
+                            w.run_job(commands::swift_install_job(&home(), &t, tk.as_deref()));
+                        }
+                    });
+                    tr.append(&install);
+                }
+                list.append(&r);
+            }
+            None => {
+                let (r, t, _, _) = row(
+                    Some("dialog-information-symbolic"),
+                    &format!("{} is not Arch-based", host.pretty_name),
+                    "The installer skips its pacman steps here. Install the packages in docs/DISTROS.md and put a swift.org Swift 6.4 toolchain on PATH, then run Install.",
+                );
+                let read = button("Read Guide", &[]);
+                let doc = report.toolkit.as_ref().map(|t| t.join("docs/DISTROS.md")).filter(|p| p.is_file());
+                let weak = Rc::downgrade(self);
+                read.connect_clicked(move |_| {
+                    let Some(w) = weak.upgrade() else { return };
+                    match &doc {
+                        Some(path) => widgets::open_path(&w.window, path),
+                        None => {
+                            widgets::open_uri(&w.window, &format!("{}/blob/main/docs/DISTROS.md", toolkit::UPSTREAM))
+                        }
+                    }
+                });
+                t.append(&read);
+                list.append(&r);
+            }
+        }
+        group
+    }
+
+    // --- TestFlight --------------------------------------------------------------------------
+
+    fn showing_project(&self, path: &Path) -> bool {
+        matches!(Side::from_key(&self.settings.borrow().selected), Side::Project(p) if p == path)
+    }
+
+    /// Ask App Store Connect for the project's newest builds. `fresh` (after an upload or a click)
+    /// restarts the follow-up checks while Apple is still processing. Does not re-render itself
+    /// until the answer arrives.
+    fn check_testflight(self: &Rc<Self>, path: &Path, fresh: bool) {
+        if matches!(self.testflight.borrow().get(path), Some(TestFlightView::Checking)) {
+            return;
+        }
+        if fresh {
+            self.testflight_polls.borrow_mut().insert(path.to_path_buf(), TESTFLIGHT_POLLS);
+        }
+        let done = |w: &Rc<Self>, result: Result<Builds, String>| {
+            w.testflight
+                .borrow_mut()
+                .insert(path.to_path_buf(), TestFlightView::Done { result, checked: SystemTime::now() });
+        };
+        let app = project::inspect(path).as_ref().and_then(testflight::app_ref);
+        let tk = self.toolkit().or_else(|| testflight::fixture().map(|_| PathBuf::new()));
+        let (Some(tk), Some(app)) = (tk, app) else {
+            done(self, Err("Needs a bundleID in xtool.yml or a signed .ipa to look the app up.".into()));
+            self.testflight_polls.borrow_mut().remove(path);
+            return;
+        };
+        let env = self.settings.borrow().asc_env();
+        self.testflight.borrow_mut().insert(path.to_path_buf(), TestFlightView::Checking);
+        let weak = Rc::downgrade(self);
+        let path = path.to_path_buf();
+        glib::spawn_future_local(async move {
+            let result = gio::spawn_blocking(move || testflight::fetch(&tk, &app, &env))
+                .await
+                .unwrap_or_else(|_| Err("The App Store Connect check stopped unexpectedly.".into()));
+            let Some(w) = weak.upgrade() else { return };
+            let pending = result.as_ref().is_ok_and(Builds::pending);
+            w.testflight.borrow_mut().insert(path.clone(), TestFlightView::Done { result, checked: SystemTime::now() });
+            let again = {
+                let mut polls = w.testflight_polls.borrow_mut();
+                match polls.get_mut(&path) {
+                    Some(left) if pending && *left > 0 => {
+                        *left -= 1;
+                        true
+                    }
+                    _ => {
+                        polls.remove(&path);
+                        false
+                    }
+                }
+            };
+            if again {
+                let weak = Rc::downgrade(&w);
+                let path = path.clone();
+                glib::timeout_add_local_once(TESTFLIGHT_POLL, move || {
+                    if let Some(w) = weak.upgrade() {
+                        w.check_testflight(&path, false);
+                        if w.showing_project(&path) {
+                            w.render_project();
+                        }
+                    }
+                });
+            }
+            if w.showing_project(&path) {
+                w.render_project();
+            }
+        });
+    }
+
+    fn testflight_row(self: &Rc<Self>, project: &Project, view: Option<TestFlightView>) -> gtk::ListBoxRow {
+        let polling = self.testflight_polls.borrow().contains_key(&project.path);
+        let check_button = |text: &str| {
+            let b = button(text, &["flat"]);
+            let weak = Rc::downgrade(self);
+            let path = project.path.clone();
+            b.connect_clicked(move |_| {
+                if let Some(w) = weak.upgrade() {
+                    w.check_testflight(&path, true);
+                    w.render_project();
+                }
+            });
+            b
+        };
+        match view {
+            None => {
+                let (r, t, _, _) = row(
+                    Some("send-to-symbolic"),
+                    "TestFlight",
+                    "Apple's processing and TestFlight state of the newest build. Checked after every upload.",
+                );
+                t.append(&check_button("Check"));
+                r
+            }
+            Some(TestFlightView::Checking) => {
+                let (r, t, _, _) = row(Some("send-to-symbolic"), "TestFlight", "Asking App Store Connect…");
+                let spinner = gtk::Spinner::builder().spinning(true).build();
+                set_accessible_label(&spinner, "Checking");
+                t.append(&spinner);
+                r
+            }
+            Some(TestFlightView::Done { result: Err(e), .. }) => {
+                let (r, t, _, d) = row(None, "TestFlight status unavailable", &e);
+                d.set_selectable(true);
+                prepend_status(&r, "dialog-warning-symbolic", "apple-dev-warn", "Needs attention");
+                t.append(&check_button("Check Again"));
+                r
+            }
+            Some(TestFlightView::Done { result: Ok(builds), checked }) => {
+                let (title, mut detail, level) = match builds.builds.first() {
+                    Some(b) => {
+                        let (level, state) = b.state();
+                        let mut detail = state.to_string();
+                        if let Some(age) = iso_age(&b.uploaded) {
+                            detail.push_str(&format!(" · uploaded {age}"));
+                        }
+                        (format!("TestFlight: {}", b.title()), detail, level)
+                    }
+                    None => (
+                        "TestFlight".to_string(),
+                        "No builds in App Store Connect yet; an upload shows up within a few minutes.".to_string(),
+                        Level::Waiting,
+                    ),
+                };
+                detail.push_str(&format!("\nChecked {}", widgets::age(checked)));
+                if polling {
+                    detail.push_str("; checks again every 30 seconds while Apple works on it.");
+                }
+                let (r, t, _, _) = row(None, &title, &detail);
+                match level {
+                    Level::Ready => prepend_status(&r, "emblem-ok-symbolic", "apple-dev-ok", "Ready"),
+                    Level::Waiting => prepend_status(&r, "content-loading-symbolic", "dim-label", "Processing"),
+                    Level::Problem => {
+                        prepend_status(&r, "dialog-warning-symbolic", "apple-dev-warn", "Needs attention")
+                    }
+                }
+                let open = button("Open", &["flat"]);
+                open.set_tooltip_text(Some("Open TestFlight in App Store Connect"));
+                let url = builds.testflight_url();
+                let weak = Rc::downgrade(self);
+                open.connect_clicked(move |_| {
+                    if let Some(w) = weak.upgrade() {
+                        widgets::open_uri(&w.window, &url);
+                    }
+                });
+                open.set_visible(!builds.app_id.is_empty());
+                t.append(&open);
+                t.append(&check_button("Check Again"));
+                r
+            }
+        }
     }
 
     // --- Devices -----------------------------------------------------------------------------
@@ -1226,6 +1507,17 @@ impl AppWindow {
         };
         let _ = t;
         list.append(&r);
+        let uploads =
+            commands::actions_for(project.kind).iter().any(|a| matches!(a, Action::Upload | Action::FlutterUpload));
+        if uploads {
+            if testflight::fixture().is_some() && !self.testflight.borrow().contains_key(&project.path) {
+                self.check_testflight(&project.path, false);
+            }
+            let view = self.testflight.borrow().get(&project.path).cloned();
+            if view.is_some() || self.settings.borrow().asc_ready() {
+                list.append(&self.testflight_row(&project, view));
+            }
+        }
         let report = self.report.borrow().clone();
         let ready = report.as_ref().map(Report::can_build);
         if project.kind != Kind::XcodeProject && ready == Some(false) {
@@ -1342,6 +1634,23 @@ fn side_row(icon: &str, title: &str, subtitle: Option<&str>) -> (gtk::ListBoxRow
     content.append(&badge);
     content.append(&ok);
     (gtk::ListBoxRow::builder().child(&content).build(), badge, ok)
+}
+
+/// A status icon in front of a row's text.
+fn prepend_status(row: &gtk::ListBoxRow, icon: &str, class: &str, tooltip: &str) {
+    let image = gtk::Image::from_icon_name(icon);
+    image.add_css_class(class);
+    image.set_tooltip_text(Some(tooltip));
+    if let Some(content) = row.child().and_downcast::<gtk::Box>() {
+        content.prepend(&image);
+    }
+}
+
+/// "5 minutes ago" for an App Store Connect ISO 8601 time.
+fn iso_age(iso: &str) -> Option<String> {
+    let dt = glib::DateTime::from_iso8601(iso, None).ok()?;
+    let secs = u64::try_from(dt.to_unix()).ok()?;
+    Some(widgets::age(SystemTime::UNIX_EPOCH + Duration::from_secs(secs)))
 }
 
 fn plural(n: usize, unit: &str) -> String {
