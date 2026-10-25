@@ -104,6 +104,8 @@ fn shown(app: &App) -> Vec<String> {
 }
 
 fn save_png(window: &gtk::ApplicationWindow, path: &Path) {
+    // Capture settled GtkStack crossfades rather than blending the previous page into evidence.
+    pump(400);
     let mut node = None;
     for _ in 0..100 {
         pump(50);
@@ -158,6 +160,14 @@ fn main() {
     let app = App::build(&application, Instant::now(), false);
     assert!(pump_until("the index and the connection attempt", 60, || !app.is_busy()));
     pump(200);
+    if let Some(out) = env("CLAUDE_PANTHEON_FEATURE_PROBE") {
+        assert!(!live_render, "feature probes use only the isolated offline home");
+        subscription_probe(&app, &out);
+        activity_probe(&app, &out);
+        app.window().close();
+        pump(100);
+        return;
+    }
     let sessions = app.sessions();
     assert!(!sessions.is_empty(), "no sessions were indexed");
     println!("indexed {} sessions; connected: {}", sessions.len(), app.is_connected());
@@ -560,4 +570,103 @@ fn main() {
     }
     app.window().destroy();
     println!("PASS: Claude render test");
+}
+
+fn subscription_probe(app: &std::rc::Rc<App>, out: &Path) {
+    use claude_pantheon_rs::quota;
+    let dir = quota::directory();
+    std::fs::create_dir_all(&dir).unwrap();
+    let stamp = glib::DateTime::now_utc().unwrap().format_iso8601().unwrap().to_string();
+    let mut fixture = serde_json::json!({
+        "schemaVersion":1,"id":"codex-plan","name":"Codex","ready":true,
+        "updatedAt":stamp,"tierLabel":"Two separate subscriptions",
+        "limits":[{"title":"Session · account A","percent":0.25},{"title":"Weekly · account A","percent":1.0},
+                  {"title":"Session · account B with a longer display name","percent":1.0},{"title":"Weekly · account B","percent":0.10}]
+    });
+    std::fs::write(dir.join("codex-plan.json"), fixture.to_string()).unwrap();
+    app.show_usage();
+    assert_eq!(app.page(), "usage", "Usage opens while disconnected");
+    assert!(pump_until("local subscription records", 10, || shown(app)
+        .iter()
+        .any(|s| s.contains("Session · account A · 25%"))));
+    let text = shown(app);
+    assert!(text.iter().any(|s| s.contains("Weekly · account A · 100%")));
+    assert!(text.iter().any(|s| s.contains("paired T3 server · display only")));
+    assert!(text.iter().any(|s| s.contains("Connect to a T3 server for token history")));
+    for width in [820, 1180] {
+        app.window().set_default_size(width, 900);
+        pump(150);
+        save_png(app.window(), &out.join(format!("quota-current-{width}.png")));
+    }
+    fixture["usageStatusText"] = serde_json::json!("Last known usage (broker probe is down)");
+    std::fs::write(dir.join("codex-plan.json"), fixture.to_string()).unwrap();
+    app.show_usage();
+    assert!(pump_until("stale subscription", 10, || shown(app)
+        .iter()
+        .any(|s| s.contains("Stale · last-known values"))));
+    for width in [820, 1180] {
+        app.window().set_default_size(width, 900);
+        pump(150);
+        save_png(app.window(), &out.join(format!("quota-stale-{width}.png")));
+    }
+    fixture["ready"] = serde_json::json!(false);
+    std::fs::write(dir.join("codex-plan.json"), fixture.to_string()).unwrap();
+    app.show_usage();
+    assert!(pump_until("failed subscription", 10, || shown(app).iter().any(|s| s.starts_with("Unavailable ·"))));
+    assert!(!shown(app).iter().any(|s| s.contains("Session · account A · 25%")));
+    std::fs::write(dir.join("codex-plan.json"), "{}").unwrap();
+    app.show_usage();
+    assert!(pump_until("invalid subscription", 10, || shown(app)
+        .iter()
+        .any(|s| s.contains("Invalid subscription JSON"))));
+    assert!(shown(app).iter().any(|s| s.contains("No local subscription reports")));
+    println!("local quota offline, accounts, units, stale, failed and invalid report gates pass");
+}
+
+fn activity_probe(app: &std::rc::Rc<App>, out: &Path) {
+    app.show_activity();
+    assert_eq!(app.page(), "activity");
+    app.activity_page().show_fixture(claude_pantheon_rs::activity_view::fixture_report());
+    pump(150);
+    let text = shown(app);
+    for expected in ["Copy recap", "Include GitHub", "Partial", "Unavailable", "Local commit", "Merged PR"] {
+        assert!(text.iter().any(|s| s.contains(expected)), "activity shows {expected}");
+    }
+    fn find_button(w: &gtk::Widget, title: &str) -> Option<gtk::Button> {
+        if let Some(b) = w.downcast_ref::<gtk::Button>()
+            && b.label().as_deref() == Some(title)
+        {
+            return Some(b.clone());
+        }
+        let mut child = w.first_child();
+        while let Some(c) = child {
+            if let Some(button) = find_button(&c, title) {
+                return Some(button);
+            }
+            child = c.next_sibling();
+        }
+        None
+    }
+    let copy = find_button(app.window().upcast_ref(), "Copy recap").unwrap();
+    assert!(copy.is_sensitive());
+    copy.emit_clicked();
+    pump(100);
+    assert!(shown(app).iter().any(|s| s.contains("Recap copied")));
+    let recap = glib::MainContext::default().block_on(app.window().clipboard().read_text_future()).unwrap().unwrap();
+    assert!(recap.contains("Partial"));
+    assert!(recap.contains("Unavailable"));
+    assert!(recap.contains("do not establish a shipped release"));
+    for width in [820, 1180] {
+        app.window().set_default_size(width, 900);
+        pump(150);
+        save_png(app.window(), &out.join(format!("activity-{width}.png")));
+    }
+    app.zoom_to(1.2);
+    // The real zoom action posts a transient toast over the header; let it expire.
+    pump(3500);
+    app.window().set_default_size(820, 900);
+    pump(150);
+    save_png(app.window(), &out.join("activity-large-text-820.png"));
+    app.zoom_to(1.0);
+    println!("native Activity mixed-source states and factual clipboard recap gates pass");
 }

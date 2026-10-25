@@ -8,7 +8,7 @@ use crate::t3::Rpc;
 use crate::t3::model::{Provider, UsageBucket, UsageSummary, UsageTotals, pick_provider};
 use gtk::{glib, pango, prelude::*};
 use serde_json::json;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -18,6 +18,8 @@ pub struct UsagePage {
     content: gtk::Box,
     status: gtk::Label,
     summary: RefCell<Option<UsageSummary>>,
+    local: Rc<crate::quota_view::QuotaView>,
+    generation: Cell<u64>,
 }
 
 pub fn tokens_text(n: u64) -> String {
@@ -164,11 +166,12 @@ impl UsagePage {
         let status = label("", &["dim-label"]);
         status.set_margin_start(24);
         status.set_margin_top(12);
-        let scroll = gtk::ScrolledWindow::builder()
-            .child(&content)
-            .hscrollbar_policy(gtk::PolicyType::Never)
-            .vexpand(true)
-            .build();
+        let body = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        let local = crate::quota_view::QuotaView::new();
+        body.append(&content);
+        body.append(local.widget());
+        let scroll =
+            gtk::ScrolledWindow::builder().child(&body).hscrollbar_policy(gtk::PolicyType::Never).vexpand(true).build();
         let windows = gtk::Box::new(gtk::Orientation::Vertical, 0);
         windows.set_margin_start(24);
         windows.set_margin_end(24);
@@ -177,7 +180,7 @@ impl UsagePage {
         root.append(&status);
         root.append(&windows);
         root.append(&scroll);
-        UsagePage { root, windows, content, status, summary: RefCell::new(None) }
+        UsagePage { root, windows, content, status, summary: RefCell::new(None), local, generation: Cell::new(0) }
     }
 
     pub fn widget(&self) -> &gtk::Box {
@@ -186,6 +189,26 @@ impl UsagePage {
 
     pub fn summary(&self) -> Option<UsageSummary> {
         self.summary.borrow().clone()
+    }
+
+    pub fn load_local(&self) {
+        self.local.load();
+    }
+
+    pub fn render_local(&self, snapshot: &crate::quota::Snapshot) {
+        self.local.render(snapshot);
+    }
+
+    pub fn offline(&self) {
+        self.generation.set(self.generation.get().wrapping_add(1));
+        while let Some(child) = self.windows.first_child() {
+            self.windows.remove(&child);
+        }
+        while let Some(child) = self.content.first_child() {
+            self.content.remove(&child);
+        }
+        *self.summary.borrow_mut() = None;
+        self.status.set_text("Connect to a T3 server for token history and server plan windows.");
     }
 
     /// Plan windows (5-hour session, weekly, monthly) per provider as gauges with reset countdowns,
@@ -259,6 +282,8 @@ impl UsagePage {
     }
 
     pub fn load(&self, app: Rc<App>, rpc: Rpc) {
+        let generation = self.generation.get().wrapping_add(1);
+        self.generation.set(generation);
         self.render_windows(&app.providers());
         self.status.set_text("Reading usage…");
         if self.content.first_child().is_none() {
@@ -270,18 +295,18 @@ impl UsagePage {
         let payload = json!({"sinceDay": fmt(&since), "untilDay": fmt(&today), "timeZone": today.timezone().identifier().to_string()});
         let last7: Vec<String> = (0..7).rev().map(|i| fmt(&today.add_days(-i).unwrap())).collect();
         glib::spawn_future_local(async move {
-            match rpc.call("server.getUsageSummary", payload).await {
+            let response = rpc.call("server.getUsageSummary", payload).await;
+            if app.usage_page().generation.get() != generation {
+                return;
+            }
+            match response {
                 Ok(v) => match serde_json::from_value::<UsageSummary>(v) {
                     Ok(summary) => app.usage_page().render(&summary, &last7),
                     Err(e) => app.usage_page().status.set_text(&format!("Unexpected usage shape: {e}")),
                 },
                 Err(e) => {
                     app.usage_page().status.set_text(&format!("Usage failed: {}", e.message()));
-                    let r = rpc.clone();
-                    app.toast_retry(
-                        &format!("Usage failed: {}", e.message()),
-                        Rc::new(move |a| a.usage_page().load(a.clone(), r.clone())),
-                    );
+                    app.toast_retry(&format!("Usage failed: {}", e.message()), Rc::new(move |a| a.show_usage()));
                 }
             }
         });

@@ -58,6 +58,24 @@ Forget Pairing and About (version, server, providers ready).
 
 ## Sidebar
 
+Activity is available from the app menu or command palette in this same window.
+It reads today's commits from explicitly pinned local checkouts (Repositories),
+with GitHub searches only when Include GitHub is checked. Source rows identify
+partial, unavailable and last-known results. Copy recap copies factual Markdown;
+it does not submit a prompt or publish a report. Local commits do not prove a
+push or release, and closed authored issues are not necessarily closed by you.
+GitHub commands use the account already signed into `gh` on this computer.
+
+Usage (Ctrl+Shift+U) also opens offline. Below server token history it reads
+existing schemaVersion 1 subscription JSON records under
+`$XDG_STATE_HOME/omarchy/agents/usage` (normally
+`~/.local/state/omarchy/agents/usage`). Read reports reads those local files only.
+Configure collectors separately; this app does not install them or obtain their
+credentials. Reports are separate from the selected T3 server and do not affect
+provider selection. Use per-account collectors; already-merged upstream records
+cannot recover identities. See the
+[source and compatibility audit](../../mseries/upstream-audits/apps/agent-usage-more-2026-10-25.md).
+
 Threads sit under their project with the provider's accent dot, a spinner while a turn runs, a
 "?" badge when a prompt waits and a blue dot for activity since the last visit (the server's
 `lastVisitedAt`; opening a thread records a visit). Pinned threads lead their section. Right-click or

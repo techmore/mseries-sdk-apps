@@ -2,6 +2,9 @@
 //! Cursor…) with the local Claude Code JSONL transcripts as the offline view.
 //! The library exists so the render test can drive the real window; the app is `src/main.rs`.
 
+pub mod activity;
+pub mod activity_collect;
+pub mod activity_view;
 pub mod app;
 pub mod changes;
 pub mod chat;
@@ -16,6 +19,8 @@ pub mod markdown;
 pub mod notify;
 pub mod palette;
 pub mod probe;
+pub mod quota;
+pub mod quota_view;
 pub mod render;
 pub mod repos;
 pub mod sdk_services;

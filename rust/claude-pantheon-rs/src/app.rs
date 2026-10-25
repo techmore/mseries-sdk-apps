@@ -106,6 +106,7 @@ pub struct App {
     pair_button: gtk::Button,
     // pages
     usage_page: usage::UsagePage,
+    activity_page: Rc<crate::activity_view::ActivityPage>,
     repos_page: Rc<repos::ReposPage>,
     diagnostics_page: Rc<diagnostics::DiagnosticsPage>,
     changes_page: Rc<changes::ChangesPage>,
@@ -249,6 +250,7 @@ impl App {
             None,
             &section(&[
                 ("Usage", "win.usage"),
+                ("Activity", "win.activity"),
                 ("Repos and Issues", "win.repos"),
                 ("Changes in This Thread", "win.changes"),
                 ("Diagnostics", "win.diagnostics"),
@@ -378,6 +380,7 @@ impl App {
         pair_box.append(&pair_status);
 
         let usage_page = usage::UsagePage::new();
+        let activity_page = crate::activity_view::ActivityPage::new();
         let repos_page = Rc::new(repos::ReposPage::new());
         let diagnostics_page = Rc::new(diagnostics::DiagnosticsPage::new());
         let changes_page = changes::ChangesPage::new();
@@ -389,6 +392,7 @@ impl App {
         stack.add_named(&pair_box, Some("pair"));
         stack.add_named(&chat_page, Some("chat"));
         stack.add_named(usage_page.widget(), Some("usage"));
+        stack.add_named(activity_page.widget(), Some("activity"));
         stack.add_named(repos_page.widget(), Some("repos"));
         stack.add_named(diagnostics_page.widget(), Some("diagnostics"));
         stack.add_named(&changes_page.root, Some("changes"));
@@ -473,6 +477,7 @@ impl App {
             pair_status,
             pair_button,
             usage_page,
+            activity_page,
             repos_page,
             diagnostics_page,
             changes_page,
@@ -602,6 +607,7 @@ impl App {
             ("search", &["<Control>f"], Box::new(|a| a.focus_search())),
             ("send", &["<Control>Return", "<Control>KP_Enter"], Box::new(|a| a.send())),
             ("usage", &["<Control><Shift>u"], Box::new(|a| a.show_usage())),
+            ("activity", &[], Box::new(|a| a.show_activity())),
             ("repos", &[], Box::new(|a| a.show_repos())),
             ("changes", &[], Box::new(|a| a.show_changes())),
             ("diagnostics", &[], Box::new(|a| a.show_diagnostics())),
@@ -718,6 +724,7 @@ impl App {
         }
         for (title, page) in [
             ("Open Usage", "usage"),
+            ("Open Activity", "activity"),
             ("Open Repos and Issues", "repos"),
             ("Open Diagnostics", "diagnostics"),
             ("Changes in this thread", "changes"),
@@ -795,6 +802,7 @@ impl App {
             }
             Action::Page(page) => match page.as_str() {
                 "usage" => self.show_usage(),
+                "activity" => self.show_activity(),
                 "repos" => self.show_repos(),
                 "diagnostics" => self.show_diagnostics(),
                 "changes" => self.show_changes(),
@@ -1491,6 +1499,7 @@ impl App {
     }
 
     fn reconnect_current(self: &Rc<Self>) {
+        self.usage_page.offline();
         let app = self.clone();
         glib::spawn_future_local(async move {
             let taken = app.conn.borrow_mut().take();
@@ -1608,6 +1617,7 @@ impl App {
         };
         let app = self.clone();
         rpc.on_close(move |reason| {
+            app.usage_page.offline();
             *app.conn.borrow_mut() = None;
             app.set_env_state(environments::State::Offline);
             app.set_status(&format!("Disconnected: {reason}"), false);
@@ -1835,6 +1845,7 @@ impl App {
     }
 
     fn forget(self: &Rc<Self>) {
+        self.usage_page.offline();
         let app = self.clone();
         glib::spawn_future_local(async move {
             let taken = app.conn.borrow_mut().take();
@@ -3046,24 +3057,38 @@ impl App {
     }
 
     pub fn show_usage(self: &Rc<Self>) {
-        let rpc = match self.conn.borrow().as_ref() {
-            Some(c) => c.rpc.clone(),
-            None => {
-                self.toast("Connect to a T3 server to see usage.");
-                return;
-            }
-        };
+        let rpc = self.conn.borrow().as_ref().map(|c| c.rpc.clone());
         self.leave_live();
         self.list.unselect_all();
         self.title.set_text("Usage");
         self.window.set_title(Some("Usage - Claude"));
-        self.subtitle.set_text("Tokens and cost across providers, read by the server from local history");
+        self.subtitle.set_text("Server token history and separate local subscription reports");
         self.subtitle.set_visible(true);
         self.show_page("usage");
-        self.usage_page.load(self.clone(), rpc);
+        self.usage_page.load_local();
+        if let Some(rpc) = rpc {
+            self.usage_page.load(self.clone(), rpc);
+        } else {
+            self.usage_page.offline();
+        }
     }
 
     // ---- repos, issues, runner -----------------------------------------------------------------
+
+    pub fn show_activity(self: &Rc<Self>) {
+        self.leave_live();
+        self.list.unselect_all();
+        self.title.set_text("Activity");
+        self.window.set_title(Some("Activity - Claude"));
+        self.subtitle.set_text("Today's activity in pinned repositories on this computer");
+        self.subtitle.set_visible(true);
+        self.show_page("activity");
+        self.activity_page.refresh();
+    }
+
+    pub fn activity_page(&self) -> &Rc<crate::activity_view::ActivityPage> {
+        &self.activity_page
+    }
 
     pub fn show_repos(self: &Rc<Self>) {
         self.leave_live();

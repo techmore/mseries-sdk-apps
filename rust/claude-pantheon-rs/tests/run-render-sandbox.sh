@@ -12,6 +12,8 @@ trap 'rm -rf -- "$sandbox_root"' EXIT
 mkdir -p "$sandbox_root/home" "$sandbox_root/runtime" "$sandbox_root/config" \
   "$sandbox_root/cache" "$sandbox_root/data" "$sandbox_root/state"
 chmod 700 "$sandbox_root/runtime"
+render_args=()
+if [[ ${CLAUDE_PANTHEON_RENDER_RELEASE:-0} == 1 ]]; then render_args+=(--release); fi
 
 HOME="$sandbox_root/home" \
 RUSTUP_HOME="$rustup_home" \
@@ -32,4 +34,4 @@ dbus-run-session -- env \
   GSK_RENDERER=cairo \
   CLAUDE_PANTHEON_RENDER_TEST_SANDBOX=1 \
   xvfb-run -a -s "-screen 0 1400x900x24" \
-  cargo test --locked --manifest-path rust/Cargo.toml -p claude-pantheon-rs --test render
+  cargo test "${render_args[@]}" --locked --manifest-path rust/Cargo.toml -p claude-pantheon-rs --test render
