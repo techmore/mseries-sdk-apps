@@ -993,7 +993,7 @@ impl AppWindow {
             let (r, t, _, _) = row(
                 Some("view-refresh-symbolic"),
                 "Repair after a Swift change",
-                "Re-registers the cached iOS SDK after mise, asdf or a manual Swift reinstall moved the toolchain. No download.",
+                "Re-registers a current cached SDK after a Swift change. An outdated cache needs a rebuild from the matching Xcode .xip; choose Install above.",
             );
             let repair = button("Repair", &[]);
             let weak = Rc::downgrade(self);

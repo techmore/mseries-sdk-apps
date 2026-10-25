@@ -141,8 +141,16 @@ impl Report {
 
 const PROBE_SCRIPT: &str = r#"
 printf 'swift=%s\n' "$(swift --version 2>/dev/null | head -n1)"
-if command -v swift >/dev/null 2>&1; then printf 'sdks=%s\n' "$(swift sdk list 2>/dev/null | tr '\n' ' ')"; fi
-printf 'xtool=%s\n' "$(xtool --version 2>/dev/null | head -n1)"
+sdk_registered=no
+if command -v swift >/dev/null 2>&1; then
+  if sdk_list=$(swift sdk list 2>/dev/null) && printf '%s\n' "$sdk_list" | grep -Fxq darwin; then
+    sdk_registered=yes
+  fi
+fi
+printf 'sdk_registered=%s\n' "$sdk_registered"
+xtool_version=
+if version=$(xtool --version 2>/dev/null); then xtool_version=$(printf '%s\n' "$version" | head -n1); fi
+printf 'xtool=%s\n' "$xtool_version"
 printf 'xtool_path=%s\n' "$(command -v xtool)"
 printf 'flutter=%s\n' "$(command -v flutter)"
 printf 'usbmuxd=%s\n' "$(command -v usbmuxd || ls /usr/sbin/usbmuxd 2>/dev/null)"
@@ -248,9 +256,21 @@ pub fn run_with_env(
 pub fn probe(configured: Option<&Path>) -> Report {
     let toolkit = locate(configured);
     let host = parse_os_release(&std::fs::read_to_string("/etc/os-release").unwrap_or_default());
-    let probe = run_with_timeout("bash", &["--login", "-c", &probe_script()], None, Duration::from_secs(25))
+    let mut probe = run_with_timeout("bash", &["--login", "-c", &probe_script()], None, Duration::from_secs(25))
         .map(|out| parse_probe(&out))
         .unwrap_or_default();
+    // Read data only; never source the installer or run an SDK rebuild while probing.
+    if let Some(dir) = toolkit.as_deref()
+        && let Some(expected) =
+            std::fs::read_to_string(dir.join("install-toolchain.sh")).ok().and_then(|text| sdk_expected_stamp(&text))
+    {
+        probe.insert("sdk_expected".into(), expected);
+    }
+    let config = std::env::var_os("XDG_CONFIG_HOME").filter(|s| !s.is_empty()).map(PathBuf::from);
+    let bundle = sdk_bundle_path(&home(), config.as_deref());
+    if let Ok(stamp) = std::fs::read_to_string(bundle.join("darwin-sdk-version.txt")) {
+        probe.insert("sdk_actual".into(), stamp.replace(['\r', '\n'], ""));
+    }
     let revision = toolkit.as_deref().and_then(|dir| {
         run_with_timeout("git", &["log", "-1", "--format=%h · %cs"], Some(dir), Duration::from_secs(5))
             .map(|s| s.trim().to_string())
@@ -290,7 +310,6 @@ pub fn probe(configured: Option<&Path>) -> Report {
 pub fn checks_from(p: &BTreeMap<String, String>, xtool_auth: bool, venv: bool) -> Vec<Check> {
     let get = |k: &str| p.get(k).map(String::as_str).unwrap_or("");
     let swift = get("swift");
-    let sdks = get("sdks");
     let xtool = get("xtool");
     let xtool_path = get("xtool_path");
     let have = |s: &str| !s.is_empty();
@@ -313,17 +332,20 @@ pub fn checks_from(p: &BTreeMap<String, String>, xtool_auth: bool, venv: bool) -
         if !have(swift) {
             row(CheckId::DarwinSdk, "iOS SDK", false, String::new(), "Needs Swift first.", false)
         } else {
-            row(
-                CheckId::DarwinSdk,
-                "iOS SDK",
-                sdks.split_whitespace().any(|s| s.starts_with("darwin")),
-                "darwin SDK registered with Swift".into(),
-                "No darwin SDK. Run Install Toolchain with an Xcode .xip, or Repair after a Swift swap.",
-                false,
-            )
+            sdk_row(get("sdk_registered") == "yes", get("sdk_expected"), get("sdk_actual"))
         },
-        if have(xtool) || have(xtool_path) {
-            row(CheckId::Xtool, "xtool", true, if have(xtool) { xtool.into() } else { xtool_path.into() }, "", false)
+        if have(xtool) {
+            row(CheckId::Xtool, "xtool", true, xtool.into(), "", false)
+        } else if have(xtool_path) {
+            Check {
+                id: CheckId::Xtool,
+                title: "xtool",
+                state: CheckState::Attention,
+                detail: format!(
+                    "Found at {xtool_path}, but it did not report a version. Update the toolkit, then run Install to repair an incomplete xtool/runtime install."
+                ),
+                optional: false,
+            }
         } else {
             row(
                 CheckId::Xtool,
@@ -370,6 +392,49 @@ pub fn checks_from(p: &BTreeMap<String, String>, xtool_auth: bool, venv: bool) -
     ]
 }
 
+/// Read the installer's literal stamp assignment as data; never evaluate shell input.
+pub fn sdk_expected_stamp(installer: &str) -> Option<String> {
+    let values: Vec<_> = installer.lines().filter_map(|line| line.strip_prefix("XTOOL_SDK_VERSION=")).collect();
+    if values.len() != 1 {
+        return None;
+    }
+    let value = values[0].trim();
+    let value = value.strip_prefix('"')?.strip_suffix('"')?;
+    (!value.is_empty() && value.bytes().all(|b| b.is_ascii_alphanumeric() || b"=,.-_".contains(&b)))
+        .then(|| value.to_string())
+}
+
+/// Match SwiftPM's path used by the toolkit, including an explicitly set XDG location.
+pub fn sdk_bundle_path(home: &Path, config: Option<&Path>) -> PathBuf {
+    config.map(|p| p.join("swiftpm")).unwrap_or_else(|| home.join(".swiftpm")).join("swift-sdks/darwin.artifactbundle")
+}
+
+fn sdk_row(registered: bool, expected: &str, actual: &str) -> Check {
+    let (state, detail) = if !registered {
+        (
+            CheckState::Missing,
+            "No registered darwin SDK. Run Install with an Xcode .xip, or Repair after a Swift swap.".into(),
+        )
+    } else if expected.is_empty() {
+        (
+            CheckState::Attention,
+            "SDK registered; its version could not be checked against this toolkit. Update the toolkit, then refresh."
+                .into(),
+        )
+    } else if actual == expected {
+        (CheckState::Ready, format!("darwin SDK registered; version matches the toolkit ({actual})"))
+    } else {
+        let actual = if actual.is_empty() { "missing" } else { actual };
+        (
+            CheckState::Attention,
+            format!(
+                "SDK version {actual}; toolkit requires {expected}. Run Install with the matching Xcode .xip to rebuild it. Repair can reuse only a current cache."
+            ),
+        )
+    };
+    Check { id: CheckId::DarwinSdk, title: "iOS SDK", state, detail, optional: false }
+}
+
 /// xtool builds against libimobiledevice and device installs load it, so the headers (pkg-config)
 /// count, not just the command-line tools.
 fn libimobiledevice_row(version: &str, prefix: &str, ideviceinfo: &str) -> Check {
@@ -401,6 +466,93 @@ fn libimobiledevice_row(version: &str, prefix: &str, ideviceinfo: &str) -> Check
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sdk_stamp_is_read_as_one_literal_assignment_without_execution() {
+        assert_eq!(
+            sdk_expected_stamp("XTOOL_SDK_VERSION=\"epoch=4,darwinTools=1.1.0,oam=1.4.1\"\n").as_deref(),
+            Some("epoch=4,darwinTools=1.1.0,oam=1.4.1")
+        );
+        for text in [
+            "",
+            "XTOOL_SDK_VERSION=\"$(touch /tmp/never)\"",
+            "XTOOL_SDK_VERSION=$STAMP",
+            "XTOOL_SDK_VERSION=\"a\"\nXTOOL_SDK_VERSION=\"b\"",
+        ] {
+            assert_eq!(sdk_expected_stamp(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn sdk_location_follows_swiftpm_and_xdg() {
+        assert_eq!(
+            sdk_bundle_path(Path::new("/home/me"), None),
+            Path::new("/home/me/.swiftpm/swift-sdks/darwin.artifactbundle")
+        );
+        assert_eq!(
+            sdk_bundle_path(Path::new("/home/me"), Some(Path::new("/custom/config"))),
+            Path::new("/custom/config/swiftpm/swift-sdks/darwin.artifactbundle")
+        );
+    }
+
+    #[test]
+    fn registered_sdk_is_not_ready_without_matching_stamp() {
+        assert_eq!(sdk_row(true, "new", "new").state, CheckState::Ready);
+        for (expected, actual) in [("new", "old"), ("new", ""), ("", "new")] {
+            let sdk = sdk_row(true, expected, actual);
+            assert_eq!(sdk.state, CheckState::Attention);
+            let report = Report {
+                toolkit: Some("/toolkit".into()),
+                checks: vec![
+                    sdk,
+                    Check {
+                        id: CheckId::Swift,
+                        title: "Swift",
+                        state: CheckState::Ready,
+                        detail: String::new(),
+                        optional: false,
+                    },
+                    Check {
+                        id: CheckId::Xtool,
+                        title: "xtool",
+                        state: CheckState::Ready,
+                        detail: String::new(),
+                        optional: false,
+                    },
+                ],
+                ..Report::default()
+            };
+            assert!(!report.can_build());
+        }
+        assert_eq!(sdk_row(false, "new", "new").state, CheckState::Missing);
+    }
+
+    #[test]
+    fn real_probe_requires_a_successful_exact_darwin_line() {
+        for (output, status, want) in [
+            ("darwin", 0, "yes"),
+            ("wasm32\ndarwin", 0, "yes"),
+            ("warning: darwin SDK is broken", 0, "no"),
+            ("darwin-old", 0, "no"),
+            ("darwin", 1, "no"),
+            ("", 0, "no"),
+        ] {
+            let script = format!(
+                "swift() {{ if [ \"$1\" = --version ]; then echo Swift; else printf '%s\\n' {}; return {status}; fi; }}\n{PROBE_SCRIPT}",
+                crate::commands::shell_quote(output)
+            );
+            let result = run_with_timeout("bash", &["-c", &script], None, Duration::from_secs(10)).unwrap();
+            assert_eq!(parse_probe(&result)["sdk_registered"], want, "{output} / {status}");
+        }
+    }
+
+    #[test]
+    fn xtool_path_without_successful_version_is_not_ready() {
+        let probe = parse_probe("xtool_path=/home/me/.local/bin/xtool\nxtool=\n");
+        let check = checks_from(&probe, false, false).into_iter().find(|c| c.id == CheckId::Xtool).unwrap();
+        assert_eq!(check.state, CheckState::Attention);
+        assert!(check.detail.contains("runtime"));
+    }
 
     #[test]
     fn libimobiledevice_names_where_it_came_from() {
@@ -456,7 +608,7 @@ mod tests {
     #[test]
     fn full_toolchain_can_build() {
         let p = parse_probe(
-            "swift=Swift version 6.4.0 (swift-6.4-RELEASE)\nsdks=darwin\nxtool=1.23.0\nusbmuxd=/usr/sbin/usbmuxd\nlimd=1.4.0\nlimd_prefix=/usr\n",
+            "swift=Swift version 6.4.0 (swift-6.4-RELEASE)\nsdk_registered=yes\nsdk_expected=epoch=4,darwinTools=1.1.0,oam=1.4.1\nsdk_actual=epoch=4,darwinTools=1.1.0,oam=1.4.1\nxtool=1.23.0\nusbmuxd=/usr/sbin/usbmuxd\nlimd=1.4.0\nlimd_prefix=/usr\n",
         );
         let checks = checks_from(&p, true, true);
         let report = Report { toolkit: Some("/x".into()), mode: Some("full".into()), checks, ..Report::default() };
@@ -466,7 +618,7 @@ mod tests {
 
     #[test]
     fn sdk_without_darwin_is_missing() {
-        let p = parse_probe("swift=Swift 6.4\nsdks=wasm32 \n");
+        let p = parse_probe("swift=Swift 6.4\nsdk_registered=no\n");
         let sdk = checks_from(&p, false, false).into_iter().find(|c| c.id == CheckId::DarwinSdk).unwrap();
         assert_eq!(sdk.state, CheckState::Missing);
     }

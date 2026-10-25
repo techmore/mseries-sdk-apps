@@ -80,12 +80,37 @@ elementary OS 9 laptop in full mode (Xcode 27.1, Swift 6.4.1 from swift.org), si
 to TestFlight, and runs on the owner's iPhone. That run exposed the environment, libimobiledevice,
 apt/Swift and TestFlight-status gaps handled above. The live App Store Connect query was checked
 against that build (1.0.0 (202610240241), VALID, IN_BETA_TESTING). Not run from the window yet:
-Install packages and Install Swift (this machine already has Swift 6.4.1). xtool itself still had
-to be installed by hand here (the pinned xtool 1.23.0 no longer builds libXADI.so; an upstream
-installer bug).
+Install packages and Install Swift (this machine already has Swift 6.4.1). xtool itself had to be installed by hand during that run. Upstream fixed its obsolete
+`libXADI.so` copy on October 25; update the toolkit before rerunning Install. That repair
+has not been rerun on this M1 Pro.
 
 ## Screenshots
 
 Fixture renders (`snapshot.sh`): [Toolchain](docs/toolchain-light.png),
 [Devices](docs/devices-light.png), [Project](docs/project-light.png),
 [Project, dark](docs/project-dark.png), [Activity after Build](docs/activity-light.png).
+
+## October 25 upstream refresh
+
+Audited toolkit `9e9ec1f44a5534070e8d1e2cad76344f232ec3a1`. In the existing
+Toolchain page, **Update** fetches the toolkit checkout; **Install…** then runs its
+current installer. Updating source alone does not rebuild xtool or its SDK.
+The upstream installer no longer copies the removed `libXADI.so`, repairs xtool
+installations missing their adjacent Swift runtime, and rejects stale SDKs.
+
+The iOS SDK row now requires a successful exact `darwin` registration and the
+`darwin-sdk-version.txt` stamp matching the selected toolkit's literal
+`XTOOL_SDK_VERSION` value. The probe follows SwiftPM's `XDG_CONFIG_HOME/swiftpm`
+location (otherwise `~/.swiftpm`) and only reads data. A stale or unverifiable
+stamp is **Needs attention**, never Ready; it prevents the ready-to-build state.
+Run **Install…** with the matching Xcode `.xip` to rebuild a stale SDK.
+**Repair** after a Swift change reuses only a current cached SDK; it no longer
+promises an unconditional download-free repair. An xtool path that cannot report
+its version is also **Needs attention**.
+
+[Upstream applicability and source receipt](../../mseries/upstream-audits/apps/apple-dev-2026-10-25.md)
+covers Flutter xcconfig expansion, signing, dSYMs, framework dependency checks
+and Ubuntu ARM64 evidence. Existing Flutter buttons already call those upstream
+scripts. These changes are developer tooling; no kernel, dock or battery fix is
+implied. No installer, Apple login, phone deploy or TestFlight upload was run
+while preparing this refresh.
