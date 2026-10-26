@@ -1,0 +1,11 @@
+{
+  "t3_pid": 389368,
+  "dock_pid": 389370,
+  "wingpanel_pid": 197327,
+  "server_pid": 1581,
+  "t3_loaded_sha256": "654c5d45230bbf677a1ace3d7c0345028a681a1173a8faa19c5956729daab06e",
+  "dock_loaded_sha256": "454887c10945ab21b6d8d9f2f65c2c2deeace98d08afcf0eda1019f1acbebfe0",
+  "t3_installed_sha256": "654c5d45230bbf677a1ace3d7c0345028a681a1173a8faa19c5956729daab06e",
+  "dock_installed_sha256": "454887c10945ab21b6d8d9f2f65c2c2deeace98d08afcf0eda1019f1acbebfe0",
+  "fallback_marker": false
+}

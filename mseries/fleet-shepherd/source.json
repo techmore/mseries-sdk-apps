@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/joshuaswarren/omarchy-fleet-shepherd",
+  "revision": "b39cf962dcbbae397c1d21f4267c24ab49e5ddbc",
+  "license": "MIT, Joshua Warren 2026",
+  "upstream_collector_sha256": "d2e972beca10776c4fe22852da718a3e6cce075511c7a611b3caf372403df03e",
+  "adapted_collector_sha256": "3b4affa96f718e0c3af184a6b5823075ac872ab91ca54a87ad9166f82cc1dad3",
+  "adaptation": "Owned probe registration, cancellation signal handlers and completed-process guard; native adapter and GTK page are project code."
+}
