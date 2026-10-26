@@ -472,6 +472,14 @@ mod tests {
             enabled: true,
             installed: true,
             auth: json!({"status": "authenticated"}),
+            usage_limits: Some(crate::t3::model::UsageLimits {
+                checked_at: now_iso(),
+                windows: vec![
+                    crate::t3::model::UsageWindow { kind: "session".into(), used_percent: 10.0, ..Default::default() },
+                    crate::t3::model::UsageWindow { kind: "weekly".into(), used_percent: 20.0, ..Default::default() },
+                ],
+                ..Default::default()
+            }),
             models: vec![crate::t3::model::ProviderModel {
                 slug: "m".into(),
                 is_default: Some(true),

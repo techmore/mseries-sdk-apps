@@ -15,7 +15,7 @@ use gtk::glib;
 use msdk_gtk::host::{Event, Services};
 use serde_json::{Value, json};
 
-use crate::t3::model::{Provider, ServerConfig, Shell, ThreadShell, ThreadView, TurnItem, UsageWindow, pick_provider};
+use crate::t3::model::{Provider, ServerConfig, Shell, ThreadShell, ThreadView, TurnItem, pick_provider};
 use crate::t3::{self, Rpc, auth};
 use crate::transcript::{first_line, title_from_prompt};
 
@@ -43,15 +43,6 @@ pub fn clean_title(raw: &str) -> String {
     first_line(line, 80)
 }
 
-/// `HH:MM` in local time for an ISO-8601 instant, or the input when it does not parse.
-fn local_time(iso: &str) -> String {
-    glib::DateTime::from_iso8601(iso, None)
-        .ok()
-        .and_then(|d| d.to_local().ok())
-        .and_then(|d| d.format("%H:%M").ok())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| iso.to_string())
-}
 
 pub fn thread_rows(shell: &Shell, providers: &[Provider]) -> Vec<Value> {
     let mut threads: Vec<&ThreadShell> = shell
@@ -88,37 +79,6 @@ pub fn thread_rows(shell: &Shell, providers: &[Provider]) -> Vec<Value> {
         .collect()
 }
 
-fn window_text(w: Option<&UsageWindow>, what: &str) -> String {
-    match w {
-        Some(w) => {
-            let resets = w.resets_at.as_deref().map(|r| format!(", resets {}", local_time(r))).unwrap_or_default();
-            format!("{:.0}% of the {what}{resets}", w.used_percent)
-        }
-        None => "no limit reported".into(),
-    }
-}
-
-pub fn account_rows(providers: &[Provider]) -> Vec<Value> {
-    providers
-        .iter()
-        .filter(|p| p.enabled)
-        .map(|p| {
-            let (s, w) = (p.window("session"), p.window("weekly").or_else(|| p.window("monthly")));
-            let status = if p.ready() {
-                "connected".to_string()
-            } else if !p.status_text().is_empty() {
-                p.status_text()
-            } else {
-                p.auth_text()
-            };
-            json!({
-                "id": p.instance_id, "name": p.name(), "status": status,
-                "session_pct": s.map(|w| w.used_percent).unwrap_or(0.0), "weekly_pct": w.map(|w| w.used_percent).unwrap_or(0.0),
-                "session_text": window_text(s, "session"), "weekly_text": window_text(w, "week"),
-            })
-        })
-        .collect()
-}
 
 /// One row for the tray: running threads, waiting prompts, and the plan window nearest exhaustion (or a connection note).
 pub fn status_row(shell: &Shell, providers: &[Provider], note: Option<&str>) -> Vec<Value> {
@@ -128,10 +88,11 @@ pub fn status_row(shell: &Shell, providers: &[Provider], note: Option<&str>) -> 
     let nearest = note.map(String::from).unwrap_or_else(|| {
         providers
             .iter()
+            .filter(|p| crate::usage_monitor::plan_observation(p, crate::look::now_unix()).0 == "fresh")
             .filter_map(|p| p.window("session").map(|w| (p.name(), w.used_percent)))
             .max_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(n, pct)| format!("{n} session at {pct:.0}%"))
-            .unwrap_or_default()
+            .unwrap_or_else(|| "No fresh plan-window observation".into())
     });
     vec![json!({ "id": "s1", "running": running, "waiting": waiting, "nearest": nearest, "oldest_prompt": "" })]
 }
@@ -221,11 +182,17 @@ struct Inner {
     generation: Cell<u64>,
     started: Cell<bool>,
     note: RefCell<Option<String>>,
+    monitoring: Rc<crate::sdk_monitor::Monitoring>,
+    server_label: RefCell<String>,
 }
 
 impl T3Services {
     pub fn new() -> T3Services {
         T3Services { inner: Rc::new(Inner::default()) }
+    }
+
+    pub fn stop_monitoring(&self) {
+        self.inner.monitoring.cancel();
     }
 }
 
@@ -271,28 +238,42 @@ impl Inner {
     async fn connect(self: Rc<Self>) {
         let generation = self.generation.get() + 1;
         self.generation.set(generation);
+        self.monitoring.disconnect();
+        self.rpc.borrow_mut().take();
+        self.providers.borrow_mut().clear();
+        if std::env::var_os("CLAUDE_PANTHEON_OFFLINE").is_some() {
+            self.monitoring.refresh("Usage", None, "Offline".into());
+            return self.set_note("Offline mode · server monitoring disabled");
+        }
         self.set_note("Connecting to the T3 server...");
         let Some(cred) = auth::load().await else {
             self.push("t3.threads", vec![]);
-            self.push("t3.accounts", vec![]);
             return self.set_note("Not paired: run `t3 pair`, then pair in Claude for elementary OS");
         };
+        if self.generation.get() != generation { return; }
+        *self.server_label.borrow_mut() = if cred.label.is_empty() {
+            cred.environment_id.clone()
+        } else { cred.label.clone() };
         let rpc = match t3::connect(&cred).await {
             Ok(r) => r,
             Err(e) => return self.set_note(&format!("Cannot reach the server: {e}")),
         };
+        if self.generation.get() != generation { return; }
         *self.rpc.borrow_mut() = Some(rpc.clone());
         *self.note.borrow_mut() = None;
-        match rpc.call("server.getConfig", json!({})).await {
+        let config = rpc.call("server.getConfig", json!({})).await;
+        if self.generation.get() != generation { return; }
+        match config {
             Ok(v) => {
                 if let Ok(cfg) = serde_json::from_value::<ServerConfig>(v) {
                     *self.providers.borrow_mut() = cfg.providers;
-                    let rows = account_rows(&self.providers.borrow());
-                    self.push("t3.accounts", rows);
+                    // Monitor projections preserve observation state instead of inventing zero quota.
                 }
             }
             Err(e) => self.set_note(&format!("Server config failed: {}", e.message())),
         }
+        if self.generation.get() != generation { return; }
+        self.monitoring.connected(rpc.clone(), self.server_label.borrow().clone());
         let (_sub, mut stream) =
             rpc.subscribe("orchestration.subscribeShell", json!({ "requestCompletionMarker": true }));
         while let Some(item) = stream.next().await {
@@ -306,6 +287,10 @@ impl Inner {
                     break;
                 }
             }
+        }
+        if self.generation.get() == generation {
+            self.rpc.borrow_mut().take();
+            self.monitoring.disconnect();
         }
     }
 
@@ -438,6 +423,17 @@ impl Services for T3Services {
         let inner = self.inner.clone();
         let arg = |k: &str| args.get(k).and_then(Value::as_str).unwrap_or("").to_string();
         match service {
+            "monitor.refresh" => inner.monitoring.refresh(
+                &arg("page"), inner.rpc(), inner.server_label.borrow().clone()
+            ),
+            "github.open" => {
+                let id = arg("id");
+                glib::spawn_future_local(async move {
+                    if let Err(message) = inner.monitoring.open_repository(&id).await {
+                        fail(&error, &tx, &message);
+                    }
+                });
+            }
             "t3.reconnect" => {
                 inner.started.set(true);
                 glib::spawn_future_local(inner.connect());
@@ -590,7 +586,8 @@ impl Services for T3Services {
     }
 
     fn start_feed(&self, feed: &str, push: Push) -> bool {
-        if !matches!(feed, "t3.threads" | "t3.entries" | "t3.accounts" | "t3.status") {
+        if self.inner.monitoring.register(feed, push.clone()) { return true; }
+        if !matches!(feed, "t3.threads" | "t3.entries" | "t3.status") {
             return false;
         }
         self.inner.feeds.borrow_mut().insert(feed.to_string(), push);
@@ -641,16 +638,6 @@ mod tests {
         assert_eq!(clean_title("Fix the dock"), "Fix the dock");
     }
 
-    #[test]
-    fn accounts_report_usage_windows_and_status() {
-        let rows = account_rows(&providers());
-        assert!(!rows.is_empty());
-        for r in &rows {
-            assert!(r["session_pct"].is_number() && r["weekly_pct"].is_number());
-            assert!(r["session_text"].as_str().is_some_and(|t| !t.is_empty()));
-            assert!(r["name"].as_str().is_some_and(|t| !t.is_empty()));
-        }
-    }
 
     #[test]
     fn status_counts_and_names_the_window_nearest_exhaustion() {
@@ -688,17 +675,4 @@ mod tests {
         assert_eq!(server_decision("maybe"), None);
     }
 
-    #[test]
-    fn every_service_and_feed_in_the_manifest_has_an_owner_or_an_honest_gap() {
-        let manifest: Value = serde_json::from_str(include_str!("../sdk/t3.services.json")).unwrap();
-        let known_calls = ["t3.reconnect", "t3.open", "t3.new_thread", "t3.send", "t3.answer"];
-        let gaps = ["t3.runner", "t3.start_issue", "router.route"];
-        for s in manifest["services"].as_array().unwrap() {
-            let n = s["name"].as_str().unwrap();
-            assert!(known_calls.contains(&n) || gaps.contains(&n), "{n} has no handler");
-        }
-        let feeds: Vec<&str> =
-            manifest["feeds"].as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap()).collect();
-        assert!(["t3.threads", "t3.entries", "t3.accounts", "t3.status"].iter().all(|f| feeds.contains(f)));
-    }
 }

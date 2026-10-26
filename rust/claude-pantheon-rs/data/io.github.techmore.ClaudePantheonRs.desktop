@@ -11,7 +11,7 @@ Keywords=Claude;Codex;AI;agent;chat;T3;
 StartupNotify=true
 DBusActivatable=true
 X-GNOME-UsesNotifications=true
-Actions=new-thread;usage;
+Actions=new-thread;usage;repositories;
 X-MSeries-Chat=true
 
 [Desktop Action new-thread]
@@ -21,3 +21,7 @@ Exec=claude-pantheon-rs --new-thread
 [Desktop Action usage]
 Name=Usage
 Exec=claude-pantheon-rs --usage
+
+[Desktop Action repositories]
+Name=Repository Overview
+Exec=claude-pantheon-rs --repositories

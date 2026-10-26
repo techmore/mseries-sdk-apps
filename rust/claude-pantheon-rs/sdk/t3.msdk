@@ -1,18 +1,23 @@
 // Claude for elementary OS (the T3 port), written in the SDK's text form.
 // Server access goes through the plug-in services declared in t3.services.json; everything else is rules.
-app "Claude for elementary OS" id io.github.techmore.ClaudePantheonRs icon claude-pantheon-rs
+app "T3 Monitor (SDK)" id io.github.techmore.ClaudePantheonSdk icon claude-pantheon-rs
 needs "network:localhost", "network", "notifications", "filesystem:data"
 
 type Thread { id: Text, title: Text, project: Text, branch: Text, provider: Text, badge: Text, detail: Text }
 type Line { id: Text, kind: Text, text: Text }
-type Account { id: Text, name: Text, status: Text, session_pct: Number, weekly_pct: Number, session_text: Text, weekly_text: Text }
+type UsageObservation { id: Text, title: Text, detail: Text, state: Text, source: Text, observed_at: Text }
+type RepositoryObservation { id: Text, title: Text, detail: Text, state: Text, source: Text, observed_at: Text, can_open: Bool }
 type Issue { id: Text, repo: Text, number: Number, title: Text, lane: Text, priority: Text }
 type Status { id: Text, running: Number, waiting: Number, nearest: Text, oldest_prompt: Text }
 
 state {
   threads: [Thread]
   lines: [Line]
-  accounts: [Account]
+  accounts: [UsageObservation]
+  history: [UsageObservation]
+  local_reports: [UsageObservation]
+  repositories: [RepositoryObservation]
+  monitor_error: Text
   issues: [Issue]
   status: [Status]
   selected: Text
@@ -28,7 +33,7 @@ state {
 }
 initial {
   provider: "auto"
-  page: "Chat"
+  page: "Usage"
   notifications_on: true
 }
 persist provider, runner_on, notifications_on
@@ -36,6 +41,9 @@ persist provider, runner_on, notifications_on
 feed threads = t3.threads
 feed lines = t3.entries
 feed accounts = t3.accounts
+feed history = t3.history
+feed local_reports = local.usage
+feed repositories = github.overview
 feed issues = github.issues
 feed status = t3.status
 
@@ -44,6 +52,7 @@ message AllowOnce(Text), Deny(Text), AllowOldest(Text)
 message SetPage(Text), ShowTray
 message StartIssue(Text), Routed(Text), RouteFailed(Text), Started(Text), ToggleRunner(Bool)
 message SetProvider(Text), SetNotifications(Bool), Reconnect
+message RefreshMonitoring, OpenRepository(Text), MonitorError(Text)
 
 on NewThread {
   call t3.new_thread { provider: "{provider}" } then ThreadCreated
@@ -72,7 +81,17 @@ on AllowOnce { call t3.answer { id: $payload, decision: "allow_once" } }
 on Deny { call t3.answer { id: $payload, decision: "deny" } }
 // The row id is the status row; the plug-in answers the oldest waiting prompt.
 on AllowOldest { call t3.answer { id: $payload, decision: "allow_once" } }
-on SetPage { page = $payload }
+on SetPage {
+  page = $payload
+  monitor_error = ""
+  call monitor.refresh { page: $payload }
+}
+on RefreshMonitoring {
+  monitor_error = ""
+  call monitor.refresh { page: "{page}" }
+}
+on OpenRepository { call github.open { id: $payload } error MonitorError }
+on MonitorError { monitor_error = $payload }
 on ShowTray { open tray }
 on StartIssue {
   pending_issue = $payload
@@ -116,7 +135,9 @@ scope "work.start" "Start work on an issue"
 entity Thread scope "chat.read" { title, project, branch, provider, badge }
 entity Status scope "chat.read" { running, waiting, nearest, oldest_prompt }
 entity Line scope "chat.history" { kind, text }
-entity Account scope "usage.read" { name, status, session_pct, weekly_pct, session_text, weekly_text }
+entity UsageObservation scope "usage.read" { title, detail, state, source, observed_at }
+scope "repositories.read" "Read repository status from the selected RepoBar GitHub identity"
+entity RepositoryObservation scope "repositories.read" { title, detail, state, source, observed_at }
 entity Issue scope "work.read" { repo, number, title, lane, priority }
 
 intent NewThread {
@@ -155,7 +176,7 @@ intent StartIssue(issue: Text) {
 
 window "Claude for elementary OS" {
   header {
-    Tabs("Pages", bind: page, options: ["Chat", "Usage", "Work", "Settings"], onChange: SetPage)
+    Tabs("Pages", bind: page, options: ["Chat", "Usage", "Repositories", "Work", "Settings"], onChange: SetPage)
     Button("New thread", icon: "list-add", shortcut: "Ctrl+N") { NewThread }
     Button("Reconnect", icon: "view-refresh", style: flat) { Reconnect }
     Button("Status", icon: "dialog-information", style: flat) { ShowTray }
@@ -190,18 +211,55 @@ window "Claude for elementary OS" {
           }
         }.id("Chat")
         VStack(spacing: medium) {
-          Text("Accounts and usage", style: title)
+          HStack(spacing: small) {
+            Text("Usage · read-only monitoring", style: title, grow: true)
+            Button("Refresh usage", icon: "view-refresh") { RefreshMonitoring }
+          }
+          Text("Token history, server plan windows and computer-local reports are separate sources.", style: caption)
+          Text("{monitor_error}", style: caption)
+          Text("Server plan windows", style: heading)
           List(accounts, key: id) {
-            row {
-              Card("{name}") {
-                Text("{status}", style: caption)
-                Gauge("Session", bind: session_pct, stateText: "{session_text}", max: 100)
-                Gauge("Weekly", bind: weekly_pct, stateText: "{weekly_text}", max: 100)
-              }
-            }
-            empty { EmptyState("No accounts connected", description: "Pair the T3 server to see your providers.", icon: "avatar-default") }
+            row { Card("{title}") {
+              Text("{source}", style: caption)
+              Text("{state} · {observed_at}", style: caption)
+              Text("{detail}", style: body)
+            } }
+            empty { EmptyState("No server plan observations", description: "Refresh to read the paired server.", icon: "avatar-default") }
+          }
+          Text("Server token history", style: heading)
+          List(history, key: id) {
+            row { Card("{title}") {
+              Text("{source}", style: caption)
+              Text("{detail}", style: body)
+            } }
+            empty { EmptyState("No token history", description: "Refresh to read server history; not subscription capacity.", icon: "view-list") }
+          }
+          Text("Local subscription reports", style: heading)
+          List(local_reports, key: id) {
+            row { Card("{title}") {
+              Text("{source}", style: caption)
+              Text("{detail}", style: body)
+            } }
+            empty { EmptyState("No local reports", description: "Collectors are configured separately; no provider is contacted here.", icon: "folder") }
           }
         }.id("Usage")
+        VStack(spacing: medium) {
+          HStack(spacing: small) {
+            Text("Repository overview", style: title, grow: true)
+            Button("Refresh repositories", icon: "view-refresh") { RefreshMonitoring }
+          }
+          Text("Read-only RepoBar data · GitHub identity is separate from the paired server/provider.", style: caption)
+          Text("{monitor_error}", style: caption)
+          List(repositories, key: id) {
+            row { Card("{title}") {
+              Text("{source}", style: caption)
+              Text("{state} · {observed_at}", style: caption)
+              Text("{detail}", style: body)
+              Button("Open on GitHub", style: flat) { OpenRepository }.visible(can_open)
+            } }
+            empty { EmptyState("No repository observations", description: "Refresh to read RepoBar's selected account.", icon: "folder-remote") }
+          }
+        }.id("Repositories")
         VStack(spacing: medium) {
           Text("Work", style: title)
           Switch("Run issues automatically", bind: runner_on, onChange: ToggleRunner)

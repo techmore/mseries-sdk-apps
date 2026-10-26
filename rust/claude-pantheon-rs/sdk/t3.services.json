@@ -1,6 +1,18 @@
 {
   "services": [
     {
+      "name": "monitor.refresh",
+      "capability": "network",
+      "args": { "page": "text" },
+      "about": "Read usage/local reports or the RepoBar overview for the visible page; never starts work."
+    },
+    {
+      "name": "github.open",
+      "capability": "network",
+      "args": { "id": "text" },
+      "about": "Open a repository link from the current validated RepoBar snapshot."
+    },
+    {
       "name": "t3.new_thread",
       "capability": "network:localhost",
       "then": "text",
@@ -98,14 +110,31 @@
       "capability": "network:localhost",
       "fields": {
         "id": "text",
-        "name": "text",
-        "status": "text",
-        "session_pct": "number",
-        "weekly_pct": "number",
-        "session_text": "text",
-        "weekly_text": "text"
+        "title": "text",
+        "detail": "text",
+        "state": "text",
+        "source": "text",
+        "observed_at": "text"
       },
-      "about": "Provider accounts with plan-window usage."
+      "about": "Server plan-window observations; unknown/stale/unavailable are never zero quota."
+    },
+    {
+      "name": "t3.history",
+      "capability": "network:localhost",
+      "fields": { "id": "text", "title": "text", "detail": "text", "state": "text", "source": "text", "observed_at": "text" },
+      "about": "Provider-aggregated server token history and API-equivalent estimates, not account quota or actual bills."
+    },
+    {
+      "name": "local.usage",
+      "capability": "filesystem:data",
+      "fields": { "id": "text", "title": "text", "detail": "text", "state": "text", "source": "text", "observed_at": "text" },
+      "about": "Existing computer-local subscription reports only; never runs collectors or changes routing."
+    },
+    {
+      "name": "github.overview",
+      "capability": "network",
+      "fields": { "id": "text", "title": "text", "detail": "text", "state": "text", "source": "text", "observed_at": "text", "can_open": "bool" },
+      "about": "Identity-scoped RepoBar snapshots of counts, default-branch CI, Actions and releases."
     },
     {
       "name": "github.issues",

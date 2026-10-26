@@ -108,6 +108,7 @@ pub struct App {
     usage_page: usage::UsagePage,
     activity_page: Rc<crate::activity_view::ActivityPage>,
     repos_page: Rc<repos::ReposPage>,
+    repo_monitor: Rc<crate::repo_monitor_view::RepoMonitorView>,
     diagnostics_page: Rc<diagnostics::DiagnosticsPage>,
     changes_page: Rc<changes::ChangesPage>,
     terminal_pane: Rc<terminal::TerminalPane>,
@@ -251,6 +252,7 @@ impl App {
             &section(&[
                 ("Usage", "win.usage"),
                 ("Activity", "win.activity"),
+                ("Repository Overview", "win.repository-overview"),
                 ("Repos and Issues", "win.repos"),
                 ("Changes in This Thread", "win.changes"),
                 ("Diagnostics", "win.diagnostics"),
@@ -382,6 +384,7 @@ impl App {
         let usage_page = usage::UsagePage::new();
         let activity_page = crate::activity_view::ActivityPage::new();
         let repos_page = Rc::new(repos::ReposPage::new());
+        let repo_monitor = crate::repo_monitor_view::RepoMonitorView::new();
         let diagnostics_page = Rc::new(diagnostics::DiagnosticsPage::new());
         let changes_page = changes::ChangesPage::new();
 
@@ -394,6 +397,7 @@ impl App {
         stack.add_named(usage_page.widget(), Some("usage"));
         stack.add_named(activity_page.widget(), Some("activity"));
         stack.add_named(repos_page.widget(), Some("repos"));
+        stack.add_named(repo_monitor.widget(), Some("repository-overview"));
         stack.add_named(diagnostics_page.widget(), Some("diagnostics"));
         stack.add_named(&changes_page.root, Some("changes"));
         stack.set_vexpand(true);
@@ -479,6 +483,7 @@ impl App {
             usage_page,
             activity_page,
             repos_page,
+            repo_monitor,
             diagnostics_page,
             changes_page,
             terminal_pane,
@@ -608,6 +613,7 @@ impl App {
             ("send", &["<Control>Return", "<Control>KP_Enter"], Box::new(|a| a.send())),
             ("usage", &["<Control><Shift>u"], Box::new(|a| a.show_usage())),
             ("activity", &[], Box::new(|a| a.show_activity())),
+            ("repository-overview", &[], Box::new(|a| a.show_repository_overview())),
             ("repos", &[], Box::new(|a| a.show_repos())),
             ("changes", &[], Box::new(|a| a.show_changes())),
             ("diagnostics", &[], Box::new(|a| a.show_diagnostics())),
@@ -725,6 +731,7 @@ impl App {
         for (title, page) in [
             ("Open Usage", "usage"),
             ("Open Activity", "activity"),
+            ("Open Repository Overview", "repository-overview"),
             ("Open Repos and Issues", "repos"),
             ("Open Diagnostics", "diagnostics"),
             ("Changes in this thread", "changes"),
@@ -803,6 +810,7 @@ impl App {
             Action::Page(page) => match page.as_str() {
                 "usage" => self.show_usage(),
                 "activity" => self.show_activity(),
+                "repository-overview" => self.show_repository_overview(),
                 "repos" => self.show_repos(),
                 "diagnostics" => self.show_diagnostics(),
                 "changes" => self.show_changes(),
@@ -1142,6 +1150,15 @@ impl App {
         self.providers.borrow().clone()
     }
 
+    pub fn update_plan_providers(&self, providers: Vec<Provider>) {
+        // Refresh observations only; never select a provider or start a task.
+        if let Some(conn) = self.conn.borrow_mut().as_mut() {
+            conn.config.providers = providers.clone();
+            *self.providers.borrow_mut() = providers;
+        }
+        self.write_status_feed();
+    }
+
     pub fn live_item_count(&self) -> usize {
         self.live.borrow().as_ref().map(|l| l.view.items.len()).unwrap_or(0)
     }
@@ -1198,6 +1215,9 @@ impl App {
     }
 
     pub fn show_page(&self, name: &str) {
+        if self.page() == "usage" && name != "usage" {
+            self.usage_page.invalidate();
+        }
         if self.page() == "diagnostics"
             && name != "diagnostics"
             && let Some(c) = self.conn.borrow().as_ref()
@@ -3090,6 +3110,21 @@ impl App {
         &self.activity_page
     }
 
+    pub fn show_repository_overview(self: &Rc<Self>) {
+        self.leave_live();
+        self.list.unselect_all();
+        self.title.set_text("Repository Overview");
+        self.window.set_title(Some("Repository Overview - Claude"));
+        self.subtitle.set_text("Read-only RepoBar GitHub status · separate account from T3");
+        self.subtitle.set_visible(true);
+        self.show_page("repository-overview");
+        self.repo_monitor.refresh();
+    }
+
+    pub fn repository_overview(&self) -> &Rc<crate::repo_monitor_view::RepoMonitorView> {
+        &self.repo_monitor
+    }
+
     pub fn show_repos(self: &Rc<Self>) {
         self.leave_live();
         self.list.unselect_all();
@@ -3182,7 +3217,7 @@ impl App {
             }
         };
         let Some((provider, model, reason)) = workflow::runner_selection(&self.providers()) else {
-            self.toast("Every provider's window is full; try again after the earliest reset.");
+            self.toast("No provider has fresh, known quota below the routing limit. Refresh usage or check provider status.");
             return;
         };
         let app = self.clone();
@@ -3225,7 +3260,7 @@ impl App {
             }
         };
         let Some((provider, model, reason)) = workflow::runner_selection(&self.providers()) else {
-            self.toast("Every provider's window is full; try again after the earliest reset.");
+            self.toast("No provider has fresh, known quota below the routing limit. Refresh usage or check provider status.");
             return;
         };
         let app = self.clone();

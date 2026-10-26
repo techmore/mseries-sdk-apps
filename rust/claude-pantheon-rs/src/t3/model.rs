@@ -54,18 +54,41 @@ pub struct Provider {
 }
 
 /// One rolling window of a provider's plan: the 5-hour session, the week, or the month.
-#[derive(Deserialize, Default, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct UsageWindow {
     pub id: String,
     pub kind: String,
     pub label: String,
     #[serde(rename = "usedPercent")]
+    #[serde(default = "unknown_percent", deserialize_with = "read_percent")]
     pub used_percent: f64,
     #[serde(rename = "resetsAt")]
     pub resets_at: Option<String>,
     #[serde(rename = "windowDurationMins")]
     pub window_duration_mins: Option<u64>,
+}
+
+fn unknown_percent() -> f64 {
+    f64::NAN
+}
+
+fn read_percent<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
+    let value = Value::deserialize(deserializer)?;
+    Ok(value.as_f64().unwrap_or_else(unknown_percent))
+}
+
+impl Default for UsageWindow {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            kind: String::new(),
+            label: String::new(),
+            used_percent: unknown_percent(),
+            resets_at: None,
+            window_duration_mins: None,
+        }
+    }
 }
 
 #[derive(Deserialize, Default, Clone, Debug)]
@@ -89,18 +112,23 @@ impl Provider {
 /// providers whose windows are under 90 %, weekly as the tie-break, then the owner's preference
 /// (Claude, Codex, Grok, OpenCode) when all are open.
 pub fn pick_provider(providers: &[Provider]) -> Option<(&Provider, String)> {
+    pick_provider_at(providers, crate::look::now_unix())
+}
+
+fn pick_provider_at(providers: &[Provider], now: i64) -> Option<(&Provider, String)> {
     const PREFERENCE: [&str; 4] = ["claudeAgent", "codex", "grok", "opencode"];
     let rank = |p: &Provider| PREFERENCE.iter().position(|d| *d == p.driver).unwrap_or(PREFERENCE.len());
     let mut open: Vec<&Provider> = providers
         .iter()
         .filter(|p| p.ready())
-        .filter(|p| p.usage_limits.as_ref().is_none_or(|u| u.windows.iter().all(|w| w.used_percent < 90.0)))
+        .filter(|p| crate::usage_monitor::plan_observation(p, now).0 == "fresh")
+        .filter(|p| p.usage_limits.as_ref().is_some_and(|u| u.windows.iter().all(|w| w.used_percent < 90.0)))
         .collect();
     if open.is_empty() {
         return None;
     }
-    let session = |p: &Provider| p.window("session").map(|w| w.used_percent).unwrap_or(0.0);
-    let weekly = |p: &Provider| p.window("weekly").map(|w| w.used_percent).unwrap_or(0.0);
+    let session = |p: &Provider| p.window("session").map(|w| w.used_percent).unwrap_or(100.0);
+    let weekly = |p: &Provider| p.window("weekly").map(|w| w.used_percent).unwrap_or(100.0);
     open.sort_by(|a, b| {
         session(a)
             .partial_cmp(&session(b))
@@ -111,20 +139,22 @@ pub fn pick_provider(providers: &[Provider]) -> Option<(&Provider, String)> {
     let best = open[0];
     let busiest = providers
         .iter()
-        .filter(|p| p.ready() && p.instance_id != best.instance_id)
+        .filter(|p| p.ready() && p.instance_id != best.instance_id
+            && crate::usage_monitor::plan_observation(p, now).0 == "fresh")
         .filter_map(|p| p.window("session").or(p.window("weekly")).map(|w| (p, w)))
         .max_by(|a, b| a.1.used_percent.partial_cmp(&b.1.used_percent).unwrap());
+    let session_text = best.window("session").map(|w| format!("{:.0}% session", w.used_percent))
+        .unwrap_or_else(|| "session not reported".into());
     let reason = match busiest {
         Some((p, w)) => format!(
-            "next task → {} ({} {:.0}% session); {} at {:.0}% until {}",
+            "next task → {} ({}); {} at {:.0}% until {}",
             best.name(),
-            if session(best) > 0.0 { "" } else { "no" },
-            session(best),
+            session_text,
             p.name(),
             w.used_percent,
             crate::look::clock(w.resets_at.as_deref().unwrap_or(""))
         ),
-        None => format!("next task → {} ({:.0}% session)", best.name(), session(best)),
+        None => format!("next task → {} ({session_text})", best.name()),
     };
     Some((best, reason.replace("( ", "(")))
 }
@@ -473,6 +503,8 @@ pub struct UsageSummary {
     pub since_day: String,
     #[serde(rename = "untilDay")]
     pub until_day: String,
+    #[serde(rename = "readAt")]
+    pub read_at: String,
     pub buckets: Vec<UsageBucket>,
     pub sources: Vec<UsageSource>,
     pub pricing: Value,
@@ -549,6 +581,7 @@ mod fixture_tests {
             installed: true,
             auth: serde_json::json!({"status": "authenticated"}),
             usage_limits: Some(UsageLimits {
+                checked_at: "2026-10-25T12:00:00Z".into(),
                 windows: vec![
                     UsageWindow {
                         kind: "session".into(),
@@ -563,13 +596,47 @@ mod fixture_tests {
             ..Default::default()
         };
         let providers = vec![mk("claudeAgent", 94.0, 40.0), mk("codex", 20.0, 45.0), mk("grok", 20.0, 10.0)];
-        let (best, reason) = pick_provider(&providers).unwrap();
+        let now = crate::look::iso_to_unix("2026-10-25T12:00:00Z");
+        let (best, reason) = pick_provider_at(&providers, now).unwrap();
         assert_eq!(best.driver, "grok", "lowest session, then lowest weekly: {reason}");
         assert!(reason.contains("Claude at 94%"), "{reason}");
         let tied = vec![mk("codex", 10.0, 10.0), mk("claudeAgent", 10.0, 10.0)];
-        assert_eq!(pick_provider(&tied).unwrap().0.driver, "claudeAgent", "preference order breaks ties");
+        assert_eq!(pick_provider_at(&tied, now).unwrap().0.driver, "claudeAgent", "preference order breaks ties");
         let full = vec![mk("codex", 95.0, 10.0)];
-        assert!(pick_provider(&full).is_none());
+        assert!(pick_provider_at(&full, now).is_none());
+    }
+
+    #[test]
+    fn unknown_or_stale_quota_cannot_be_the_best_account() {
+        let now = crate::look::iso_to_unix("2026-10-25T12:00:00Z");
+        let base = serde_json::json!({"instanceId":"work","driver":"codex","enabled":true,"installed":true,
+            "auth":{"status":"authenticated"},"usageLimits":{"checkedAt":"2026-10-25T12:00:00Z",
+                "windows":[{"kind":"session","usedPercent":20.0}]}});
+        let good: Provider = serde_json::from_value(base.clone()).unwrap();
+        assert!(pick_provider_at(&[good], now).is_some());
+        for amount in [Value::Null, serde_json::json!("invalid"), serde_json::json!(-1), serde_json::json!(101)] {
+            let mut raw = base.clone();
+            raw["usageLimits"]["windows"][0]["usedPercent"] = amount;
+            let p: Provider = serde_json::from_value(raw).unwrap();
+            assert!(pick_provider_at(&[p.clone()], now).is_none());
+            let rows = crate::usage_monitor::account_rows(&[p], now);
+            assert_eq!(rows[0]["state"], "unknown");
+            assert!(rows[0]["windows"][0]["used_percent"].is_null());
+        }
+        let mut missing = base.clone();
+        missing["usageLimits"]["windows"][0].as_object_mut().unwrap().remove("usedPercent");
+        let p: Provider = serde_json::from_value(missing).unwrap();
+        assert!(p.window("session").unwrap().used_percent.is_nan());
+        assert!(pick_provider_at(&[p.clone()], now).is_none());
+        assert!(crate::usage_monitor::account_rows(&[p], now)[0]["windows"][0]["used_percent"].is_null());
+        for checked in ["", "invalid", "2026-10-25T11:44:59Z", "2026-10-25T12:00:01Z"] {
+            let mut raw = base.clone();
+            raw["usageLimits"]["checkedAt"] = serde_json::json!(checked);
+            assert!(pick_provider_at(&[serde_json::from_value(raw).unwrap()], now).is_none());
+        }
+        let mut unavailable = base;
+        unavailable["usageLimits"]["unavailable"] = serde_json::json!({"message":"failed"});
+        assert!(pick_provider_at(&[serde_json::from_value(unavailable).unwrap()], now).is_none());
     }
 
     #[test]
