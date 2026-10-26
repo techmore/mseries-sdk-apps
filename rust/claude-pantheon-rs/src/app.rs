@@ -258,6 +258,7 @@ impl App {
             &section(&[
                 ("Usage", "win.usage"),
                 ("Activity", "win.activity"),
+                ("Tstack Workflows", "win.tstack"),
                 ("Repository Overview", "win.repository-overview"),
                 ("Repos and Issues", "win.repos"),
                 ("Changes in This Thread", "win.changes"),
@@ -635,6 +636,7 @@ impl App {
             ("send", &["<Control>Return", "<Control>KP_Enter"], Box::new(|a| a.send())),
             ("usage", &["<Control><Shift>u"], Box::new(|a| a.show_usage())),
             ("activity", &[], Box::new(|a| a.show_activity())),
+            ("tstack", &[], Box::new(|a| a.show_tstack())),
             ("repository-overview", &[], Box::new(|a| a.show_repository_overview())),
             ("repos", &[], Box::new(|a| a.show_repos())),
             ("changes", &[], Box::new(|a| a.show_changes())),
@@ -761,6 +763,7 @@ impl App {
             out.push(Entry { title: title.into(), kind: "Page".into(), action: Action::Page(page.into()) });
         }
         for (title, action) in [
+            ("Tstack Workflows", "tstack"),
             ("Pair with a T3 environment", "pair"),
             ("Import sessions from Claude Code and Codex", "import"),
             ("Hand off to repo", "handoff"),
@@ -3243,6 +3246,22 @@ impl App {
     }
 
     // ---- repos, issues, runner -----------------------------------------------------------------
+
+    pub fn show_tstack(self: &Rc<Self>) {
+        let weak = Rc::downgrade(self);
+        crate::tstack::show(&self.window, move |name| {
+            let Some(app) = weak.upgrade() else { return };
+            if app.live.borrow().is_none() && app.draft.borrow().is_none() {
+                app.toast("Open a live thread or prepare a new thread before choosing a workflow.");
+                return;
+            }
+            let draft = app.entry.text();
+            app.entry.set_text(&crate::tstack::prepare(name, &draft));
+            app.show_page("chat");
+            app.entry.view.grab_focus();
+            app.toast("Workflow request prepared. Review it, then send when ready.");
+        });
+    }
 
     pub fn show_activity(self: &Rc<Self>) {
         self.leave_live();

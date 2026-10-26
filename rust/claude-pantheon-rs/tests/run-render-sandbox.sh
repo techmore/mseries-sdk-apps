@@ -12,6 +12,9 @@ trap 'rm -rf -- "$sandbox_root"' EXIT
 mkdir -p "$sandbox_root/home" "$sandbox_root/runtime" "$sandbox_root/config" \
   "$sandbox_root/cache" "$sandbox_root/data" "$sandbox_root/state"
 chmod 700 "$sandbox_root/runtime"
+cat > "$sandbox_root/bus.conf" <<'BUS'
+<busconfig><type>session</type><listen>unix:tmpdir=/tmp</listen><policy context="default"><allow send_destination="*"/><allow receive_sender="*"/><allow own="*"/></policy></busconfig>
+BUS
 render_args=()
 if [[ ${CLAUDE_PANTHEON_RENDER_RELEASE:-0} == 1 ]]; then render_args+=(--release); fi
 
@@ -23,12 +26,14 @@ XDG_CONFIG_HOME="$sandbox_root/config" \
 XDG_CACHE_HOME="$sandbox_root/cache" \
 XDG_DATA_HOME="$sandbox_root/data" \
 XDG_STATE_HOME="$sandbox_root/state" \
-dbus-run-session -- env \
+dbus-run-session --config-file="$sandbox_root/bus.conf" -- bash -c 'export DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS"; exec "$@"' bash env \
   -u WAYLAND_DISPLAY \
   -u CLAUDE_PANTHEON_LIVE_RENDER \
   -u CLAUDE_PANTHEON_LIVE_SEND \
   -u CLAUDE_PANTHEON_LIVE_ROTATE \
   -u CLAUDE_PANTHEON_TEST_MICROPHONE \
+  GIO_USE_VFS=local \
+  GTK_A11Y=none \
   GDK_BACKEND=x11 \
   GSETTINGS_BACKEND=memory \
   GSK_RENDERER=cairo \

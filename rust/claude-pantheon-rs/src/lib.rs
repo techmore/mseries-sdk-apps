@@ -35,6 +35,7 @@ pub mod status;
 pub mod t3;
 pub mod terminal;
 pub mod transcript;
+pub mod tstack;
 pub mod usage;
 pub mod usage_monitor;
 pub mod voice;

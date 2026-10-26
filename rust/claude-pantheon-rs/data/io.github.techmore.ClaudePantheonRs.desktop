@@ -11,7 +11,7 @@ Keywords=Claude;Codex;AI;agent;chat;T3;
 StartupNotify=true
 DBusActivatable=true
 X-GNOME-UsesNotifications=true
-Actions=open-full;new-thread;usage;repositories;settings;
+Actions=open-full;new-thread;usage;repositories;activity;settings;
 X-MSeries-Chat=true
 
 [Desktop Action new-thread]
@@ -33,3 +33,7 @@ Exec=claude-pantheon-rs --full
 [Desktop Action settings]
 Name=Settings
 Exec=claude-pantheon-rs --settings
+
+[Desktop Action activity]
+Name=Activity (Shiplog)
+Exec=claude-pantheon-rs --activity
