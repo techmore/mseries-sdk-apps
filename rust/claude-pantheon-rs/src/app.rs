@@ -121,6 +121,12 @@ pub struct App {
     live: RefCell<Option<Live>>,
     draft: RefCell<Option<Draft>>,
     providers: RefCell<Vec<Provider>>,
+    selected_provider_id: RefCell<String>,
+    updating_provider_selection: Cell<bool>,
+    usage_summary: RefCell<Option<crate::t3::model::UsageSummary>>,
+    usage_refreshing: Cell<bool>,
+    usage_refresh_failed: Cell<bool>,
+    connection_generation: Cell<u64>,
     handoff: RefCell<Option<handoff::Pending>>,
     generation: Cell<u64>,
     syncing: Cell<bool>,
@@ -495,6 +501,12 @@ impl App {
             live: RefCell::new(None),
             draft: RefCell::new(None),
             providers: RefCell::new(Vec::new()),
+            selected_provider_id: RefCell::new(String::new()),
+            updating_provider_selection: Cell::new(false),
+            usage_summary: RefCell::new(None),
+            usage_refreshing: Cell::new(false),
+            usage_refresh_failed: Cell::new(false),
+            connection_generation: Cell::new(0),
             handoff: RefCell::new(None),
             generation: Cell::new(0),
             syncing: Cell::new(false),
@@ -596,7 +608,17 @@ impl App {
         let a = self.clone();
         self.pair_entry.connect_activate(move |_| a.pair());
         let a = self.clone();
-        self.provider_dd.connect_selected_notify(move |_| a.fill_models());
+        self.provider_dd.connect_selected_notify(move |dd| {
+            if a.updating_provider_selection.get() {
+                return;
+            }
+            let id = a.providers.borrow().get(dd.selected() as usize).map(|p| p.instance_id.clone());
+            if let Some(id) = id {
+                *a.selected_provider_id.borrow_mut() = id;
+            }
+            a.fill_models();
+            a.write_status_feed();
+        });
 
         // Window actions with their HIG accelerators; the menu shows the labels automatically.
         type Action = Box<dyn Fn(&Rc<App>)>;
@@ -1156,6 +1178,9 @@ impl App {
             conn.config.providers = providers.clone();
             *self.providers.borrow_mut() = providers;
         }
+        if self.conn.borrow().is_some() {
+            self.fill_providers();
+        }
         self.write_status_feed();
     }
 
@@ -1266,9 +1291,10 @@ impl App {
         let delay = std::time::Duration::from_secs(2u64.pow(attempt.min(5)).max(2));
         self.set_status(&format!("Disconnected; retrying in {} s", delay.as_secs()), false);
         let app = self.clone();
+        let generation = self.connection_generation.get();
         glib::spawn_future_local(async move {
             glib::timeout_future(delay).await;
-            if app.conn.borrow().is_some() {
+            if app.conn.borrow().is_some() || app.connection_generation.get() != generation {
                 return;
             }
             let reopen = app.live.borrow().as_ref().map(|l| l.thread_id.clone());
@@ -1277,6 +1303,9 @@ impl App {
                 return;
             }
             let Some(cred) = auth::load_for(&app.current_server()).await else { return };
+            if app.connection_generation.get() != generation {
+                return;
+            }
             if app.connecting.replace(true) {
                 return;
             }
@@ -1519,6 +1548,8 @@ impl App {
     }
 
     fn reconnect_current(self: &Rc<Self>) {
+        self.invalidate_usage_source(true);
+        crate::status::mark_stale();
         self.usage_page.offline();
         let app = self.clone();
         glib::spawn_future_local(async move {
@@ -1600,6 +1631,9 @@ impl App {
     }
 
     async fn connect_with(self: &Rc<Self>, cred: auth::Credential) {
+        self.invalidate_usage_source(true);
+        let generation = self.connection_generation.get();
+        let environment = self.current_environment_id();
         self.set_status(&format!("Connecting to {}…", cred.server), false);
         let rpc = match t3::connect(&cred).await {
             Ok(r) => r,
@@ -1635,8 +1669,16 @@ impl App {
                 return;
             }
         };
+        if self.connection_generation.get() != generation || self.current_environment_id() != environment {
+            rpc.close().await;
+            return;
+        }
         let app = self.clone();
         rpc.on_close(move |reason| {
+            if app.connection_generation.get() != generation {
+                return;
+            }
+            app.invalidate_usage_source(false);
             app.usage_page.offline();
             *app.conn.borrow_mut() = None;
             app.set_env_state(environments::State::Offline);
@@ -1658,15 +1700,20 @@ impl App {
         }
         self.offer_local_claude();
         self.subscribe_shell();
-        // Plan windows move; re-read the provider snapshot every five minutes (one small RPC).
+        self.refresh_usage_history();
+        // The existing five-minute snapshot timer also refreshes provider token history.
         let app = self.clone();
         glib::timeout_add_local(std::time::Duration::from_secs(300), move || {
-            if app.conn.borrow().is_none() {
+            if app.conn.borrow().is_none() || app.connection_generation.get() != generation {
                 return glib::ControlFlow::Break;
             }
             let app2 = app.clone();
             glib::spawn_future_local(async move {
                 app2.reload_config().await;
+                if app2.connection_generation.get() != generation {
+                    return;
+                }
+                app2.refresh_usage_history();
                 if app2.page() == "usage" {
                     app2.usage_page.render_windows(&app2.providers());
                 }
@@ -1675,13 +1722,82 @@ impl App {
         });
     }
 
+    fn invalidate_usage_source(&self, clear: bool) {
+        self.connection_generation.set(self.connection_generation.get().wrapping_add(1));
+        self.usage_refreshing.set(false);
+        self.usage_refresh_failed.set(true);
+        if clear {
+            self.usage_summary.borrow_mut().take();
+        }
+    }
+
+    pub(crate) fn usage_source_generation(&self) -> u64 {
+        self.connection_generation.get()
+    }
+
+    /// One in-flight history read on the existing transport, shared by Dock and Usage refresh.
+    /// The 31-day request and retained response bound keep this cache independent of UI lifetime.
+    pub(crate) fn refresh_usage_history(self: &Rc<Self>) {
+        let rpc = match self.conn.borrow().as_ref() {
+            Some(conn) => conn.rpc.clone(),
+            None => return,
+        };
+        if self.usage_refreshing.replace(true) {
+            return;
+        }
+        let generation = self.connection_generation.get();
+        let environment = self.current_environment_id();
+        let server = self.current_server();
+        let today = glib::DateTime::now_local().unwrap();
+        let since = today.add_days(-30).unwrap();
+        let fmt = |d: &glib::DateTime| d.format("%Y-%m-%d").unwrap().to_string();
+        let payload = json!({"sinceDay": fmt(&since), "untilDay": fmt(&today),
+            "timeZone": today.timezone().identifier().to_string()});
+        let last7: Vec<String> = (0..7).rev().map(|i| fmt(&today.add_days(-i).unwrap())).collect();
+        let app = self.clone();
+        glib::spawn_future_local(async move {
+            let response = rpc.call("server.getUsageSummary", payload).await;
+            if app.connection_generation.get() != generation || app.current_environment_id() != environment
+                || app.current_server() != server || app.conn.borrow().is_none() {
+                return;
+            }
+            app.usage_refreshing.set(false);
+            let decoded = response.map_err(|e| e.message()).and_then(crate::usage_monitor::decode_history)
+                .and_then(|summary| {
+                    if summary.buckets.len() > 16_384 || summary.sources.len() > 4_096 {
+                        Err("Server history exceeds the bounded desktop cache".to_string())
+                    } else { Ok(summary) }
+                });
+            match decoded {
+                Ok(summary) => {
+                    app.usage_refresh_failed.set(false);
+                    if app.page() == "usage" {
+                        app.usage_page.render(&summary, &last7);
+                    }
+                    *app.usage_summary.borrow_mut() = Some(summary);
+                }
+                Err(message) => {
+                    app.usage_refresh_failed.set(true);
+                    if app.page() == "usage" {
+                        app.usage_page.history_failed(&format!("refresh failed: {message}"));
+                    }
+                }
+            }
+            app.write_status_feed();
+        });
+    }
+
     /// Writes the indicator feed (status.json) from what the window knows now.
     pub fn write_status_feed(&self) {
-        let (connected, label_text, threads) = match self.conn.borrow().as_ref() {
-            Some(c) => (true, c.cred.label.clone(), c.shell.threads.clone()),
-            None => (false, String::new(), Vec::new()),
+        let conn = self.conn.borrow();
+        let (connected, label_text, threads): (bool, &str, &[ThreadShell]) = match conn.as_ref() {
+            Some(c) => (true, &c.cred.label, &c.shell.threads),
+            None => (false, "", &[]),
         };
-        crate::status::write(&crate::status::build(connected, &label_text, &self.providers.borrow(), &threads));
+        crate::status::write(&crate::status::build(
+            connected, label_text, &self.selected_provider_id.borrow(), &self.providers.borrow(),
+            threads, self.usage_summary.borrow().as_ref(), self.usage_refresh_failed.get(),
+        ));
     }
 
     fn refresh_status(&self) {
@@ -1730,12 +1846,16 @@ impl App {
     }
 
     async fn reload_config(&self) {
+        let generation = self.connection_generation.get();
+        let environment = self.current_environment_id();
         let rpc = match self.conn.borrow().as_ref() {
             Some(c) => c.rpc.clone(),
             None => return,
         };
         if let Ok(v) = rpc.call("server.getConfig", json!({})).await
             && let Ok(config) = serde_json::from_value::<ServerConfig>(v)
+            && self.connection_generation.get() == generation
+            && self.current_environment_id() == environment
         {
             *self.providers.borrow_mut() = config.providers.clone();
             if let Some(c) = self.conn.borrow_mut().as_mut() {
@@ -1865,6 +1985,9 @@ impl App {
     }
 
     fn forget(self: &Rc<Self>) {
+        self.invalidate_usage_source(true);
+        self.selected_provider_id.borrow_mut().clear();
+        crate::status::clear();
         self.usage_page.offline();
         let app = self.clone();
         glib::spawn_future_local(async move {
@@ -1877,6 +2000,8 @@ impl App {
             app.set_env_state(environments::State::Idle);
             app.show_page("pair");
             app.rebuild_list();
+            app.providers.borrow_mut().clear();
+            crate::status::clear();
         });
     }
 
@@ -2782,12 +2907,20 @@ impl App {
             })
             .collect();
         let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let selected = self.selected_provider_id.borrow().clone();
+        let index = providers.iter().position(|p| p.instance_id == selected)
+            .or_else(|| providers.iter().position(Provider::ready));
+        drop(providers);
+        self.updating_provider_selection.set(true);
         self.provider_dd.set_model(Some(&gtk::StringList::new(&refs)));
-        if let Some(i) = providers.iter().position(Provider::ready) {
+        if let Some(i) = index {
             self.provider_dd.set_selected(i as u32);
         }
-        drop(providers);
+        self.updating_provider_selection.set(false);
+        *self.selected_provider_id.borrow_mut() = self.providers.borrow()
+            .get(self.provider_dd.selected() as usize).map(|p| p.instance_id.clone()).unwrap_or_default();
         self.fill_models();
+        self.write_status_feed();
     }
 
     fn fill_models(&self) {

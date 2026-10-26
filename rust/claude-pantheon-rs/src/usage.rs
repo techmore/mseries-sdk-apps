@@ -236,7 +236,7 @@ impl UsagePage {
         }
     }
 
-    fn history_failed(&self, message: &str) {
+    pub(crate) fn history_failed(&self, message: &str) {
         let retained = self.summary.borrow().is_some();
         for label in self.history_states.borrow().iter() {
             label.set_text("Stale last-known history · latest refresh failed");
@@ -382,17 +382,15 @@ impl UsagePage {
         if self.content.first_child().is_none() {
             self.content.append(&crate::skeleton::rows(4));
         }
-        let today = glib::DateTime::now_local().unwrap();
-        let since = today.add_days(-30).unwrap();
-        let fmt = |d: &glib::DateTime| d.format("%Y-%m-%d").unwrap().to_string();
-        let payload = json!({"sinceDay": fmt(&since), "untilDay": fmt(&today), "timeZone": today.timezone().identifier().to_string()});
-        let last7: Vec<String> = (0..7).rev().map(|i| fmt(&today.add_days(-i).unwrap())).collect();
+        // Dock and the full Usage page share one guarded read on App's existing connection.
+        let source_generation = app.usage_source_generation();
+        let environment_id = app.current_environment_id();
+        app.refresh_usage_history();
         glib::spawn_future_local(async move {
-            let (config, response) = futures_util::future::join(
-                rpc.call("server.getConfig", json!({})),
-                rpc.call("server.getUsageSummary", payload),
-            ).await;
-            if app.usage_page().generation.get() != generation {
+            let config = rpc.call("server.getConfig", json!({})).await;
+            if app.usage_page().generation.get() != generation
+                || app.usage_source_generation() != source_generation
+                || app.current_environment_id() != environment_id {
                 return;
             }
             match config {
@@ -406,16 +404,6 @@ impl UsagePage {
                 },
                 Ok(_) => app.usage_page().plan_refresh_failed(&previous_providers, "Missing server account list"),
                 Err(e) => app.usage_page().plan_refresh_failed(&previous_providers, &e.message()),
-            }
-            match response {
-                Ok(v) => match crate::usage_monitor::decode_history(v) {
-                    Ok(summary) => app.usage_page().render(&summary, &last7),
-                    Err(e) => app.usage_page().history_failed(&format!("invalid response: {e}")),
-                },
-                Err(e) => {
-                    app.usage_page().history_failed(&format!("refresh failed: {}", e.message()));
-                    app.toast_retry(&format!("Usage failed: {}", e.message()), Rc::new(move |a| a.show_usage()));
-                }
             }
         });
     }
