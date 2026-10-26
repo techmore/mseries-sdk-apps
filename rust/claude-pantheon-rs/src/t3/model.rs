@@ -139,11 +139,16 @@ fn pick_provider_at(providers: &[Provider], now: i64) -> Option<(&Provider, Stri
     let best = open[0];
     let busiest = providers
         .iter()
-        .filter(|p| p.ready() && p.instance_id != best.instance_id
-            && crate::usage_monitor::plan_observation(p, now).0 == "fresh")
+        .filter(|p| {
+            p.ready()
+                && p.instance_id != best.instance_id
+                && crate::usage_monitor::plan_observation(p, now).0 == "fresh"
+        })
         .filter_map(|p| p.window("session").or(p.window("weekly")).map(|w| (p, w)))
         .max_by(|a, b| a.1.used_percent.partial_cmp(&b.1.used_percent).unwrap());
-    let session_text = best.window("session").map(|w| format!("{:.0}% session", w.used_percent))
+    let session_text = best
+        .window("session")
+        .map(|w| format!("{:.0}% session", w.used_percent))
         .unwrap_or_else(|| "session not reported".into());
     let reason = match busiest {
         Some((p, w)) => format!(
@@ -618,7 +623,7 @@ mod fixture_tests {
             let mut raw = base.clone();
             raw["usageLimits"]["windows"][0]["usedPercent"] = amount;
             let p: Provider = serde_json::from_value(raw).unwrap();
-            assert!(pick_provider_at(&[p.clone()], now).is_none());
+            assert!(pick_provider_at(std::slice::from_ref(&p), now).is_none());
             let rows = crate::usage_monitor::account_rows(&[p], now);
             assert_eq!(rows[0]["state"], "unknown");
             assert!(rows[0]["windows"][0]["used_percent"].is_null());
@@ -627,7 +632,7 @@ mod fixture_tests {
         missing["usageLimits"]["windows"][0].as_object_mut().unwrap().remove("usedPercent");
         let p: Provider = serde_json::from_value(missing).unwrap();
         assert!(p.window("session").unwrap().used_percent.is_nan());
-        assert!(pick_provider_at(&[p.clone()], now).is_none());
+        assert!(pick_provider_at(std::slice::from_ref(&p), now).is_none());
         assert!(crate::usage_monitor::account_rows(&[p], now)[0]["windows"][0]["used_percent"].is_null());
         for checked in ["", "invalid", "2026-10-25T11:44:59Z", "2026-10-25T12:00:01Z"] {
             let mut raw = base.clone();

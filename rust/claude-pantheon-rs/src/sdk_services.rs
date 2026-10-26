@@ -43,7 +43,6 @@ pub fn clean_title(raw: &str) -> String {
     first_line(line, 80)
 }
 
-
 pub fn thread_rows(shell: &Shell, providers: &[Provider]) -> Vec<Value> {
     let mut threads: Vec<&ThreadShell> = shell
         .threads
@@ -78,7 +77,6 @@ pub fn thread_rows(shell: &Shell, providers: &[Provider]) -> Vec<Value> {
         })
         .collect()
 }
-
 
 /// One row for the tray: running threads, waiting prompts, and the plan window nearest exhaustion (or a connection note).
 pub fn status_row(shell: &Shell, providers: &[Provider], note: Option<&str>) -> Vec<Value> {
@@ -250,19 +248,24 @@ impl Inner {
             self.push("t3.threads", vec![]);
             return self.set_note("Not paired: run `t3 pair`, then pair in Claude for elementary OS");
         };
-        if self.generation.get() != generation { return; }
-        *self.server_label.borrow_mut() = if cred.label.is_empty() {
-            cred.environment_id.clone()
-        } else { cred.label.clone() };
+        if self.generation.get() != generation {
+            return;
+        }
+        *self.server_label.borrow_mut() =
+            if cred.label.is_empty() { cred.environment_id.clone() } else { cred.label.clone() };
         let rpc = match t3::connect(&cred).await {
             Ok(r) => r,
             Err(e) => return self.set_note(&format!("Cannot reach the server: {e}")),
         };
-        if self.generation.get() != generation { return; }
+        if self.generation.get() != generation {
+            return;
+        }
         *self.rpc.borrow_mut() = Some(rpc.clone());
         *self.note.borrow_mut() = None;
         let config = rpc.call("server.getConfig", json!({})).await;
-        if self.generation.get() != generation { return; }
+        if self.generation.get() != generation {
+            return;
+        }
         match config {
             Ok(v) => {
                 if let Ok(cfg) = serde_json::from_value::<ServerConfig>(v) {
@@ -272,7 +275,9 @@ impl Inner {
             }
             Err(e) => self.set_note(&format!("Server config failed: {}", e.message())),
         }
-        if self.generation.get() != generation { return; }
+        if self.generation.get() != generation {
+            return;
+        }
         self.monitoring.connected(rpc.clone(), self.server_label.borrow().clone());
         let (_sub, mut stream) =
             rpc.subscribe("orchestration.subscribeShell", json!({ "requestCompletionMarker": true }));
@@ -423,9 +428,9 @@ impl Services for T3Services {
         let inner = self.inner.clone();
         let arg = |k: &str| args.get(k).and_then(Value::as_str).unwrap_or("").to_string();
         match service {
-            "monitor.refresh" => inner.monitoring.refresh(
-                &arg("page"), inner.rpc(), inner.server_label.borrow().clone()
-            ),
+            "monitor.refresh" => {
+                inner.monitoring.refresh(&arg("page"), inner.rpc(), inner.server_label.borrow().clone())
+            }
             "github.open" => {
                 let id = arg("id");
                 glib::spawn_future_local(async move {
@@ -586,7 +591,9 @@ impl Services for T3Services {
     }
 
     fn start_feed(&self, feed: &str, push: Push) -> bool {
-        if self.inner.monitoring.register(feed, push.clone()) { return true; }
+        if self.inner.monitoring.register(feed, push.clone()) {
+            return true;
+        }
         if !matches!(feed, "t3.threads" | "t3.entries" | "t3.status") {
             return false;
         }
@@ -638,7 +645,6 @@ mod tests {
         assert_eq!(clean_title("Fix the dock"), "Fix the dock");
     }
 
-
     #[test]
     fn status_counts_and_names_the_window_nearest_exhaustion() {
         let shell = Shell::from_snapshot(&fixture("shell-snapshot.json")["snapshot"]);
@@ -674,5 +680,4 @@ mod tests {
         assert_eq!(server_decision("deny"), Some("decline"));
         assert_eq!(server_decision("maybe"), None);
     }
-
 }

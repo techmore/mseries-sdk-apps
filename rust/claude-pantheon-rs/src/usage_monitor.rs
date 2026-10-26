@@ -19,13 +19,23 @@ fn failed(value: Option<&Value>) -> bool {
 pub fn plan_observation(p: &Provider, now: i64) -> (&'static str, Option<i64>) {
     let limits = p.usage_limits.as_ref();
     let observed = limits.and_then(|l| timestamp(&l.checked_at)).filter(|t| *t <= now);
-    let state = if !p.installed || p.availability.as_deref() == Some("unavailable")
+    let state = if !p.installed
+        || p.availability.as_deref() == Some("unavailable")
         || failed(limits.and_then(|l| l.unavailable.as_ref()))
-        || limits.is_none_or(|l| l.windows.is_empty()) { "unavailable" }
-        else if observed.is_none() || limits.is_some_and(|l| l.windows.iter().any(|w|
-            !w.used_percent.is_finite() || !(0.0..=100.0).contains(&w.used_percent))) { "unknown" }
-        else if now.saturating_sub(observed.unwrap()) > FRESH_SECONDS { "stale" }
-        else { "fresh" };
+        || limits.is_none_or(|l| l.windows.is_empty())
+    {
+        "unavailable"
+    } else if observed.is_none()
+        || limits.is_some_and(|l| {
+            l.windows.iter().any(|w| !w.used_percent.is_finite() || !(0.0..=100.0).contains(&w.used_percent))
+        })
+    {
+        "unknown"
+    } else if now.saturating_sub(observed.unwrap()) > FRESH_SECONDS {
+        "stale"
+    } else {
+        "fresh"
+    };
     (state, observed)
 }
 
@@ -97,7 +107,10 @@ fn project_history(summary: &UsageSummary, now: Option<i64>) -> Vec<Value> {
         h.cost += b.cost_usd;
         h.savings += b.cache_savings_usd;
         h.buckets += 1;
-        h.unpriced |= b.cost_source == "unpriced" || b.cost_source.is_empty() || !b.cost_usd.is_finite() || !b.cache_savings_usd.is_finite();
+        h.unpriced |= b.cost_source == "unpriced"
+            || b.cost_source.is_empty()
+            || !b.cost_usd.is_finite()
+            || !b.cache_savings_usd.is_finite();
     }
     for s in &summary.sources {
         let provider = s.fingerprint.get("provider").and_then(Value::as_str).unwrap_or("unknown");
@@ -128,28 +141,38 @@ fn project_history(summary: &UsageSummary, now: Option<i64>) -> Vec<Value> {
 /// The wire models intentionally default unknown fields for forwards compatibility.
 /// A monitoring response must additionally prove that it actually contains history.
 pub fn decode_history(mut raw: Value) -> Result<UsageSummary, String> {
-    let valid_day = |v: &Value| v.as_str().is_some_and(|s| s.len() == 10 && timestamp(&format!("{s}T00:00:00Z")).is_some());
-    if !valid_day(&raw["sinceDay"]) || !valid_day(&raw["untilDay"])
+    let valid_day =
+        |v: &Value| v.as_str().is_some_and(|s| s.len() == 10 && timestamp(&format!("{s}T00:00:00Z")).is_some());
+    if !valid_day(&raw["sinceDay"])
+        || !valid_day(&raw["untilDay"])
         || raw["sinceDay"].as_str() > raw["untilDay"].as_str()
-        || !raw["buckets"].is_array() || !raw["sources"].is_array() {
+        || !raw["buckets"].is_array()
+        || !raw["sources"].is_array()
+    {
         return Err("Missing or invalid history range, buckets or sources".into());
     }
     let since = raw["sinceDay"].as_str().unwrap().to_string();
     let until = raw["untilDay"].as_str().unwrap().to_string();
     for b in raw["buckets"].as_array_mut().unwrap() {
-        if !valid_day(&b["day"]) || b["provider"].as_str().is_none_or(str::is_empty)
+        if !valid_day(&b["day"])
+            || b["provider"].as_str().is_none_or(str::is_empty)
             || b["day"].as_str().is_some_and(|d| d < since.as_str() || d > until.as_str())
-            || b["model"].as_str().is_none_or(str::is_empty) || !b["totals"].is_object()
+            || b["model"].as_str().is_none_or(str::is_empty)
+            || !b["totals"].is_object()
             || ["uncachedInputTokens", "cachedInputTokens", "cacheCreationTokens", "outputTokens"]
-                .iter().any(|key| b["totals"][*key].as_u64().is_none()) {
+                .iter()
+                .any(|key| b["totals"][*key].as_u64().is_none())
+        {
             return Err("Missing or invalid token bucket values".into());
         }
         if ["costUsd", "cacheSavingsUsd"].iter().any(|key| b[*key].as_f64().is_none_or(|n| !n.is_finite() || n < 0.0)) {
             b["costSource"] = json!("unpriced");
         }
     }
-    if raw["sources"].as_array().unwrap().iter().any(|s|
-        s["fingerprint"]["provider"].as_str().is_none_or(str::is_empty) || s["status"].as_str().is_none_or(str::is_empty)) {
+    if raw["sources"].as_array().unwrap().iter().any(|s| {
+        s["fingerprint"]["provider"].as_str().is_none_or(str::is_empty)
+            || s["status"].as_str().is_none_or(str::is_empty)
+    }) {
         return Err("Missing or invalid history source identity/status".into());
     }
     serde_json::from_value(raw).map_err(|_| "Invalid history response".into())
@@ -160,14 +183,15 @@ mod tests {
     use super::*;
     fn account(id: &str, checked: &str) -> Provider {
         serde_json::from_value(json!({"instanceId": id, "driver":"codex", "displayName":"Codex", "enabled":true,
-            "installed":true,"usageLimits":{"checkedAt":checked,"windows":[{"id":"session","usedPercent":25.0}]}})).unwrap()
+            "installed":true,"usageLimits":{"checkedAt":checked,"windows":[{"id":"session","usedPercent":25.0}]}}))
+        .unwrap()
     }
     #[test]
     fn freshness_boundary_and_future_are_not_live() {
         let p = account("work", "2026-10-25T12:00:00Z");
         let observed = timestamp("2026-10-25T12:00:00Z").unwrap();
-        assert_eq!(account_rows(&[p.clone()], observed + FRESH_SECONDS)[0]["state"], "fresh");
-        let stale = account_rows(&[p.clone()], observed + FRESH_SECONDS + 1);
+        assert_eq!(account_rows(std::slice::from_ref(&p), observed + FRESH_SECONDS)[0]["state"], "fresh");
+        let stale = account_rows(std::slice::from_ref(&p), observed + FRESH_SECONDS + 1);
         assert_eq!(stale[0]["state"], "stale");
         assert_eq!(stale[0]["windows"][0]["live"], false);
         let future = account_rows(&[p], observed - 1);
@@ -198,7 +222,8 @@ mod tests {
         let summary: UsageSummary = serde_json::from_value(json!({"sinceDay":"2026-10-24","untilDay":"2026-10-25",
             "buckets":[{"provider":"codex","totals":{"outputTokens":20,"reasoningTokens":7},"costSource":"unpriced"},
                 {"provider":"codex","totals":{"uncachedInputTokens":10,"outputTokens":30}}],
-            "sources":[{"fingerprint":{"provider":"claude"},"status":"failed"}]})).unwrap();
+            "sources":[{"fingerprint":{"provider":"claude"},"status":"failed"}]}))
+        .unwrap();
         let rows = history_rows(&summary);
         let codex = rows.iter().find(|r| r["provider"] == "codex").unwrap();
         assert_eq!(codex["tokens"], 60);
@@ -213,7 +238,8 @@ mod tests {
     #[test]
     fn history_scan_freshness_is_not_the_receipt_time() {
         let mut summary: UsageSummary = serde_json::from_value(json!({"readAt":"2026-10-25T12:00:00Z",
-            "sources":[{"fingerprint":{"provider":"codex"},"status":"ok"}]})).unwrap();
+            "sources":[{"fingerprint":{"provider":"codex"},"status":"ok"}]}))
+        .unwrap();
         let observed = timestamp(&summary.read_at).unwrap();
         assert_eq!(history_rows_at(&summary, observed + FRESH_SECONDS)[0]["state"], "fresh");
         assert_eq!(history_rows_at(&summary, observed + FRESH_SECONDS + 1)[0]["state"], "stale");
@@ -226,8 +252,13 @@ mod tests {
     #[test]
     fn empty_object_and_missing_amount_are_not_zero_token_history() {
         assert!(decode_history(json!({})).is_err());
-        assert!(decode_history(json!({"sinceDay":"2026-10-24","untilDay":"2026-10-25","sources":[],
-            "buckets":[{"day":"2026-10-24","provider":"codex","model":"model","totals":{}}]})).is_err());
-        assert!(decode_history(json!({"sinceDay":"2026-10-24","untilDay":"2026-10-25","buckets":[],"sources":[]})).is_ok());
+        assert!(
+            decode_history(json!({"sinceDay":"2026-10-24","untilDay":"2026-10-25","sources":[],
+            "buckets":[{"day":"2026-10-24","provider":"codex","model":"model","totals":{}}]}))
+            .is_err()
+        );
+        assert!(
+            decode_history(json!({"sinceDay":"2026-10-24","untilDay":"2026-10-25","buckets":[],"sources":[]})).is_ok()
+        );
     }
 }

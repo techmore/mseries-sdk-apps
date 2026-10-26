@@ -36,8 +36,11 @@ fn main() -> gtk::glib::ExitCode {
     }
     let quit_after_frame = args.iter().any(|a| a == "--quit-after-frame");
     // Desktop actions and a second launch reach the running instance through GApplication's command line.
-    let mut forwarded: Vec<String> = args.iter()
-        .filter(|a| matches!(a.as_str(), "--new-thread" | "--usage" | "--repositories" | "--settings" | "--full")).cloned().collect();
+    let mut forwarded: Vec<String> = args
+        .iter()
+        .filter(|a| matches!(a.as_str(), "--new-thread" | "--usage" | "--repositories" | "--settings" | "--full"))
+        .cloned()
+        .collect();
     if let Some(i) = args.iter().position(|a| a == "--thread")
         && let Some(id) = args.get(i + 1)
     {
@@ -83,9 +86,12 @@ fn main() -> gtk::glib::ExitCode {
         ("usage", Box::new(|a: &Rc<app::App>| a.show_usage())),
         ("repositories", Box::new(|a: &Rc<app::App>| a.show_repository_overview())),
         ("open-full", Box::new(|a: &Rc<app::App>| a.window().present())),
-        ("settings", Box::new(|a: &Rc<app::App>| {
-            let _ = gtk::prelude::WidgetExt::activate_action(a.window(), "win.settings", None);
-        })),
+        (
+            "settings",
+            Box::new(|a: &Rc<app::App>| {
+                let _ = gtk::prelude::WidgetExt::activate_action(a.window(), "win.settings", None);
+            }),
+        ),
     ] {
         let action = gtk::gio::SimpleAction::new(name, None);
         let slot = current.clone();

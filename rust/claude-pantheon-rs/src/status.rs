@@ -10,6 +10,11 @@ pub fn path() -> PathBuf {
     crate::index::cache_dir().join("status.json")
 }
 
+struct HistoryState<'a> {
+    summary: Option<&'a UsageSummary>,
+    failed: bool,
+}
+
 pub fn build(
     connected: bool,
     label: &str,
@@ -19,7 +24,15 @@ pub fn build(
     summary: Option<&UsageSummary>,
     history_failed: bool,
 ) -> Value {
-    build_at(connected, label, selected_provider_id, providers, threads, summary, history_failed, crate::look::now_unix())
+    build_at(
+        connected,
+        label,
+        selected_provider_id,
+        providers,
+        threads,
+        HistoryState { summary, failed: history_failed },
+        crate::look::now_unix(),
+    )
 }
 
 fn build_at(
@@ -28,26 +41,36 @@ fn build_at(
     selected_provider_id: &str,
     providers: &[Provider],
     threads: &[ThreadShell],
-    summary: Option<&UsageSummary>,
-    history_failed: bool,
+    history: HistoryState<'_>,
     now: i64,
 ) -> Value {
     let written = crate::workflow::now_iso();
-    let running: Vec<Value> = threads.iter().filter(|t| t.is_running() && t.pending_requests() == 0)
-        .map(|t| compact_thread(t, false, selected_provider_id, providers)).collect();
-    let pending: Vec<Value> = threads.iter().filter(|t| t.pending_requests() > 0)
-        .map(|t| compact_thread(t, true, selected_provider_id, providers)).collect();
+    let running: Vec<Value> = threads
+        .iter()
+        .filter(|t| t.is_running() && t.pending_requests() == 0)
+        .map(|t| compact_thread(t, false, selected_provider_id, providers))
+        .collect();
+    let pending: Vec<Value> = threads
+        .iter()
+        .filter(|t| t.pending_requests() > 0)
+        .map(|t| compact_thread(t, true, selected_provider_id, providers))
+        .collect();
     let selected = providers.iter().find(|p| p.instance_id == selected_provider_id);
     let mut windows = Vec::new();
     if let Some(p) = selected {
         // Reuse the monitor's timestamp/invalid-percentage boundary without dropping disabled
         // selected accounts: every reported plan window remains visible, never an implied zero.
         let (state, _) = crate::usage_monitor::plan_observation(p, now);
-        for limits in &p.usage_limits {
+        if let Some(limits) = &p.usage_limits {
             for w in &limits.windows {
                 let valid = w.used_percent.is_finite() && (0.0..=100.0).contains(&w.used_percent);
-                let state = if !valid && state != "unavailable" { "unknown" }
-                    else if !connected && state == "fresh" { "stale" } else { state };
+                let state = if !valid && state != "unavailable" {
+                    "unknown"
+                } else if !connected && state == "fresh" {
+                    "stale"
+                } else {
+                    state
+                };
                 let title = if !w.label.is_empty() { &w.label } else { &w.kind };
                 let reset = w.resets_at.as_deref().filter(|s| gtk::glib::DateTime::from_iso8601(s, None).is_ok());
                 windows.push(json!({"instanceId": p.instance_id, "provider": p.name(),
@@ -63,7 +86,7 @@ fn build_at(
         "selectedProviderId": selected_provider_id,
         "selectedProvider": selected.map(Provider::name).unwrap_or_default(),
         "running": running, "pendingPrompts": pending, "windows": windows,
-        "tokenUsage": token_usage(selected, summary, history_failed || !connected, now),
+        "tokenUsage": token_usage(selected, history.summary, history.failed || !connected, now),
     })
 }
 
@@ -86,17 +109,28 @@ fn token_usage(selected: Option<&Provider>, summary: Option<&UsageSummary>, refr
     token["sinceDay"] = json!(summary.since_day);
     token["untilDay"] = json!(summary.until_day);
     token["readAt"] = json!(summary.read_at);
-    let Some(row) = crate::usage_monitor::history_rows_at(summary, now).into_iter()
-        .find(|row| row["provider"].as_str() == Some(kind)) else { return token };
+    let Some(row) = crate::usage_monitor::history_rows_at(summary, now)
+        .into_iter()
+        .find(|row| row["provider"].as_str() == Some(kind))
+    else {
+        return token;
+    };
     let state = row["state"].as_str().unwrap_or("unknown");
     token["state"] = json!(if refresh_failed && state != "unavailable" { "stale" } else { state });
-    for (dest, source) in [("totalTokens", "tokens"), ("inputTokens", "input_tokens"),
-        ("outputTokens", "output_tokens"), ("reasoningTokens", "reasoning_tokens"),
-        ("estimatedCostUsd", "api_equivalent_cost_usd")] {
+    for (dest, source) in [
+        ("totalTokens", "tokens"),
+        ("inputTokens", "input_tokens"),
+        ("outputTokens", "output_tokens"),
+        ("reasoningTokens", "reasoning_tokens"),
+        ("estimatedCostUsd", "api_equivalent_cost_usd"),
+    ] {
         token[dest] = row[source].clone();
     }
     if !row["tokens"].is_null() {
-        let cached = summary.buckets.iter().filter(|b| b.provider == kind)
+        let cached = summary
+            .buckets
+            .iter()
+            .filter(|b| b.provider == kind)
             .fold(0u64, |n, b| n.saturating_add(b.totals.cached_input));
         token["cachedInputTokens"] = json!(cached);
     }
@@ -106,16 +140,22 @@ fn token_usage(selected: Option<&Provider>, summary: Option<&UsageSummary>, refr
 fn compact_thread(thread: &ThreadShell, pending: bool, selected_id: &str, providers: &[Provider]) -> Value {
     let mut summary = if pending {
         json!({"id": thread.id, "title": thread.title, "count": thread.pending_requests()})
-    } else { json!({"id": thread.id, "title": thread.title}) };
-    if !selected_id.is_empty() && thread.provider_instance_id == selected_id {
-        if let Some(key) = thread.model_selection.get("model").and_then(Value::as_str).filter(|k| !k.is_empty()) {
-            if let Some(p) = providers.iter().find(|p| p.instance_id == selected_id) {
-                let model = p.models.iter().find(|m| m.key() == key ||
-                    m.aliases.as_ref().is_some_and(|a| a.iter().any(|a| a == key)))
-                    .map(|m| m.display()).filter(|s| !s.is_empty()).unwrap_or(key);
-                summary["model"] = json!(model);
-            }
-        }
+    } else {
+        json!({"id": thread.id, "title": thread.title})
+    };
+    if !selected_id.is_empty()
+        && thread.provider_instance_id == selected_id
+        && let Some(key) = thread.model_selection.get("model").and_then(Value::as_str).filter(|k| !k.is_empty())
+        && let Some(p) = providers.iter().find(|p| p.instance_id == selected_id)
+    {
+        let model = p
+            .models
+            .iter()
+            .find(|m| m.key() == key || m.aliases.as_ref().is_some_and(|a| a.iter().any(|a| a == key)))
+            .map(|m| m.display())
+            .filter(|s| !s.is_empty())
+            .unwrap_or(key);
+        summary["model"] = json!(model);
     }
     summary
 }
@@ -123,11 +163,15 @@ fn compact_thread(thread: &ThreadShell, pending: bool, selected_id: &str, provid
 pub fn write(v: &Value) {
     let p = path();
     let payload = if v["connected"] == false {
-        std::fs::read(&p).ok().and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        std::fs::read(&p)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
             .filter(|previous| previous["schemaVersion"] == 1)
             .map(|previous| preserve_last_known_at(&previous, v, &crate::workflow::now_iso()))
             .unwrap_or_else(|| v.clone())
-    } else { v.clone() };
+    } else {
+        v.clone()
+    };
     write_payload(&p, &payload);
 }
 
@@ -136,7 +180,9 @@ pub fn mark_stale() {
     let p = path();
     let Ok(bytes) = std::fs::read(&p) else { return };
     let Ok(previous) = serde_json::from_slice::<Value>(&bytes) else { return };
-    if previous["schemaVersion"] != 1 { return; }
+    if previous["schemaVersion"] != 1 {
+        return;
+    }
     let now = crate::workflow::now_iso();
     let disconnected = json!({"schemaVersion": 1, "writtenAt": now});
     write_payload(&p, &preserve_last_known_at(&previous, &disconnected, &now));
@@ -144,21 +190,36 @@ pub fn mark_stale() {
 
 fn preserve_last_known_at(previous: &Value, disconnected: &Value, now: &str) -> Value {
     let mut next = disconnected.clone();
-    for key in ["server", "selectedProviderId", "selectedProvider", "running", "pendingPrompts", "windows", "writtenAt", "tokenUsage"] {
-        if let Some(value) = previous.get(key) { next[key] = value.clone(); }
+    for key in [
+        "server",
+        "selectedProviderId",
+        "selectedProvider",
+        "running",
+        "pendingPrompts",
+        "windows",
+        "writtenAt",
+        "tokenUsage",
+    ] {
+        if let Some(value) = previous.get(key) {
+            next[key] = value.clone();
+        }
     }
     let id = next["selectedProviderId"].as_str().unwrap_or("").to_string();
     if let Some(windows) = next["windows"].as_array_mut() {
         windows.retain(|w| w["instanceId"].as_str() == Some(id.as_str()));
         for w in windows {
             w["live"] = json!(false);
-            if w["state"] == "fresh" { w["state"] = json!("stale"); }
+            if w["state"] == "fresh" {
+                w["state"] = json!("stale");
+            }
         }
     }
     for key in ["running", "pendingPrompts"] {
         if let Some(threads) = next[key].as_array_mut() {
             for thread in threads {
-                if let Some(fields) = thread.as_object_mut() { fields.remove("provider"); }
+                if let Some(fields) = thread.as_object_mut() {
+                    fields.remove("provider");
+                }
             }
         }
     }
@@ -172,19 +233,23 @@ fn preserve_last_known_at(previous: &Value, disconnected: &Value, now: &str) -> 
 }
 
 fn write_payload(p: &PathBuf, payload: &Value) {
-    if let Some(dir) = p.parent() { let _ = std::fs::create_dir_all(dir); }
+    if let Some(dir) = p.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
     let tmp = p.with_extension("json.tmp");
     let Ok(bytes) = serde_json::to_vec_pretty(payload) else { return };
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
-    #[cfg(unix)] {
+    #[cfg(unix)]
+    {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
     if let Ok(mut file) = options.open(&tmp)
         && std::io::Write::write_all(&mut file, &bytes).is_ok()
     {
-        #[cfg(unix)] {
+        #[cfg(unix)]
+        {
             use std::os::unix::fs::PermissionsExt;
             let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
         }
@@ -207,9 +272,12 @@ mod tests {
             "enabled": true, "installed": true, "auth": "ready", "usageLimits": {
                 "checkedAt": "2026-10-25T12:00:00Z", "windows": [
                     {"kind": "session", "label": "Session", "usedPercent": 24.0},
-                    {"kind": "weekly", "label": "Weekly", "usedPercent": null}]}})).unwrap()
+                    {"kind": "weekly", "label": "Weekly", "usedPercent": null}]}}))
+        .unwrap()
     }
-    fn now() -> i64 { crate::look::iso_to_unix("2026-10-25T12:00:00Z") }
+    fn now() -> i64 {
+        crate::look::iso_to_unix("2026-10-25T12:00:00Z")
+    }
     fn history() -> UsageSummary {
         serde_json::from_value(json!({"sinceDay": "2026-10-24", "untilDay": "2026-10-25",
             "readAt": "2026-10-25T12:00:00Z", "buckets": [
@@ -220,10 +288,29 @@ mod tests {
     #[test]
     fn selected_account_privacy_preserves_activity_without_other_account_labels() {
         let providers = [provider("work", "claudeAgent", "Work"), provider("private", "codex", "PRIVATE NAME")];
-        let threads = [ThreadShell { id: "running".into(), title: "Build".into(), provider_instance_id: "private".into(),
-            rest: json!({"activeRunId": "r1"}), ..Default::default() },
-            ThreadShell { id: "approval".into(), rest: json!({"activeRunId": "r2", "pendingRuntimeRequestCount": 1}), ..Default::default() }];
-        let feed = build_at(true, "server", "work", &providers, &threads, Some(&history()), false, now());
+        let threads = [
+            ThreadShell {
+                id: "running".into(),
+                title: "Build".into(),
+                provider_instance_id: "private".into(),
+                rest: json!({"activeRunId": "r1"}),
+                ..Default::default()
+            },
+            ThreadShell {
+                id: "approval".into(),
+                rest: json!({"activeRunId": "r2", "pendingRuntimeRequestCount": 1}),
+                ..Default::default()
+            },
+        ];
+        let feed = build_at(
+            true,
+            "server",
+            "work",
+            &providers,
+            &threads,
+            HistoryState { summary: Some(&history()), failed: false },
+            now(),
+        );
         assert_eq!(feed["selectedProviderId"], "work");
         assert_eq!(feed["selectedProvider"], "Work");
         assert_eq!(feed["running"].as_array().unwrap().len(), 1);
@@ -262,15 +349,23 @@ mod tests {
         summary.read_at.clear();
         assert_eq!(token_usage(Some(&p), Some(&summary), false, now())["state"], "unknown");
         summary.buckets.clear();
-        summary.sources = serde_json::from_value(json!([{"fingerprint": {"provider": "claude"}, "status": "failed"}])).unwrap();
+        summary.sources =
+            serde_json::from_value(json!([{"fingerprint": {"provider": "claude"}, "status": "failed"}])).unwrap();
         let token = token_usage(Some(&p), Some(&summary), true, now());
         assert_eq!(token["state"], "unavailable");
         assert!(token["totalTokens"].is_null());
     }
     #[test]
     fn disconnect_retains_selected_identity_and_stales_tokens_and_windows() {
-        let previous = build_at(true, "server", "work", &[provider("work", "claudeAgent", "Work")],
-            &[], Some(&history()), false, now());
+        let previous = build_at(
+            true,
+            "server",
+            "work",
+            &[provider("work", "claudeAgent", "Work")],
+            &[],
+            HistoryState { summary: Some(&history()), failed: false },
+            now(),
+        );
         let stale = preserve_last_known_at(&previous, &json!({"schemaVersion": 1}), "later");
         assert_eq!(stale["selectedProviderId"], "work");
         assert_eq!(stale["writtenAt"], previous["writtenAt"]);

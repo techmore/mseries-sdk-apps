@@ -1757,16 +1757,21 @@ impl App {
         let app = self.clone();
         glib::spawn_future_local(async move {
             let response = rpc.call("server.getUsageSummary", payload).await;
-            if app.connection_generation.get() != generation || app.current_environment_id() != environment
-                || app.current_server() != server || app.conn.borrow().is_none() {
+            if app.connection_generation.get() != generation
+                || app.current_environment_id() != environment
+                || app.current_server() != server
+                || app.conn.borrow().is_none()
+            {
                 return;
             }
             app.usage_refreshing.set(false);
-            let decoded = response.map_err(|e| e.message()).and_then(crate::usage_monitor::decode_history)
-                .and_then(|summary| {
+            let decoded =
+                response.map_err(|e| e.message()).and_then(crate::usage_monitor::decode_history).and_then(|summary| {
                     if summary.buckets.len() > 16_384 || summary.sources.len() > 4_096 {
                         Err("Server history exceeds the bounded desktop cache".to_string())
-                    } else { Ok(summary) }
+                    } else {
+                        Ok(summary)
+                    }
                 });
             match decoded {
                 Ok(summary) => {
@@ -1795,8 +1800,13 @@ impl App {
             None => (false, "", &[]),
         };
         crate::status::write(&crate::status::build(
-            connected, label_text, &self.selected_provider_id.borrow(), &self.providers.borrow(),
-            threads, self.usage_summary.borrow().as_ref(), self.usage_refresh_failed.get(),
+            connected,
+            label_text,
+            &self.selected_provider_id.borrow(),
+            &self.providers.borrow(),
+            threads,
+            self.usage_summary.borrow().as_ref(),
+            self.usage_refresh_failed.get(),
         ));
     }
 
@@ -2908,7 +2918,9 @@ impl App {
             .collect();
         let refs: Vec<&str> = names.iter().map(String::as_str).collect();
         let selected = self.selected_provider_id.borrow().clone();
-        let index = providers.iter().position(|p| p.instance_id == selected)
+        let index = providers
+            .iter()
+            .position(|p| p.instance_id == selected)
             .or_else(|| providers.iter().position(Provider::ready));
         drop(providers);
         self.updating_provider_selection.set(true);
@@ -2917,8 +2929,12 @@ impl App {
             self.provider_dd.set_selected(i as u32);
         }
         self.updating_provider_selection.set(false);
-        *self.selected_provider_id.borrow_mut() = self.providers.borrow()
-            .get(self.provider_dd.selected() as usize).map(|p| p.instance_id.clone()).unwrap_or_default();
+        *self.selected_provider_id.borrow_mut() = self
+            .providers
+            .borrow()
+            .get(self.provider_dd.selected() as usize)
+            .map(|p| p.instance_id.clone())
+            .unwrap_or_default();
         self.fill_models();
         self.write_status_feed();
     }
@@ -3350,7 +3366,9 @@ impl App {
             }
         };
         let Some((provider, model, reason)) = workflow::runner_selection(&self.providers()) else {
-            self.toast("No provider has fresh, known quota below the routing limit. Refresh usage or check provider status.");
+            self.toast(
+                "No provider has fresh, known quota below the routing limit. Refresh usage or check provider status.",
+            );
             return;
         };
         let app = self.clone();
@@ -3393,7 +3411,9 @@ impl App {
             }
         };
         let Some((provider, model, reason)) = workflow::runner_selection(&self.providers()) else {
-            self.toast("No provider has fresh, known quota below the routing limit. Refresh usage or check provider status.");
+            self.toast(
+                "No provider has fresh, known quota below the routing limit. Refresh usage or check provider status.",
+            );
             return;
         };
         let app = self.clone();
