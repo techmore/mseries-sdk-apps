@@ -3,6 +3,7 @@
 //!   claude-pantheon-rs                      open the window
 //!   claude-pantheon-rs --new-thread         open (or raise) the window on a new thread; also the .desktop action
 //!   claude-pantheon-rs --usage              open on the Usage page
+//!   claude-pantheon-rs --repositories       open read-only RepoBar GitHub overview
 //!   claude-pantheon-rs --thread ID          open (or raise) the window on that thread
 //!   claude-pantheon-rs --quit-after-frame   draw one frame, print the start-up time and exit (benchmarks)
 //!   claude-pantheon-rs --index              no window: list the sessions the sidebar would show
@@ -35,7 +36,11 @@ fn main() -> gtk::glib::ExitCode {
     }
     let quit_after_frame = args.iter().any(|a| a == "--quit-after-frame");
     // Desktop actions and a second launch reach the running instance through GApplication's command line.
-    let mut forwarded: Vec<String> = args.iter().filter(|a| *a == "--new-thread" || *a == "--usage").cloned().collect();
+    let mut forwarded: Vec<String> = args
+        .iter()
+        .filter(|a| matches!(a.as_str(), "--new-thread" | "--usage" | "--repositories" | "--settings" | "--full"))
+        .cloned()
+        .collect();
     if let Some(i) = args.iter().position(|a| a == "--thread")
         && let Some(id) = args.get(i + 1)
     {
@@ -79,6 +84,14 @@ fn main() -> gtk::glib::ExitCode {
     for (name, run) in [
         ("new-thread", Box::new(|a: &Rc<app::App>| a.new_chat()) as Box<dyn Fn(&Rc<app::App>)>),
         ("usage", Box::new(|a: &Rc<app::App>| a.show_usage())),
+        ("repositories", Box::new(|a: &Rc<app::App>| a.show_repository_overview())),
+        ("open-full", Box::new(|a: &Rc<app::App>| a.window().present())),
+        (
+            "settings",
+            Box::new(|a: &Rc<app::App>| {
+                let _ = gtk::prelude::WidgetExt::activate_action(a.window(), "win.settings", None);
+            }),
+        ),
     ] {
         let action = gtk::gio::SimpleAction::new(name, None);
         let slot = current.clone();
@@ -100,6 +113,7 @@ fn main() -> gtk::glib::ExitCode {
         }
     });
     application.add_action(&open);
+    application.connect_shutdown(|_| claude_pantheon_rs::status::mark_stale());
     application.connect_command_line(move |application, cmdline| {
         application.activate();
         let args = cmdline.arguments();
@@ -107,6 +121,9 @@ fn main() -> gtk::glib::ExitCode {
             match arg.to_str() {
                 Some("--new-thread") => application.activate_action("new-thread", None),
                 Some("--usage") => application.activate_action("usage", None),
+                Some("--repositories") => application.activate_action("repositories", None),
+                Some("--full") => application.activate_action("open-full", None),
+                Some("--settings") => application.activate_action("settings", None),
                 Some("--thread") => {
                     if let Some(id) = args.get(i + 1).and_then(|s| s.to_str()) {
                         application.activate_action("open-thread", Some(&id.to_variant()));

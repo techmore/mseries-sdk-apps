@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use claude_pantheon_rs::sdk_services::T3Services;
 use gtk::prelude::*;
-use msdk_gtk::host::{Host, Services};
+use msdk_gtk::host::Host;
 
 fn main() -> gtk::glib::ExitCode {
     let manifest: serde_json::Value =
@@ -18,9 +18,11 @@ fn main() -> gtk::glib::ExitCode {
     let app = gtk::Application::builder().application_id("io.github.techmore.ClaudePantheonSdk").build();
     let keep = RefCell::new(None);
     app.connect_activate(move |app| {
-        let services: Rc<dyn Services> = Rc::new(T3Services::new());
-        match Host::open_with(app, doc.clone(), None, "main", None, Some(services), false) {
+        let services = Rc::new(T3Services::new());
+        match Host::open_with(app, doc.clone(), None, "main", None, Some(services.clone()), false) {
             Some(h) => {
+                let stop = services.clone();
+                h.window().connect_unmap(move |_| stop.stop_monitoring());
                 // CLAUDE_PANTHEON_SDK_SHOT=out.png draws the window once the first data has arrived, then exits.
                 if let Some(out) = std::env::var_os("CLAUDE_PANTHEON_SDK_SHOT") {
                     let (h2, app2) = (h.clone(), app.clone());

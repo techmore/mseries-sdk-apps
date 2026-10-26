@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=T3 Monitor (SDK)
+GenericName=Token and repository monitoring
+Comment=Read-only T3 usage and RepoBar GitHub overview through the Pantheon SDK
+Exec=claude-pantheon-sdk
+Icon=io.github.techmore.ClaudePantheonRs
+Terminal=false
+Type=Application
+Categories=Development;GTK;
+Keywords=T3;usage;tokens;GitHub;repositories;
+StartupNotify=true
+StartupWMClass=io.github.techmore.ClaudePantheonSdk

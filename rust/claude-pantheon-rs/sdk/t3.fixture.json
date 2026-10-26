@@ -15,10 +15,19 @@
       { "id": "e6", "kind": "assistant", "text": "Waiting for your approval to open the pull request." }
     ],
     "t3.accounts": [
-      { "id": "a1", "name": "Claude (Pro)", "status": "connected", "session_pct": 94, "weekly_pct": 61, "session_text": "94% used, resets 21:40", "weekly_text": "61% of the week" },
-      { "id": "a2", "name": "Codex (ChatGPT Pro 5x)", "status": "connected", "session_pct": 22, "weekly_pct": 35, "session_text": "22% used, resets 23:10", "weekly_text": "35% of the week" },
-      { "id": "a3", "name": "OpenCode Go", "status": "connected", "session_pct": 8, "weekly_pct": 12, "session_text": "8% used", "weekly_text": "12% of the month" },
-      { "id": "a4", "name": "Grok", "status": "needs sign-in", "session_pct": 0, "weekly_pct": 0, "session_text": "not connected", "weekly_text": "not connected" }
+      { "id": "a1", "title": "Claude · work account", "state": "fresh", "source": "T3 server · fixture", "observed_at": "2026-10-25T20:00:00Z", "detail": "Session 94% used · resets 21:40\nWeekly 61% used" },
+      { "id": "a2", "title": "Codex · personal account", "state": "stale", "source": "T3 server · fixture", "observed_at": "2026-10-25T18:00:00Z", "detail": "Last observation is stale; current quota unavailable. Not a routing recommendation." },
+      { "id": "a3", "title": "OpenCode", "state": "unavailable", "source": "T3 server · fixture", "observed_at": "", "detail": "Provider did not report quota. Unknown is not zero." }
+    ],
+    "t3.history": [
+      { "id": "history:claude", "title": "Claude · provider total", "state": "fresh", "source": "T3 server · fixture", "observed_at": "2026-10-25T20:00:00Z", "detail": "30 days · 1.2M tokens · API-equivalent estimate $8.40; not billed cost or account quota." }
+    ],
+    "local.usage": [
+      { "id": "local:plan", "title": "Local subscription report", "state": "unavailable", "source": "This computer · display only", "observed_at": "", "detail": "Collector failed; saved gauges suppressed. Reading reports never starts a collector." }
+    ],
+    "github.overview": [
+      { "id": "github:example/project", "title": "example/project", "state": "fresh", "source": "github.com · fixture-user", "observed_at": "2026-10-25T20:00:00Z", "detail": "Default branch main · CI SUCCESS\nOpen issues 5 · open PRs 2\nActions: feature branch build queued · latest release v1.0" },
+      { "id": "github:example/other", "title": "example/other", "state": "partial", "source": "github.com · fixture-user", "observed_at": "2026-10-25T20:00:00Z", "detail": "Actions unavailable or restricted; default-branch CI unknown. No release reported." }
     ],
     "github.issues": [
       { "id": "i1", "repo": "ElementaryOS_MSeries", "number": 52, "title": "Release pipeline: signed apt and pacman suites", "lane": "build", "priority": "p0" },

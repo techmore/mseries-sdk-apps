@@ -7,20 +7,22 @@
 #   ./install.sh --uninstall     remove everything the script installed
 #   ./install.sh --no-build      install what is already built
 #
-# Pantheon's dock keeps showing the wrong icon for a newly installed app until it is restarted
-# (`systemctl --user restart pantheon-dock`); the script does that at the end.
+# Stages code without restarting the Dock or client. Use --reload-dock explicitly
+# when a newly installed icon needs a Dock reload.
 set -euo pipefail
 
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 prefix="$HOME/.local"
 build=1
 uninstall=0
+reload_dock=0
 while (($#)); do
     case "$1" in
         --prefix) prefix=$2; shift 2 ;;
         --prefix=*) prefix=${1#--prefix=}; shift ;;
         --no-build) build=0; shift ;;
         --uninstall) uninstall=1; shift ;;
+        --reload-dock) reload_dock=1; shift ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
 done
@@ -36,7 +38,8 @@ if [[ ! -w "$prefix" && ! -w "$(dirname "$prefix")" ]]; then
 fi
 
 if ((uninstall)); then
-    "${sudo[@]}" rm -f "$bindir/claude-pantheon-rs" "$apps/$id.desktop" "$datadir/dbus-1/services/$id.service" \
+    "${sudo[@]}" rm -f "$bindir/claude-pantheon-rs" "$bindir/claude-pantheon-sdk" "$apps/$id.desktop" \
+        "$apps/io.github.techmore.ClaudePantheonSdk.desktop" "$datadir/dbus-1/services/$id.service" \
         "$datadir/metainfo/$id.metainfo.xml" "$icons/scalable/apps/$id.svg" "$icons/symbolic/apps/$id-symbolic.svg"
     for size in 16 24 32 48 64 128; do
         "${sudo[@]}" rm -f "$icons/${size}x${size}/apps/$id.png"
@@ -55,9 +58,14 @@ fi
 target_dir=$(cd "$here" && cargo metadata --format-version 1 --no-deps 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
 binary="$target_dir/release/claude-pantheon-rs"
 [[ -x "$binary" ]] || { echo "no release binary at $binary; run without --no-build" >&2; exit 1; }
+[[ -x "$target_dir/release/claude-pantheon-sdk" ]] || { echo 'SDK release binary is missing; run without --no-build' >&2; exit 1; }
 
 # ---- install ---------------------------------------------------------------------------------
 "${sudo[@]}" install -Dm755 "$binary" "$bindir/claude-pantheon-rs"
+"${sudo[@]}" install -Dm755 "$target_dir/release/claude-pantheon-sdk" "$bindir/claude-pantheon-sdk"
+"${sudo[@]}" install -Dm644 "$here/data/io.github.techmore.ClaudePantheonSdk.desktop" "$apps/io.github.techmore.ClaudePantheonSdk.desktop"
+# Shared read-only dependency: also used by the optional RepoBar indicator.
+"${sudo[@]}" install -Dm755 "$here/../../mseries/repobar.py" "$bindir/mseries-repobar"
 "${sudo[@]}" install -Dm644 "$here/data/$id.desktop" "$apps/$id.desktop"
 "${sudo[@]}" install -Dm644 "$here/data/$id.metainfo.xml" "$datadir/metainfo/$id.metainfo.xml"
 "${sudo[@]}" install -d "$datadir/dbus-1/services"
@@ -81,7 +89,7 @@ fi
 if [[ "$prefix" == "$HOME/.local" ]]; then
     case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) echo "note: $HOME/.local/bin is not on PATH; the .desktop entry still works through D-Bus activation" ;; esac
 fi
-if systemctl --user is-active --quiet pantheon-dock 2>/dev/null; then
+if ((reload_dock)) && systemctl --user is-active --quiet pantheon-dock 2>/dev/null; then
     systemctl --user restart pantheon-dock && echo "Restarted pantheon-dock so the new icon shows."
 fi
 echo "Installed Claude to $prefix (binary, desktop entry with New Thread and Usage actions, D-Bus activation, metainfo, icons)."

@@ -1,5 +1,5 @@
 [Desktop Entry]
-Name=Claude
+Name=T3-R Pantheon
 GenericName=AI coding agents
 Comment=Claude Code, Codex, OpenCode and Grok threads through the T3 Code server, with your Claude Code transcripts offline
 Exec=claude-pantheon-rs
@@ -11,7 +11,7 @@ Keywords=Claude;Codex;AI;agent;chat;T3;
 StartupNotify=true
 DBusActivatable=true
 X-GNOME-UsesNotifications=true
-Actions=new-thread;usage;
+Actions=open-full;new-thread;usage;repositories;settings;
 X-MSeries-Chat=true
 
 [Desktop Action new-thread]
@@ -21,3 +21,15 @@ Exec=claude-pantheon-rs --new-thread
 [Desktop Action usage]
 Name=Usage
 Exec=claude-pantheon-rs --usage
+
+[Desktop Action repositories]
+Name=Repository Overview
+Exec=claude-pantheon-rs --repositories
+
+[Desktop Action open-full]
+Name=Open Full Chat
+Exec=claude-pantheon-rs --full
+
+[Desktop Action settings]
+Name=Settings
+Exec=claude-pantheon-rs --settings

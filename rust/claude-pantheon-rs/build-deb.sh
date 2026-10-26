@@ -26,7 +26,7 @@ fi
 
 version="$(grep -m1 -oP '^version = "\K[0-9.]+' "$here/Cargo.toml")"
 arch="$(dpkg --print-architecture)"
-debver="${version}-1~mseries1"
+debver="${version}-1~mseries2"
 
 rm -rf "$out"
 mkdir -p "$stage"
@@ -35,6 +35,9 @@ mkdir -p "$stage"
 (cd "$here" && cargo build --release --locked 2>/dev/null || cargo build --release)
 target_dir="$(cd "$here" && cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')"
 install -Dm755 "$target_dir/release/claude-pantheon-rs" "$stage/usr/bin/claude-pantheon-rs"
+install -Dm755 "$target_dir/release/claude-pantheon-sdk" "$stage/usr/bin/claude-pantheon-sdk"
+install -Dm755 "$repo_root/mseries/repobar.py" "$stage/usr/bin/mseries-repobar"
+install -Dm644 "$here/data/io.github.techmore.ClaudePantheonSdk.desktop" "$stage/usr/share/applications/io.github.techmore.ClaudePantheonSdk.desktop"
 install -Dm644 "$here/data/$id.desktop" "$stage/usr/share/applications/$id.desktop"
 install -Dm644 "$here/data/$id.metainfo.xml" "$stage/usr/share/metainfo/$id.metainfo.xml"
 install -d "$stage/usr/share/dbus-1/services"
@@ -59,7 +62,7 @@ find "$stage/usr/share" -type f -exec chmod 0644 {} +
 # ---- control -----------------------------------------------------------------------------------
 installed_kb="$(du -sk "$stage" | cut -f1)"
 install -d "$stage/DEBIAN"
-depends="libgtk-4-1 (>= 4.20), libgranite-7-7 (>= 7.8) | libgranite7 (>= 7.8), libglib2.0-0, libgtksourceview-5-0, libvte-2.91-gtk4-0, libwebkitgtk-6.0-4, librsvg2-common, secret-tool | libsecret-tools, gh"
+depends="libgtk-4-1 (>= 4.20), libgranite-7-7 (>= 7.8) | libgranite7 (>= 7.8), libglib2.0-0, libgtksourceview-5-0, libvte-2.91-gtk4-0, libwebkitgtk-6.0-4, librsvg2-common, secret-tool | libsecret-tools, gh, git, python3"
 if ((with_indicator)); then
   depends="$depends, libjson-glib-1.0-0, libgee-0.8-2, wingpanel | io.elementary.wingpanel"
 fi
