@@ -26,6 +26,21 @@ is not a successful-empty result. The Dock watches the native client's local
 status snapshot rather than making another server connection; history refresh
 uses the existing connection and configuration-refresh cadence.
 
+The native launcher must actually be pinned: installing the binary and desktop
+entry alone does not add a Dock item. The Electron `com.anthropic.Claude.desktop`
+launcher is a different application and does not expose this dropdown. Add the
+native launcher through the running Dock without replacing existing pins:
+
+```sh
+gdbus call --session --dest io.elementary.dock \
+  --object-path /io/elementary/dock \
+  --method io.elementary.dock.items.AddLauncher \
+  io.github.techmore.ClaudePantheonRs.desktop
+```
+
+Use `io.elementary.dock.items.ListLaunchers` on the same object to verify that
+the running Dock includes the native ID; binary/feed checks alone are insufficient.
+
 The separate SDK executable supplies real monitoring service/feed adapters;
 this does not establish full chat/Work parity or completed SDK qualification.
 Issue #596 retains visual, keyboard, lifecycle and owner-acceptance gates.
