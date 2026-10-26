@@ -35,24 +35,26 @@ its effect on the requested outcome. Keep unrelated SDK migrations, localization
 expansion, and other app ports outside the current delivery unless requested or
 necessary. Do not add recurring notifications or timers just to enforce this rule.
 
-## Reuse a template; extract the SDK from demonstrated needs
+## Use the implemented SDK authoring path
 
-Inspect the closest existing app and its actual visual quality. T3 is a reference
-implementation, not proof that every surface is approved or an app generator
-exists. Prefer an already working app shell and fixture backend. Establish the
-requested experience, then extract repeated behavior into shared SDK helpers.
+Descriptions (`.msdk` or JSON), rules and declared services are the primary
+authoring path. `msdk new` already generates a description, gates and README
+from six templates; it does not generate a complete Cargo project, backend,
+standalone executable or package. Use app-local Rust `Services`/`Logic` only
+where the supported vocabulary is insufficient; record each escape hatch and
+its reason instead of silently replacing the SDK with a hand-written app.
 
-The desired maintained starter should provide:
+Inspect the closest existing app and its actual visual quality. Native T3 and
+the SDK T3 executable are different consumers. A native T3 feature or screenshot
+does not prove SDK-port parity. The SDK provides controls/rules/hosting; T3's
+transport, account mappings and GitHub services remain app-specific adapters.
 
-- Native window chrome, rounding ownership, typography, spacing and scaling.
-- Navigation, visible focus, accessible controls and loading/error/empty states.
-- Logging, actionable errors, settings, optional polling and dock badges.
-- A fixture backend and verified create, run and package instructions.
-
-A future generator must produce an immediately runnable, useful app with these
-patterns demonstrated. Record missing generator/API support as a concrete gap;
-do not invent commands or claim a scaffold exists. Avoid a new description
-language until a measured repeated need justifies its maintenance cost.
+Use `cargo run -p msdk -- templates` from `rust/` to discover actual starters,
+then the CLI's `describe`, `check` and `gate` commands. Consult
+[RUST-PANTHEON-SDK.md](RUST-PANTHEON-SDK.md) for boundaries. Do not present
+proposed `msdk gen`, `msdk pack`, `msdk parity` or live introspection commands
+as available. Keep native chrome, scaling, accessibility, recoverable states,
+diagnostics and install/remove behavior in the delivered outcome contract.
 
 ## Keep development builds fast
 
@@ -83,6 +85,36 @@ acceptance. Report separately: implemented, built, installed, loaded, visually
 reviewed, and accepted. Give explicit remaining gates instead of unsupported
 completion percentages. Distinguish the new app from the qualified fallback.
 Honor stop/defer instructions; preserve work and leave the app marked incomplete.
+
+## T3 priority slice and SDK qualification gates
+
+Owner priority (2026-10-25): **token monitoring and RepoBar-style repository/
+GitHub integration first**, before broader T3 chat expansion. This defines the
+first qualification slice, not a reduction of #523's full-client requirements.
+Use #535 for SDK readiness and #593 for GUI/Dock usability. Signal/Messages
+remain deferred. Record supported operating modes explicitly; the owner's
+phrase “Windows and non-Windows mode” remains unresolved until clarified.
+
+| Gate | Observable success condition |
+| --- | --- |
+| Scope and identity | Enumerate each promised monitor/GitHub action and its SDK control, rule, feed or app-local adapter. Selected provider/account and paired server are distinct; repository/checkout/branch scope remains visible. No invented API or functionality implied by a manifest alone. |
+| Token semantics | Show units, source, account, time window, observation time and freshness. Keep local token totals, server token history and provider quota/reset windows distinct. Unknown, failed, stale and unavailable are not zero or “ready”; never attribute one account's usage to another. |
+| Usage lifecycle | Exercise initial loading, empty history, successful refresh, stale cached data, unavailable/expired source, account/server switching and recovery. Late responses cannot overwrite the new selection. Disabled/closed optional monitoring adds no background polling. |
+| Repository/GitHub flow | Open a pinned checkout, inspect branch/context, browse open/resolved issues with bounded paging and preserved selection. Inspect the RepoBar feature inventory before promising parity: PR/CI/status/actions need their own source and acceptance evidence, not an assumption that issue browsing supplies them. |
+| Write authority | Read-only inspection never files an issue, starts implementation, sends a turn or mutates Git. Explicit write actions identify repository/target and surface cancellation/failure; retries cannot silently duplicate an issue/action. Provider/model choice is separate from issue intake. Credentials stay in supported credential storage and out of logs/screenshots. |
+| Real adapters | Exercise the delivered SDK executable through its actual service/feed adapters, including denied access, missing `gh`, unavailable service and incompatible API versions. Rule gates that assert emitted effects or injected callbacks do not prove a service executed. Hide/disable explicitly unsupported actions with an explanation. |
+| Visual and accessible | Review actual compact/regular, light/dark and default/larger-text screens; no clipped primary actions or unreadable rates/quotas. Complete the primary flow keyboard-only with visible focus and correct live accessible names/roles. A semantic tree or token-contrast check is supporting evidence only. |
+| Dock and modes | Qualify launch/activation, popover ownership/dismissal, state freshness, full-window routing and app identity in the supported Dock layouts/modes; retain the detailed #523 interaction gates. Test transitions and relaunch, not launch alone. Resolve #593's mode terminology before closing that requirement. |
+| Install and remove | Build/package/install the delivered executable, desktop entry/icons/assets and activation path; confirm source-to-installed-to-loaded identity. Uninstall retires owned launchers/services/modules/runtime state and prevents supported setup paths restoring obsolete components. State user-data retention and preserve unrelated clients/accounts. |
+| Model-built proof | Give a named moderate model the pinned SDK/spec, a clean worktree and synthetic service fixtures. Record prompt/model/runtime, commands, first/final result, repairs and every human intervention. Independently review behavior, visuals and accessibility. Keep the 30-minute first-use coding target and separately report provisioning and checkout-to-running wall time. No full-app quality claim from a generated description or first frame. |
+
+Keep evidence per scenario: source revision, executable identity, environment,
+backend/account fixture, mode, expected/actual result and retained screenshot/
+log. Report implemented, built, merged, installed, loaded, reviewed and accepted
+separately. All applicable gates pass before closing the slice; unmet gates are
+explicit blockers, not percentages. Broader chat/stream/approval/attachment
+parity remains separately tracked and cannot be inferred from this slice.
+
 
 ## Reusable app-building prompt
 

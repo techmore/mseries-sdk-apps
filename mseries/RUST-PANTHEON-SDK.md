@@ -15,17 +15,27 @@ product work and scope changes. Continue independent work while awaiting feedbac
 
 ## SDK and template direction
 
-Use native Rust GTK/Granite conventions for first-party app surfaces. Inspect T3
-at rust/claude-pantheon-rs as a reference implementation; its existence does not
-make every screen an approved template. Reuse an app shell and fixture backend,
-then extract demonstrated repeated behavior into shared SDK helpers.
+Use the implemented `.msdk`/JSON description, rules and declared-service path
+for SDK apps, with app-local Rust `Services`/`Logic` for documented gaps.
+Native Rust GTK/Granite helpers remain available in `mseries-pantheon-kit`.
+Native T3 (`claude-pantheon-rs`) and the SDK-hosted T3 executable
+(`claude-pantheon-sdk`) are separate consumers; native features do not imply
+SDK parity. Source inventory: [SDK audit](SDK-AUDIT-2026-10-23.md#2026-10-25-t3-monitoring-and-sdk-qualification-addendum).
 
-A maintained starter should demonstrate window chrome and rounding ownership,
-legible typography, adaptive spacing/scaling, navigation, focus/accessibility,
-loading/error/empty states, logging, settings, optional polling and dock badges.
-It must provide verified create, run and package instructions and an immediately
-useful running app. A generator is a desired deliverable, not a claimed existing
-command. Avoid introducing a description language without a measured need.
+| Implemented path | Boundary |
+| --- | --- |
+| `msdk templates`, `msdk new` | Six starters generate description, gates and README; not a full Cargo app/backend/package. |
+| `describe`, `schema`, `check`, `gate`, `render` | Discover/validate vocabulary and headless state/effect scenarios. Gates do not invoke real backend services; semantic rendering is not live GTK accessibility evidence. |
+| `msdk-gtk::Host`, `Services`, `LogicFactory` | GTK hosting, declared controls/rules and explicit backend extension points. T3 transport/GitHub mappings are app-specific, not automatic SDK facilities. |
+| `FixtureServices` | Isolated UI/data scenarios, not proof of live integration. |
+| Native kit | Separately consumed GTK/Granite, scaling, accessibility, polling/badge helpers; lifecycle must still be qualified by the app. |
+
+`msdk gen`, `msdk pack`, `msdk parity` and a live introspection registry remain
+proposals, not commands to give an LLM as existing tools. The implemented
+description generator is real; complete standalone app/package generation is
+not established. Follow the [T3 priority-slice gates](APP-BUILDING-GUIDE.md#t3-priority-slice-and-sdk-qualification-gates):
+token monitoring and RepoBar-derived GitHub overview first (#596), with
+Shiplog (#595) building on that data. Whole-chat parity is a separate contract.
 
 Elementary/Pantheon defaults and the user's theme, dark-mode and text settings
 are the visual baseline. Translate Apple's usability principles through native
@@ -52,8 +62,9 @@ Do not give unsupported completion percentages. Preserve stop/defer instructions
 
 ## Current scope boundary
 
-These are development guidelines, not a declaration of a stable SDK v1 API or a
-shipped scaffolder. Signal integration, Rust Messages and their combined launcher
+These guidelines do not declare a stable SDK v1 API or a complete shipped app
+scaffolder. The description starter and GTK host exist. Signal integration,
+Rust Messages and their combined launcher
 remain incomplete and deferred by the owner. Their draft implementation inventory
 and acceptance receipts remain in PR #526; this guidance does not merge those
 apps or qualify them for replacement. Resume that app work only when requested.
