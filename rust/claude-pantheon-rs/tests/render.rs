@@ -42,10 +42,50 @@ impl TestHome {
         #[cfg(unix)]
         std::fs::set_permissions(home.join("runtime"), std::os::unix::fs::PermissionsExt::from_mode(0o700))
             .expect("restrict temporary runtime directory");
+        let tools = home.join("tools");
+        std::fs::create_dir_all(&tools).unwrap();
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mseries/fleet-shepherd/bin/mseries-fleet");
+        let quoted = serde_json::to_string(&source.to_string_lossy()).unwrap();
+        std::fs::write(tools.join("mseries-fleet"), format!("#!/usr/bin/env python3\nimport os,sys\nos.execv(sys.executable,[sys.executable,{quoted}]+sys.argv[1:])\n")).unwrap();
+        std::fs::write(
+            tools.join("herdr.json"),
+            include_str!("../../../mseries/fleet-shepherd/tests/fixtures/herdr_ok.json"),
+        )
+        .unwrap();
+        std::fs::write(
+            tools.join("omp.json"),
+            include_str!("../../../mseries/fleet-shepherd/tests/fixtures/omp_ok.json"),
+        )
+        .unwrap();
+        for command in ["herdr", "omp", "ssh"] {
+            std::fs::write(tools.join(command), r#"#!/usr/bin/env python3
+import json,os,sys
+from pathlib import Path
+root=Path(__file__).parent
+if root.joinpath('ssh').name == Path(__file__).name:
+ with open(Path(os.environ['XDG_CACHE_HOME'])/'fleet-ssh-argv','a') as stream: stream.write(json.dumps(sys.argv[1:])+'\n')
+kind='herdr' if Path(__file__).name=='herdr' or 'herdr api snapshot' in ' '.join(sys.argv) else 'omp'
+print(root.joinpath(kind+'.json').read_text())
+"#).unwrap();
+        }
+        std::fs::write(
+            tools.join("xdg-terminal-exec"),
+            r#"#!/usr/bin/env python3
+import json,os,sys
+from pathlib import Path
+Path(os.environ['XDG_CACHE_HOME']).joinpath('fleet-terminal-argv').write_text(json.dumps(sys.argv[1:]))
+"#,
+        )
+        .unwrap();
+        #[cfg(unix)]
+        for name in ["mseries-fleet", "herdr", "omp", "ssh", "xdg-terminal-exec"] {
+            std::fs::set_permissions(tools.join(name), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        }
         // SAFETY: this single-threaded integration harness sets process paths before GTK, GLib, Rayon,
         // or any application worker is initialized. The process exits after the test.
         unsafe {
             std::env::set_var("HOME", &home);
+            std::env::set_var("PATH", format!("{}:{}", tools.display(), std::env::var("PATH").unwrap_or_default()));
             std::env::set_var("XDG_CONFIG_HOME", home.join("config"));
             std::env::set_var("XDG_CACHE_HOME", home.join("cache"));
             std::env::set_var("XDG_DATA_HOME", home.join("data"));
@@ -166,6 +206,8 @@ fn main() {
         subscription_probe(&app, &out);
         activity_probe(&app, &out);
         tstack_probe(&app, &out);
+        fleet_probe(&app, &out);
+        fleet_adapter_probe(&app, &out);
         app.window().close();
         pump(100);
         return;
@@ -705,4 +747,133 @@ fn tstack_probe(app: &std::rc::Rc<App>, out: &Path) {
     assert_eq!(&*selected.borrow(), "full-stop");
     assert!(!window.is_visible(), "picker closes after preparation");
     println!("PASS tstack picker: nine workflows, prepare callback, no automatic sending");
+}
+
+fn fleet_probe(app: &std::rc::Rc<App>, out: &Path) {
+    app.show_fleet();
+    let mut fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../../mseries/fleet-shepherd/tests/fixtures/fleet_demo.json")).unwrap();
+    for row in fixture["connectors"].as_array_mut().unwrap() {
+        if row["mode"] == "ssh" {
+            row["focusTarget"] = row["id"].clone();
+        }
+    }
+    app.fleet_page().show_fixture(&fixture);
+    pump(200);
+    let text = shown(app);
+    for expected in [
+        "Remote Machines",
+        "Connector A",
+        "Connector B",
+        "OMP statistics",
+        "Herdr agent status unavailable",
+        "Stale",
+        "Open SSH Terminal",
+    ] {
+        assert!(text.iter().any(|s| s.contains(expected)), "Fleet shows {expected}");
+    }
+    for width in [820, 1180] {
+        app.window().set_default_size(width, 780);
+        pump(150);
+        save_png(app.window(), &out.join(format!("fleet-{width}.png")));
+    }
+    println!(
+        "PASS native Fleet fixture: connector identity, partial/offline/stale states, unavailable metrics and terminal actions"
+    );
+}
+
+fn fleet_adapter_probe(app: &std::rc::Rc<App>, out: &Path) {
+    let config = gtk::glib::user_config_dir().join("fleet-shepherd");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(config.join("connectors.json"), r#"{"schemaVersion":1,"connectors":[{"id":"local","label":"This machine","mode":"local"},{"id":"fake-remote","label":"Fixture Remote","mode":"ssh","target":"fake-remote"}]}"#).unwrap();
+    let page = claude_pantheon_rs::fleet::FleetPage::new();
+    let window = gtk::ApplicationWindow::builder()
+        .application(&app.window().application().unwrap())
+        .title("Fleet adapter fixture")
+        .default_width(600)
+        .default_height(700)
+        .child(page.widget())
+        .build();
+    window.present();
+    page.open();
+    let status_contains = |text: &str| {
+        let mut labels = Vec::new();
+        texts(window.upcast_ref(), &mut labels);
+        labels.iter().any(|s| s.contains(text))
+    };
+    assert!(pump_until("Fleet settings adapter", 5, || status_contains("Connector settings loaded")));
+    assert!(!gtk::glib::user_cache_dir().join("fleet-ssh-argv").exists(), "opening settings never contacts SSH");
+    fn find_button(widget: &gtk::Widget, name: &str) -> Option<gtk::Button> {
+        if let Some(button) = widget.downcast_ref::<gtk::Button>()
+            && button.label().as_deref() == Some(name)
+        {
+            return Some(button.clone());
+        }
+        let mut child = widget.first_child();
+        while let Some(widget) = child {
+            if let Some(found) = find_button(&widget, name) {
+                return Some(found);
+            }
+            child = widget.next_sibling();
+        }
+        None
+    }
+    fn find_entry(widget: &gtk::Widget, placeholder: &str) -> Option<gtk::Entry> {
+        if let Some(entry) = widget.downcast_ref::<gtk::Entry>()
+            && entry.placeholder_text().as_deref() == Some(placeholder)
+        {
+            return Some(entry.clone());
+        }
+        let mut child = widget.first_child();
+        while let Some(widget) = child {
+            if let Some(found) = find_entry(&widget, placeholder) {
+                return Some(found);
+            }
+            child = widget.next_sibling();
+        }
+        None
+    }
+    find_entry(window.upcast_ref(), "Machine label").unwrap().set_text("Fixture Added");
+    find_entry(window.upcast_ref(), "Existing SSH alias").unwrap().set_text("fake-added");
+    find_button(window.upcast_ref(), "Add Machine").unwrap().emit_clicked();
+    assert!(pump_until("native Add Machine adapter", 5, || status_contains("Fixture Added · fake-added")));
+    fn find_remove(widget: &gtk::Widget) -> Option<gtk::Button> {
+        if let Some(button) = widget.downcast_ref::<gtk::Button>()
+            && button.tooltip_text().as_deref() == Some("Remove Fixture Added from Fleet")
+        {
+            return Some(button.clone());
+        }
+        let mut child = widget.first_child();
+        while let Some(widget) = child {
+            if let Some(found) = find_remove(&widget) {
+                return Some(found);
+            }
+            child = widget.next_sibling();
+        }
+        None
+    }
+    find_remove(window.upcast_ref()).unwrap().emit_clicked();
+    assert!(pump_until("native Remove Machine adapter", 5, || status_contains("Connector settings loaded")
+        && !status_contains("Fixture Added · fake-added")));
+    assert!(!gtk::glib::user_cache_dir().join("fleet-ssh-argv").exists(), "editing connectors never contacts SSH");
+    find_button(window.upcast_ref(), "Refresh Status").unwrap().emit_clicked();
+    assert!(pump_until("actual Fleet adapter snapshot", 10, || status_contains("Snapshot received")));
+    assert!(status_contains("Fixture Remote · Online"));
+    let argv = std::fs::read_to_string(gtk::glib::user_cache_dir().join("fleet-ssh-argv")).unwrap();
+    assert!(
+        argv.contains("StrictHostKeyChecking=yes") && argv.contains("BatchMode=yes") && argv.contains("fake-remote")
+    );
+    save_png(&window, &out.join("fleet-real-adapter-fixture.png"));
+    find_button(window.upcast_ref(), "Open SSH Terminal").unwrap().emit_clicked();
+    assert!(pump_until("inert terminal route", 5, || gtk::glib::user_cache_dir().join("fleet-terminal-argv").exists()));
+    let argv: Vec<String> = serde_json::from_str(
+        &std::fs::read_to_string(gtk::glib::user_cache_dir().join("fleet-terminal-argv")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(argv, vec!["ssh", "-o", "StrictHostKeyChecking=yes", "--", "fake-remote"]);
+    window.close();
+    pump(100);
+    println!(
+        "PASS real Fleet list/add/remove/snapshot adapter through fake SSH and OMP; no contact on open; exact interactive terminal route"
+    );
 }

@@ -42,6 +42,9 @@ for skill in full-send full-stop council sol-loop file-pr takeover babysit-pr mo
   cp -a "$repo_root/.agents/skills/$skill/." "$stage/usr/share/mseries/tstack/$skill/"
 done
 install -Dm644 "$repo_root/.agents/skills/TSTACK-LICENSE.txt" "$stage/usr/share/mseries/tstack/TSTACK-LICENSE.txt"
+install -Dm755 "$repo_root/mseries/fleet-shepherd/bin/mseries-fleet" "$stage/usr/bin/mseries-fleet"
+install -Dm755 "$repo_root/mseries/fleet-shepherd/bin/fleet-snapshot" "$stage/usr/lib/mseries/fleet/fleet-snapshot"
+install -Dm644 "$repo_root/mseries/fleet-shepherd/LICENSE" "$stage/usr/share/doc/claude-pantheon-rs/fleet-shepherd-MIT.txt"
 install -Dm755 "$repo_root/mseries/repobar.py" "$stage/usr/bin/mseries-repobar"
 install -Dm644 "$here/data/io.github.techmore.ClaudePantheonSdk.desktop" "$stage/usr/share/applications/io.github.techmore.ClaudePantheonSdk.desktop"
 install -Dm644 "$here/data/$id.desktop" "$stage/usr/share/applications/$id.desktop"

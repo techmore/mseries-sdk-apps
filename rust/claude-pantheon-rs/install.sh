@@ -48,6 +48,8 @@ if ((uninstall)); then
     "${sudo[@]}" update-desktop-database "$apps" 2>/dev/null || true
     "${sudo[@]}" rm -f "$bindir/mseries-install-tstack-skills"
     "${sudo[@]}" rm -rf "$datadir/mseries/tstack"
+    "${sudo[@]}" rm -f "$bindir/mseries-fleet" "$datadir/licenses/claude-pantheon-rs/fleet-shepherd-MIT.txt"
+    "${sudo[@]}" rm -rf "$prefix/lib/mseries/fleet"
     echo "Removed Claude from $prefix. Shared user-installed agent skills are retained."
     exit 0
 fi
@@ -73,6 +75,9 @@ done
 "${sudo[@]}" install -Dm755 "$target_dir/release/claude-pantheon-sdk" "$bindir/claude-pantheon-sdk"
 "${sudo[@]}" install -Dm644 "$here/data/io.github.techmore.ClaudePantheonSdk.desktop" "$apps/io.github.techmore.ClaudePantheonSdk.desktop"
 # Shared read-only dependency: also used by the optional RepoBar indicator.
+"${sudo[@]}" install -Dm755 "$here/../../mseries/fleet-shepherd/bin/mseries-fleet" "$bindir/mseries-fleet"
+"${sudo[@]}" install -Dm755 "$here/../../mseries/fleet-shepherd/bin/fleet-snapshot" "$prefix/lib/mseries/fleet/fleet-snapshot"
+"${sudo[@]}" install -Dm644 "$here/../../mseries/fleet-shepherd/LICENSE" "$datadir/licenses/claude-pantheon-rs/fleet-shepherd-MIT.txt"
 "${sudo[@]}" install -Dm755 "$here/../../mseries/repobar.py" "$bindir/mseries-repobar"
 "${sudo[@]}" install -Dm644 "$here/data/$id.desktop" "$apps/$id.desktop"
 "${sudo[@]}" install -Dm644 "$here/data/$id.metainfo.xml" "$datadir/metainfo/$id.metainfo.xml"

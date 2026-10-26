@@ -12,6 +12,7 @@ pub mod claude_cli;
 pub mod composer;
 pub mod diagnostics;
 pub mod environments;
+pub mod fleet;
 pub mod handoff;
 pub mod index;
 pub mod look;
