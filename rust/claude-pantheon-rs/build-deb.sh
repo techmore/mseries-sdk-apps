@@ -61,9 +61,10 @@ done
 # ---- the Wingpanel indicator -------------------------------------------------------------------
 if ((with_indicator)); then
   work="$out/indicator"
-  meson setup "$work" "$here/wingpanel-indicator" --prefix=/usr --buildtype=release >/dev/null
+  meson setup "$work" "$here/../../mseries/t3-wingpanel" --prefix=/usr --buildtype=release >/dev/null
   meson compile -C "$work"
   DESTDIR="$stage" meson install -C "$work" >/dev/null
+  install -Dm755 "$repo_root/mseries/activate-t3-panel.sh" "$stage/usr/bin/mseries-activate-t3-panel"
 fi
 find "$stage" -type d -exec chmod 0755 {} +
 find "$stage/usr/share" -type f -exec chmod 0644 {} +
