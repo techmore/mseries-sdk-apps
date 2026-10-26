@@ -103,7 +103,8 @@ fn shown(app: &App) -> Vec<String> {
     out
 }
 
-fn save_png(window: &gtk::ApplicationWindow, path: &Path) {
+fn save_png(window: &impl IsA<gtk::Window>, path: &Path) {
+    let window = window.as_ref();
     // Capture settled GtkStack crossfades rather than blending the previous page into evidence.
     pump(400);
     let mut node = None;
@@ -164,6 +165,7 @@ fn main() {
         assert!(!live_render, "feature probes use only the isolated offline home");
         subscription_probe(&app, &out);
         activity_probe(&app, &out);
+        tstack_probe(&app, &out);
         app.window().close();
         pump(100);
         return;
@@ -669,4 +671,38 @@ fn activity_probe(app: &std::rc::Rc<App>, out: &Path) {
     save_png(app.window(), &out.join("activity-large-text-820.png"));
     app.zoom_to(1.0);
     println!("native Activity mixed-source states and factual clipboard recap gates pass");
+}
+
+fn tstack_probe(app: &std::rc::Rc<App>, out: &Path) {
+    use std::{cell::RefCell, rc::Rc};
+    let selected = Rc::new(RefCell::new(String::new()));
+    let record = selected.clone();
+    let window = claude_pantheon_rs::tstack::show(app.window(), move |name| *record.borrow_mut() = name.into());
+    pump(200);
+    let mut labels = Vec::new();
+    texts(window.upcast_ref(), &mut labels);
+    for &(name, _) in claude_pantheon_rs::tstack::WORKFLOWS {
+        assert!(labels.iter().any(|label| label == name), "picker contains {name}");
+    }
+    save_png(&window, &out.join("tstack-workflows.png"));
+    fn prepare_button(widget: &gtk::Widget) -> Option<gtk::Button> {
+        if let Some(button) = widget.downcast_ref::<gtk::Button>()
+            && button.tooltip_text().as_deref() == Some("Prepare full-stop request")
+        {
+            return Some(button.clone());
+        }
+        let mut child = widget.first_child();
+        while let Some(widget) = child {
+            if let Some(button) = prepare_button(&widget) {
+                return Some(button);
+            }
+            child = widget.next_sibling();
+        }
+        None
+    }
+    prepare_button(window.upcast_ref()).expect("prepare button").emit_clicked();
+    pump(100);
+    assert_eq!(&*selected.borrow(), "full-stop");
+    assert!(!window.is_visible(), "picker closes after preparation");
+    println!("PASS tstack picker: nine workflows, prepare callback, no automatic sending");
 }

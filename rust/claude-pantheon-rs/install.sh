@@ -46,7 +46,9 @@ if ((uninstall)); then
     done
     "${sudo[@]}" gtk-update-icon-cache -q -f "$icons" 2>/dev/null || true
     "${sudo[@]}" update-desktop-database "$apps" 2>/dev/null || true
-    echo "Removed Claude from $prefix."
+    "${sudo[@]}" rm -f "$bindir/mseries-install-tstack-skills"
+    "${sudo[@]}" rm -rf "$datadir/mseries/tstack"
+    echo "Removed Claude from $prefix. Shared user-installed agent skills are retained."
     exit 0
 fi
 
@@ -61,6 +63,12 @@ binary="$target_dir/release/claude-pantheon-rs"
 [[ -x "$target_dir/release/claude-pantheon-sdk" ]] || { echo 'SDK release binary is missing; run without --no-build' >&2; exit 1; }
 
 # ---- install ---------------------------------------------------------------------------------
+"${sudo[@]}" install -Dm755 "$here/../../mseries/install-tstack-skills.py" "$bindir/mseries-install-tstack-skills"
+for skill in full-send full-stop council sol-loop file-pr takeover babysit-pr modernize leaving-pr-comments; do
+    "${sudo[@]}" install -d "$datadir/mseries/tstack/$skill"
+    "${sudo[@]}" cp -a "$here/../../.agents/skills/$skill/." "$datadir/mseries/tstack/$skill/"
+done
+"${sudo[@]}" install -Dm644 "$here/../../.agents/skills/TSTACK-LICENSE.txt" "$datadir/mseries/tstack/TSTACK-LICENSE.txt"
 "${sudo[@]}" install -Dm755 "$binary" "$bindir/claude-pantheon-rs"
 "${sudo[@]}" install -Dm755 "$target_dir/release/claude-pantheon-sdk" "$bindir/claude-pantheon-sdk"
 "${sudo[@]}" install -Dm644 "$here/data/io.github.techmore.ClaudePantheonSdk.desktop" "$apps/io.github.techmore.ClaudePantheonSdk.desktop"
@@ -84,6 +92,12 @@ else
 fi
 "${sudo[@]}" gtk-update-icon-cache -q -f "$icons" 2>/dev/null || true
 "${sudo[@]}" update-desktop-database "$apps" 2>/dev/null || true
+
+# tstack skills are shared with local provider CLIs, not owned runtime data.
+# User-modified skills are retained; a conflict is reported without replacing them.
+if [[ "$prefix" == "$HOME/.local" ]]; then
+    python3 "$here/../../mseries/install-tstack-skills.py"
+fi
 
 # ---- Pantheon quirks -------------------------------------------------------------------------
 if [[ "$prefix" == "$HOME/.local" ]]; then
