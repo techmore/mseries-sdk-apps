@@ -49,16 +49,16 @@ this audit; **Partial**; **Missing**. Effort: S ≤ half a day, M ≤ 2 days, L 
 | 20 | SDK build `claude-pantheon-sdk` + gates | Done-unverified | `sdk/`, `sdk_*.rs`; issue #596 gates (visual, keyboard, owner acceptance) open | L (owner) |
 | 21 | Command palette, text zoom, window state, a11y names | Done | `palette.rs`, `winstate.rs`, README | |
 | 22 | Notifications | Done-unverified | `notify.rs` (22 lines) | S |
-| 23 | **New thread in a worktree / branch choice** | Missing | no `worktree` anywhere in `src/` | M |
-| 24 | **Older-history paging (cursor endpoint)** | Missing | PR #521 `t3/history.rs`; main loads the snapshot only | M |
-| 25 | **Settled-thread cache + resume with `afterSequence`** | Missing | PR #521 `thread_cache.rs` (LZ4, atomic projection+cursor); main reloads whole threads on reconnect | M-L |
-| 26 | **Reconnect keeps scroll position** | Missing | PR #521 `fdd006ec` | S |
-| 27 | **Provider setup UI (ACP registry, custom ACP, enable/disable)** | Missing | PR #521 `provider_setup.rs`; `acp` absent in main | M |
-| 28 | Pull-request actions / checks (`pullRequests.*`, server cap `pullRequestChecks`) | Missing | INTEGRATIONS 4c | M |
+| 23 | New thread in a worktree | Done (PR #26, unit-tested, not live-launched) | PR #26 | M |
+| 24 | Older-history paging (cursor endpoint) | Done (PR #25) | PR #521 `t3/history.rs`; main loads the snapshot only | M |
+| 25 | Settled-thread cache + resume with `afterSequence` | Design proposed (DESIGN-thread-cache.md), awaiting owner | PR #521 `thread_cache.rs` (LZ4, atomic projection+cursor); main reloads whole threads on reconnect | M-L |
+| 26 | Reconnect keeps scroll position | Done (PR #24) | PR #521 `fdd006ec` | S |
+| 27 | Provider status page (PR #27); sign-in and ACP registry | Partial: read-only page done, manager deferred (L) | PR #521 `provider_setup.rs`; `acp` absent in main | M |
+| 28 | Pull-request status/checks (read-only, PR #28); PR actions | Partial | INTEGRATIONS 4c | M |
 | 29 | Reset credits consume (Codex) | Partial | parsed in `model.rs`, no action | S |
 | 30 | Keybindings / theme sync with server | Missing | no hit | S, low value |
-| 31 | `--version` / `--help` | Missing (bug) | see above | S |
-| 32 | Clippy clean + crate CI (fmt, clippy, test, Xvfb render) | Partial | clippy fails; no workflow | S |
+| 31 | `--version` / `--help` | Done (PR #23) | see above | S |
+| 32 | Clippy clean + crate CI (fmt, clippy, test, Xvfb render) | Done (PR #23) | `.github/workflows/claude-pantheon-rs.yml` | S |
 | 33 | Dock quick-popover (T3-R) | Done-unverified, OS repo | #521 `TaskbarT3RPopover.vala`; superseded by the unified panel/dock menu (#607/#608) | OS repo |
 | 34 | Docs/ledger truth (INTEGRATIONS table, README test count, capabilities.json) | Partial | table stale, README says 77 tests, now 87 | S |
 | 35 | Packaging: user-level install | Done | `install.sh`, `build-deb.sh`; `.deb` epoch rule: check `build-deb.sh` before any package | S |
