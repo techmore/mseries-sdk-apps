@@ -1,0 +1,15 @@
+{
+  "result": "deferred-before-inference",
+  "inference_started": false,
+  "reason": "conservative admission refuses an already resident model; loaded does not prove active inference",
+  "resident_models": [
+    {
+      "name": "qwen3.5:2b",
+      "digest": "0689d44085e06d165161a8a9a1731344278cfb5aade63a3c3dbdb48ab54b130a",
+      "expires_at": "2026-10-26T15:17:45.380294215-04:00",
+      "context_length": 4096,
+      "size": 2336961329,
+      "size_vram": 2336961329
+    }
+  ]
+}

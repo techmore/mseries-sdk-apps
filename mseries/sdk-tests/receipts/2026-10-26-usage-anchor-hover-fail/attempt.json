@@ -1,0 +1,56 @@
+{
+  "binary_sha256": "d890c17d013305ba216aed878bd28034e51925a8f8d7d91c8bf9a9f952a21819",
+  "environment": "isolated X11 / private D-Bus / synthetic data",
+  "checks": [],
+  "result": "fail",
+  "failure": "hover did not open usage popup",
+  "accessible_nodes": [
+    {
+      "name": "usage_anchor_interactive",
+      "role": "application",
+      "showing": false
+    },
+    {
+      "name": "Usage status anchor test",
+      "role": "frame",
+      "showing": true
+    },
+    {
+      "name": "",
+      "role": "panel",
+      "showing": true
+    },
+    {
+      "name": "",
+      "role": "panel",
+      "showing": true
+    },
+    {
+      "name": "",
+      "role": "panel",
+      "showing": true
+    },
+    {
+      "name": "Outside",
+      "role": "button",
+      "showing": true
+    },
+    {
+      "name": "Outside",
+      "role": "label",
+      "showing": true
+    },
+    {
+      "name": "Usage",
+      "role": "button",
+      "showing": true
+    },
+    {
+      "name": "Usage",
+      "role": "label",
+      "showing": true
+    }
+  ],
+  "process_stdout": "",
+  "process_stderr": "libEGL warning: DRI3 error: Could not get DRI3 device\nlibEGL warning: Ensure your X server supports DRI3 to get accelerated rendering\n"
+}

@@ -1,0 +1,91 @@
+{
+  "binary_sha256": "7ed2c045e5c1c07c1c0873878762520c24fc95109111c17b692be889f696be99",
+  "environment": "isolated X11 / private D-Bus / synthetic data",
+  "checks": [],
+  "result": "fail",
+  "failure": "refresh button is not accessible",
+  "accessible_nodes": [
+    {
+      "name": "usage_control_interactive",
+      "role": "application"
+    },
+    {
+      "name": "Usage control test",
+      "role": "frame"
+    },
+    {
+      "name": "",
+      "role": "panel"
+    },
+    {
+      "name": "",
+      "role": "scroll pane"
+    },
+    {
+      "name": "",
+      "role": "panel"
+    },
+    {
+      "name": "",
+      "role": "panel"
+    },
+    {
+      "name": "Usage coverage is partial",
+      "role": "label"
+    },
+    {
+      "name": "",
+      "role": "panel"
+    },
+    {
+      "name": "",
+      "role": "panel"
+    },
+    {
+      "name": "Codex",
+      "role": "label"
+    },
+    {
+      "name": "CodexBar local snapshot",
+      "role": "label"
+    },
+    {
+      "name": "",
+      "role": "panel"
+    },
+    {
+      "name": "Provider total",
+      "role": "label"
+    },
+    {
+      "name": "7 day: 75% remaining",
+      "role": "label"
+    },
+    {
+      "name": "Reset unknown",
+      "role": "label"
+    },
+    {
+      "name": "",
+      "role": "separator"
+    },
+    {
+      "name": "",
+      "role": "panel"
+    },
+    {
+      "name": "Refresh complete",
+      "role": "label"
+    },
+    {
+      "name": "Refresh",
+      "role": "button"
+    },
+    {
+      "name": "Refresh",
+      "role": "label"
+    }
+  ],
+  "process_stdout": "",
+  "process_stderr": "libEGL warning: DRI3 error: Could not get DRI3 device\nlibEGL warning: Ensure your X server supports DRI3 to get accelerated rendering\n"
+}

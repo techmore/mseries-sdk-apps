@@ -77,7 +77,28 @@ pub fn find(name: &str) -> Option<&'static Template> {
 impl Template {
     /// The description with the owner's id and display name in place of the template's.
     pub fn render(&self, id: &str, display: &str) -> String {
-        self.ui.replace(self.id, id).replace(self.display, display)
+        // Escape each replacement as JSON string contents. Substitute the original
+        // template in one pass so user input resembling another placeholder
+        // remains literal rather than being expanded a second time.
+        let escaped = |value: &str| {
+            let json = serde_json::to_string(value).expect("strings serialize to JSON");
+            json[1..json.len() - 1].to_owned()
+        };
+        let (id, display) = (escaped(id), escaped(display));
+        let mut result = String::new();
+        let mut rest = self.ui;
+        while let Some((offset, placeholder, replacement)) =
+            [(rest.find(self.id), self.id, id.as_str()), (rest.find(self.display), self.display, display.as_str())]
+                .into_iter()
+                .filter_map(|(offset, key, value)| offset.map(|offset| (offset, key, value)))
+                .min_by_key(|(offset, _, _)| *offset)
+        {
+            result.push_str(&rest[..offset]);
+            result.push_str(replacement);
+            rest = &rest[offset + placeholder.len()..];
+        }
+        result.push_str(rest);
+        result
     }
 
     pub fn readme(&self, display: &str) -> String {

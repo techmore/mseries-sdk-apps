@@ -1,0 +1,43 @@
+{
+  "schema": "msdk.bench-preflight.v1",
+  "harness_commit": "0ea6c0302a24b0c363393e416cf0e718349b3579",
+  "sdk_source_files_matched": 80,
+  "boundary_tests": 4,
+  "native_suites_uid2000": 3,
+  "smoke_tools": [
+    "new settings",
+    "generate typed standalone app",
+    "offline build",
+    "actual external screenshot",
+    "Ctrl+Q clean exit"
+  ],
+  "smoke_build_seconds": 82.12071825901512,
+  "smoke_window_mapped_seconds": 0.28292891499586403,
+  "smoke_frame_seconds": 0.9269498030189425,
+  "timing_scope": "trusted harness/dependency preflight only, outside model timer; not general performance or model authoring evidence",
+  "smoke_visual_review": "actual fixture content visible without clipped primary controls in regular default-text capture",
+  "model_trial": {
+    "result": "deferred-before-inference",
+    "inference_started": false,
+    "reason": "conservative admission refuses an already resident model; loaded does not prove active inference",
+    "resident_models": [
+      {
+        "name": "qwen3.5:2b",
+        "digest": "0689d44085e06d165161a8a9a1731344278cfb5aade63a3c3dbdb48ab54b130a",
+        "expires_at": "2026-10-26T15:17:45.380294215-04:00",
+        "context_length": 4096,
+        "size": 2336961329,
+        "size_vram": 2336961329
+      }
+    ]
+  },
+  "cohort_spec": "unchanged s01 Quick Notes",
+  "first_provisioning_failure": "network disabled before dependencies; terminal exit100 before any model code/inference; corrected provisioning order; original transient /tmp log was hidden by boot-time tmpfs, so no raw failure log claimed",
+  "model_quality_result": "UNSCORED; no inference or authoring run began",
+  "remaining": [
+    "quiet admission for pinned qwen3.5:4b",
+    "controlled model run and independent full-spec/rubric audit",
+    "baseline/repeated comparisons",
+    "full SDK completion ledger"
+  ]
+}

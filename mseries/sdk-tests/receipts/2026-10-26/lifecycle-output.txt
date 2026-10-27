@@ -1,0 +1,17 @@
+   Compiling msdk v0.1.0 (/work/sdk/msdk)
+   Compiling msdk-gtk v0.1.0 (/work/sdk/msdk-gtk)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.88s
+     Running tests/lifecycle.rs (/work/target/debug/deps/lifecycle-db6f2c449ec8827b)
+
+running 1 test
+test closing_stops_owned_work_ignores_late_events_and_releases_the_host ... libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+dbus-daemon[14794]: [session uid=0 pid=14794 pidfd=5] Activating service name='org.a11y.Bus' requested by ':1.1' (uid=0 pid=15438 comm="/work/target/debug/deps/lifecycle-db6f2c449ec8827b" label="unconfined")
+dbus-daemon[14794]: [session uid=0 pid=14794 pidfd=5] Successfully activated service 'org.a11y.Bus'
+dbus-daemon[15461]: Activating service name='org.a11y.atspi.Registry' requested by ':1.0' (uid=0 pid=15438 comm="/work/target/debug/deps/lifecycle-db6f2c449ec8827b" label="unconfined")
+dbus-daemon[15461]: Successfully activated service 'org.a11y.atspi.Registry'
+SpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.78s
+

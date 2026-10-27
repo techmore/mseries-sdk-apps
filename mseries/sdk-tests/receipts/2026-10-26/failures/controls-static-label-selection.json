@@ -1,0 +1,9 @@
+{
+  "binary_sha256": "ec3312dd32f51cd4643260a31fbd950cec101eea1b16fdba5dab707cd54a97a6",
+  "environment": "isolated X11 / private D-Bus / synthetic XDG state",
+  "checks": [],
+  "result": "fail",
+  "failure": "{'Turn on work mode': 'label', 'Schedule': 'label', 'Reset to defaults': 'button'}",
+  "process_stdout": "",
+  "process_stderr": "libEGL warning: DRI3 error: Could not get DRI3 device\nlibEGL warning: Ensure your X server supports DRI3 to get accelerated rendering\n"
+}

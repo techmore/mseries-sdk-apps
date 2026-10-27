@@ -1,0 +1,45 @@
+{
+  "schema": "msdk.validation.v1",
+  "source_commit": "cb77b663cb25b15f3828a58eecf351bcab30e0cb",
+  "source_files_matched": 80,
+  "environment": "existing ephemeral Ubuntu 26.04 x86_64 container on verified owner SER8; Rust 1.93.1; GTK 4.22.4; private Xvfb/D-Bus; synthetic HOME/XDG",
+  "core_tests_passed": 100,
+  "native_suites_passed": [
+    "CLI nonzero failure exits",
+    "actual D-Bus/Host lifecycle",
+    "typed asynchronous service errors/recovery/fixture no fallback/owned command close"
+  ],
+  "sdk_strict_clippy": "passed",
+  "generated_app": {
+    "model_tests": 1,
+    "build": "passed",
+    "strict_clippy": "passed",
+    "keyboard_accessibility": "actual read-only command failure for absent synthetic HOME; same-process keyboard retry after harness creates it; Ctrl+Q separately passed",
+    "reviewed_screenshots": 8,
+    "profiles": "Adwaita light/dark, requested widths480/900, asserted Sans10/15; recovered result captured",
+    "binary_sha256": "74b64bfb42c5a65a65e924e5d6ea49438f8e9f11471ce115f388798af40fb464",
+    "package_sha256": "d01aa58ba3a3b560c696806a788fd4772e206687ffd84241190bc19f0caf166e",
+    "package_checks": [
+      "metadata/native dependency resolution",
+      "fresh install",
+      "reinstall",
+      "installed executable equals tested binary",
+      "installed launch/capture",
+      "remove all five owned artifact classes"
+    ]
+  },
+  "prior_failures_retained": [
+    "larger-text raw table readability rejected then replaced with labeled validated values",
+    "existing probe-file overwrite denied before tests; fresh probe path preserved evidence"
+  ],
+  "approval_status": "prior SER8 source-transfer block resolved with owner trust evidence; automatic review accepted scoped transfer",
+  "not_proven": [
+    "current ARM source (CI pending)",
+    "GTK context/streaming adapter and real backend protocol qualification",
+    "reusable status module and both hosts",
+    "measured novice/exact-model trials",
+    "performance",
+    "physical Pantheon/M-series/scale/owner acceptance",
+    "whole SDK completion"
+  ]
+}

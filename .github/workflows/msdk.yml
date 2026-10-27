@@ -1,0 +1,208 @@
+name: M-series SDK developer path
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "rust/msdk/**"
+      - "rust/msdk-gtk/**"
+      - "rust/claude-pantheon-rs/sdk/**"
+      - "rust/mseries-greeter/data/greeter.ui.json"
+      - "mseries/sdk-tests/**"
+      - "mseries/sdk-status-host/**"
+      - "mseries/dock-taskbar/TaskbarT3RPopover.vala"
+      - "mseries/codexbar-wingpanel/JsonBoundary.vala"
+      - "mseries/sdk-bench/**"
+      - ".github/workflows/msdk.yml"
+  push:
+    branches: [dev]
+    paths:
+      - "rust/msdk/**"
+      - "rust/msdk-gtk/**"
+      - "mseries/sdk-tests/**"
+      - "mseries/sdk-status-host/**"
+      - "mseries/dock-taskbar/TaskbarT3RPopover.vala"
+      - "mseries/codexbar-wingpanel/JsonBoundary.vala"
+      - "mseries/sdk-bench/**"
+      - ".github/workflows/msdk.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  qualify:
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 25
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/work/sdk-target
+    steps:
+      - uses: actions/checkout@v7
+      - name: Provision native SDK test environment
+        run: |
+          # The Azure mirror took >25 minutes for two Rust archives in run
+          # 40355512113. Use official Ubuntu ports with the existing signed trust.
+          sudo python3 - <<'PYTHON'
+          from pathlib import Path
+          import re
+          path = Path('/etc/apt/sources.list.d/ubuntu.sources')
+          text = path.read_text()
+          path.write_text(re.sub(r'(?m)^URIs:.*$', 'URIs: http://ports.ubuntu.com/ubuntu-ports', text))
+          PYTHON
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 update
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 install -y --no-install-recommends cargo rustc rustfmt rust-clippy \
+            build-essential pkg-config valac libgtk-4-dev libgranite-7-dev libjson-glib-dev libwayland-dev libwayland-bin \
+            xvfb xauth dbus-x11 at-spi2-core dpkg-dev desktop-file-utils appstream python3-jsonschema python3-pyatspi python3-dbus xdotool x11-utils
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            work/sdk-target
+          key: msdk-native-${{ runner.arch }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: msdk-native-${{ runner.arch }}-
+      - name: Prepare isolated SDK workspace
+        run: python3 mseries/sdk-tests/prepare.py "$RUNNER_TEMP/sdk"
+      - name: Core tests and strict lint
+        run: |
+          python3 -m unittest discover -s mseries/sdk-bench -p 'test_*.py'
+          cargo fmt --manifest-path "$RUNNER_TEMP/sdk/Cargo.toml" -p msdk --check
+          cargo test --manifest-path "$RUNNER_TEMP/sdk/Cargo.toml" -p msdk
+          cargo clippy --manifest-path "$RUNNER_TEMP/sdk/Cargo.toml" -p msdk --all-targets -- -D warnings
+      - name: Independent schema and checker agreement
+        run: python3 mseries/sdk-tests/check-schema.py --msdk "$CARGO_TARGET_DIR/debug/msdk" --rust-root "$RUNNER_TEMP/sdk"
+      - name: Build and test generated native application
+        run: |
+          mkdir -p "$RUNNER_TEMP/sdk-evidence"
+          "$CARGO_TARGET_DIR/debug/msdk" new settings "$RUNNER_TEMP/starter" --name 'SDK Settings' --id io.github.techmore.SdkSettings
+          "$CARGO_TARGET_DIR/debug/msdk" gen "$RUNNER_TEMP/starter/app.ui.json" "$RUNNER_TEMP/generated" --sdk-root "$RUNNER_TEMP/sdk"
+          cargo fmt --manifest-path "$RUNNER_TEMP/generated/Cargo.toml"
+          cargo test --manifest-path "$RUNNER_TEMP/generated/Cargo.toml" --all-targets
+          cargo clippy --manifest-path "$RUNNER_TEMP/generated/Cargo.toml" --all-targets -- -D warnings
+          for mode in light dark; do
+            theme=Adwaita
+            if [ "$mode" = dark ]; then theme=Adwaita:dark; fi
+            GTK_THEME="$theme" GSK_RENDERER=cairo xvfb-run -a dbus-run-session -- \
+              "$CARGO_TARGET_DIR/debug/msdk-sdksettings" --screenshot "$RUNNER_TEMP/sdk-evidence/settings-$mode.png"
+          done
+          cp "$RUNNER_TEMP/sdk/Cargo.lock" "$RUNNER_TEMP/sdk-evidence/sdk-Cargo.lock"
+          cp "$RUNNER_TEMP/generated/Cargo.lock" "$RUNNER_TEMP/sdk-evidence/generated-Cargo.lock"
+          git rev-parse HEAD > "$RUNNER_TEMP/sdk-evidence/source.txt"
+          sha256sum "$CARGO_TARGET_DIR/debug/msdk-sdksettings" > "$RUNNER_TEMP/sdk-evidence/binary.sha256"
+      - name: Actual keyboard and accessibility controls
+        run: |
+          MSDK_PRIVATE_TEST_BUS=1 GSK_RENDERER=cairo xvfb-run -a dbus-run-session -- \
+            python3 mseries/sdk-tests/controls.py --binary "$CARGO_TARGET_DIR/debug/msdk-sdksettings" --output "$RUNNER_TEMP/sdk-evidence/controls.json"
+      - name: Compact and larger-text render matrix
+        run: bash mseries/sdk-tests/render-matrix.sh "$CARGO_TARGET_DIR/debug/msdk-sdksettings" "$RUNNER_TEMP/sdk-evidence/matrix"
+      - name: Native host lifecycle
+        run: |
+          cargo clippy --manifest-path "$RUNNER_TEMP/sdk/Cargo.toml" -p msdk-gtk --all-targets -- -D warnings
+          MSDK_PRIVATE_TEST_BUS=1 XDG_DATA_HOME="$RUNNER_TEMP/sdk-state" GSK_RENDERER=cairo xvfb-run -a dbus-run-session -- \
+            cargo test --manifest-path "$RUNNER_TEMP/sdk/Cargo.toml" -p msdk-gtk --test lifecycle --test runtime --test cli --test usage --test codexbar -- --test-threads=1
+      - name: C host SDK usage boundary
+        run: |
+          cargo build --manifest-path "$RUNNER_TEMP/sdk/Cargo.toml" -p msdk-gtk --lib
+          cc -Wall -Wextra -Werror mseries/sdk-tests/usage-host-abi.c \
+            -I "$RUNNER_TEMP/sdk/msdk-gtk/include" $(pkg-config --cflags --libs gtk4) \
+            -L "$CARGO_TARGET_DIR/debug" -lmsdk_gtk -Wl,-rpath,"$CARGO_TARGET_DIR/debug" \
+            -o "$RUNNER_TEMP/usage-host-abi"
+          printf '#!/bin/sh\nprintf x >> "%s"\necho "{}"\n' "$RUNNER_TEMP/usage-host-read" > "$RUNNER_TEMP/usage-host-fixture"
+          chmod 700 "$RUNNER_TEMP/usage-host-fixture"
+          GSK_RENDERER=cairo xvfb-run -a dbus-run-session -- \
+            "$RUNNER_TEMP/usage-host-abi" "$RUNNER_TEMP/usage-host-fixture" "$RUNNER_TEMP/usage-host-read"
+          mkdir -p "$RUNNER_TEMP/vala-output"
+          valac --directory "$RUNNER_TEMP/vala-output" --pkg gtk4 --vapidir mseries/sdk-status-host --pkg msdk-usage \
+            -X "-I$RUNNER_TEMP/sdk/msdk-gtk/include" -X "-L$CARGO_TARGET_DIR/debug" -X -lmsdk_gtk \
+            -X "-Wl,-rpath,$CARGO_TARGET_DIR/debug" -o "$RUNNER_TEMP/usage-vala-host" mseries/sdk-status-host/UsagePage.vala mseries/sdk-tests/usage-vala-host.vala
+          rm -f "$RUNNER_TEMP/usage-host-read"
+          GSK_RENDERER=cairo xvfb-run -a dbus-run-session -- \
+            "$RUNNER_TEMP/usage-vala-host" "$RUNNER_TEMP/usage-host-fixture" "$RUNNER_TEMP/usage-host-read"
+      - name: Shared desktop status menu with SDK usage
+        run: |
+          mkdir -p "$RUNNER_TEMP/status-home/.local/bin" "$RUNNER_TEMP/status-home/.config" "$RUNNER_TEMP/status-home/.cache" "$RUNNER_TEMP/vala-output"
+          cat > "$RUNNER_TEMP/status-home/.local/bin/codexbar-linux" <<'SCRIPT'
+          #!/bin/sh
+          printf x >> "$HOME/reads"
+          now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          printf '{"schemaVersion":1,"entries":[{"provider":"codex","updatedAt":"%s","windows":[{"key":"week","label":"7 day","remaining":75,"resetsAt":""}]}]}\n' "$now"
+          SCRIPT
+          chmod 700 "$RUNNER_TEMP/status-home/.local/bin/codexbar-linux"
+          valac --directory "$RUNNER_TEMP/vala-output" --define MSDK_STATUS_HOST --pkg gtk4 --pkg granite-7 --pkg json-glib-1.0 --pkg gio-unix-2.0 \
+            --vapidir mseries/sdk-status-host --pkg msdk-usage \
+            -X "-I$RUNNER_TEMP/sdk/msdk-gtk/include" -X "-L$CARGO_TARGET_DIR/debug" -X -lmsdk_gtk -X "-Wl,-rpath,$CARGO_TARGET_DIR/debug" \
+            -o "$RUNNER_TEMP/status-host-integration" mseries/sdk-status-host/UsagePage.vala \
+            mseries/dock-taskbar/TaskbarT3RPopover.vala mseries/codexbar-wingpanel/JsonBoundary.vala \
+            mseries/sdk-tests/status-host-stubs.vala mseries/sdk-tests/status-host-integration.vala
+          for mode in wingpanel dock; do
+            rm -f "$RUNNER_TEMP/status-home/reads"
+            HOME="$RUNNER_TEMP/status-home" XDG_CONFIG_HOME="$RUNNER_TEMP/status-home/.config" XDG_CACHE_HOME="$RUNNER_TEMP/status-home/.cache" \
+              GSETTINGS_BACKEND=memory GTK_A11Y=none G_DEBUG=fatal-criticals GSK_RENDERER=cairo \
+              xvfb-run -a dbus-run-session -- "$RUNNER_TEMP/status-host-integration" "$RUNNER_TEMP/status-home/reads" "$mode"
+          done
+      - name: Capture candidate usage rows for review
+        run: |
+          cargo build --manifest-path "$RUNNER_TEMP/sdk/Cargo.toml" -p msdk-gtk --examples
+          printf '#!/bin/sh\nprintf invalid-json\n' > "$RUNNER_TEMP/usage-fixture-failure"
+          chmod 700 "$RUNNER_TEMP/usage-fixture-failure"
+          icons="$RUNNER_TEMP/usage-data/icons/hicolor/scalable/apps"
+          mkdir -p "$icons"
+          for provider in openai claude grok opencode; do
+            install -m 644 "mseries/codexbar-wingpanel/icons/$provider.svg" "$icons/mseries-codexbar-$provider-symbolic.svg"
+          done
+          for mode in light dark; do
+            theme=Adwaita
+            if [ "$mode" = dark ]; then theme=Adwaita:dark; fi
+            for points in 10 15; do
+              config="$RUNNER_TEMP/usage-config-$mode-$points"
+              mkdir -p "$config/gtk-4.0"
+              printf '[Settings]\ngtk-font-name=Sans %s\n' "$points" > "$config/gtk-4.0/settings.ini"
+              XDG_DATA_HOME="$RUNNER_TEMP/usage-data" XDG_CONFIG_HOME="$config" GTK_THEME="$theme" GSK_RENDERER=cairo MSDK_MATRIX_POINTS="$points" \
+                xvfb-run -a dbus-run-session -- bash -eu -c '
+                  python3 mseries/sdk-tests/font-profile.py
+                  "$CARGO_TARGET_DIR/debug/examples/usage_preview" "$RUNNER_TEMP/sdk-evidence/usage-'"$mode"'-'"$points"'.png"
+                '
+              XDG_DATA_HOME="$RUNNER_TEMP/usage-data" XDG_CONFIG_HOME="$config" GTK_THEME="$theme" GSK_RENDERER=cairo MSDK_USAGE_SCROLL_END=1 \
+                xvfb-run -a dbus-run-session -- \
+                  "$CARGO_TARGET_DIR/debug/examples/usage_preview" "$RUNNER_TEMP/sdk-evidence/usage-$mode-$points-end.png"
+              XDG_DATA_HOME="$RUNNER_TEMP/usage-data" XDG_CONFIG_HOME="$config" GTK_THEME="$theme" GSK_RENDERER=cairo \
+                xvfb-run -a dbus-run-session -- \
+                  "$CARGO_TARGET_DIR/debug/examples/usage_control_preview" "$RUNNER_TEMP/sdk-evidence/usage-error-$mode-$points.png" "$RUNNER_TEMP/usage-fixture-failure"
+            done
+          done
+      - name: Usage refresh keyboard and accessibility
+        run: |
+          MSDK_PRIVATE_TEST_BUS=1 GSK_RENDERER=cairo xvfb-run -a dbus-run-session -- \
+            python3 mseries/sdk-tests/usage-controls.py \
+              --binary "$CARGO_TARGET_DIR/debug/examples/usage_control_interactive" \
+              --output "$RUNNER_TEMP/sdk-evidence/usage-controls.json"
+      - name: Candidate usage anchor interactions
+        run: |
+          MSDK_PRIVATE_TEST_BUS=1 GSK_RENDERER=cairo xvfb-run -a dbus-run-session -- \
+            python3 mseries/sdk-tests/usage-anchor-controls.py \
+              --binary "$CARGO_TARGET_DIR/debug/examples/usage_anchor_interactive" \
+              --output "$RUNNER_TEMP/sdk-evidence/usage-anchor-controls.json"
+      - name: Package, install, reinstall and remove the generated app
+        run: |
+          "$CARGO_TARGET_DIR/debug/msdk" pack "$RUNNER_TEMP/generated" \
+            --binary "$CARGO_TARGET_DIR/debug/msdk-sdksettings" \
+            --output "$RUNNER_TEMP/sdk-evidence/settings.deb"
+          dpkg-deb --info "$RUNNER_TEMP/sdk-evidence/settings.deb" > "$RUNNER_TEMP/sdk-evidence/package-info.txt"
+          sudo dpkg --install "$RUNNER_TEMP/sdk-evidence/settings.deb"
+          sudo dpkg --install "$RUNNER_TEMP/sdk-evidence/settings.deb"
+          cmp "$CARGO_TARGET_DIR/debug/msdk-sdksettings" /usr/bin/io.github.techmore.SdkSettings
+          GTK_THEME=Adwaita GSK_RENDERER=cairo xvfb-run -a dbus-run-session -- \
+            /usr/bin/io.github.techmore.SdkSettings --screenshot "$RUNNER_TEMP/sdk-evidence/installed.png"
+          sha256sum /usr/bin/io.github.techmore.SdkSettings > "$RUNNER_TEMP/sdk-evidence/installed.sha256"
+          sudo dpkg --remove msdk-io.github.techmore.sdksettings
+          test ! -e /usr/bin/io.github.techmore.SdkSettings
+          test ! -e /usr/share/applications/io.github.techmore.SdkSettings.desktop
+          test ! -e /usr/share/icons/hicolor/scalable/apps/io.github.techmore.SdkSettings.svg
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: msdk-native-${{ github.run_id }}
+          path: ${{ runner.temp }}/sdk-evidence/
+          if-no-files-found: warn

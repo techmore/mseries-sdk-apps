@@ -103,7 +103,7 @@ pub fn lex(src: &str) -> Result<Vec<Token>, (usize, usize, String)> {
                 // A trailing '.' belongs to a modifier (`).visible`), never to a word.
                 while i < chars.len()
                     && word_part(chars[i])
-                    && !(chars[i] == '.' && !chars.get(i + 1).is_some_and(|n| word_start(*n)))
+                    && (chars[i] != '.' || chars.get(i + 1).is_some_and(|n| word_start(*n)))
                 {
                     i += 1;
                 }

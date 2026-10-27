@@ -8,6 +8,7 @@ description = "Interpreter runtime for msdk app descriptions: renders them with 
 
 [lib]
 name = "msdk_gtk"
+crate-type = ["rlib", "cdylib"]
 
 [[bin]]
 name = "msdk-run"

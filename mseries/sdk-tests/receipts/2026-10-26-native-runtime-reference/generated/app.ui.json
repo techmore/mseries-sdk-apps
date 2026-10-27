@@ -1,0 +1,150 @@
+{
+  "sdk": 1,
+  "app": {
+    "id": "io.github.techmore.HomeStorage",
+    "name": "Home Storage",
+    "icon": "drive-harddisk"
+  },
+  "capabilities": [
+    "subprocess"
+  ],
+  "state": {
+    "ready": "bool",
+    "busy": "bool",
+    "failed": "bool",
+    "status": "text",
+    "result": "text"
+  },
+  "initial": {
+    "ready": true,
+    "busy": false,
+    "failed": false,
+    "status": "Check available space on the filesystem containing your home folder.",
+    "result": ""
+  },
+  "messages": {
+    "Refresh": "none",
+    "Loaded": "text",
+    "Failed": "text"
+  },
+  "update": {
+    "Refresh": [
+      {
+        "when": "ready",
+        "do": [
+          {
+            "set": "ready",
+            "to": false
+          },
+          {
+            "set": "busy",
+            "to": true
+          },
+          {
+            "set": "failed",
+            "to": false
+          },
+          {
+            "set": "result",
+            "to": ""
+          },
+          {
+            "set": "status",
+            "to": "Checking home storage…"
+          },
+          {
+            "call": "process.run",
+            "args": {
+              "command": "report=$(LC_ALL=C df -Pk \"${HOME:?Home folder is unavailable}\") || exit\nprintf '%s\\n' \"$report\" | awk 'NR==2 && NF==6 && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ && $4 ~ /^-?[0-9]+$/ && $5 ~ /^[0-9]+%$/ { printf \"Available: %.1f MiB\\nUsed: %.1f MiB\\nTotal: %.1f MiB\\nUsed space: %s\\n\", $4/1024, $3/1024, $2/1024, $5; ok=1 } END { if (!ok || NR!=2) { print \"Storage report format is unavailable\" > \"/dev/stderr\"; exit 1 } }'"
+            },
+            "then": "Loaded",
+            "error": "Failed"
+          }
+        ]
+      }
+    ],
+    "Loaded": [
+      {
+        "set": "result",
+        "to": "$payload"
+      },
+      {
+        "set": "status",
+        "to": "Current filesystem usage. No files were changed."
+      },
+      {
+        "set": "busy",
+        "to": false
+      },
+      {
+        "set": "ready",
+        "to": true
+      },
+      {
+        "set": "failed",
+        "to": false
+      }
+    ],
+    "Failed": [
+      {
+        "set": "result",
+        "to": "$payload"
+      },
+      {
+        "set": "status",
+        "to": "Storage could not be checked. Review the error and try again."
+      },
+      {
+        "set": "busy",
+        "to": false
+      },
+      {
+        "set": "ready",
+        "to": true
+      },
+      {
+        "set": "failed",
+        "to": true
+      }
+    ]
+  },
+  "surfaces": {
+    "main": {
+      "kind": "window",
+      "title": "Home Storage",
+      "body": {
+        "type": "Box",
+        "direction": "column",
+        "spacing": "large",
+        "children": [
+          {
+            "type": "Text",
+            "text": "Home storage",
+            "text_style": "title"
+          },
+          {
+            "type": "Text",
+            "text": "{status}"
+          },
+          {
+            "type": "Text",
+            "text": "{result}"
+          },
+          {
+            "type": "Button",
+            "label": "Check again",
+            "on": "Refresh",
+            "visible_if": "ready",
+            "button_style": "suggested"
+          },
+          {
+            "type": "Text",
+            "text": "You can close this window to cancel the check.",
+            "visible_if": "busy",
+            "text_style": "muted"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -8,15 +8,21 @@
 
 pub mod agent;
 mod check;
+pub mod context;
 pub mod contrast;
 pub mod gate;
+pub mod generate;
 pub mod inspect;
 pub mod intents;
 pub mod logic;
+pub mod package;
+pub mod process;
+pub mod runtime;
 pub mod schema;
 pub mod templates;
 pub mod text;
 pub mod tokens;
+pub mod usage;
 pub mod vocab;
 
 pub use check::{Diagnostic, Severity, check};

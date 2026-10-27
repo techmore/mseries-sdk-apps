@@ -35,3 +35,25 @@ fn template_names_are_unique_and_documented() {
     }
     assert!(templates::find("settings").is_some() && templates::find("nope").is_none());
 }
+
+#[test]
+fn custom_names_are_literal_json_strings_in_every_starter() {
+    for template in templates::TEMPLATES {
+        let name = format!("{} \"Notes\" \\ café\nsecond line", template.id);
+        let rendered = template.render("com.example.Notes", &name);
+        let doc: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+        assert_eq!(doc["app"]["name"], name, "{}", template.name);
+        assert_eq!(doc["app"]["id"], "com.example.Notes");
+        let text = msdk::text::print(&doc).unwrap();
+        assert!(!text.is_empty());
+    }
+}
+
+#[test]
+fn replacement_values_are_not_expanded_as_template_placeholders() {
+    for template in templates::TEMPLATES {
+        let doc: serde_json::Value = serde_json::from_str(&template.render(template.display, template.id)).unwrap();
+        assert_eq!(doc["app"]["id"], template.display);
+        assert_eq!(doc["app"]["name"], template.id);
+    }
+}

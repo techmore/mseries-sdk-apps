@@ -271,3 +271,23 @@ fn corner_tokens_nest_and_concentric_radii_never_collapse() {
     assert_eq!(concentric_px(14, 20), corner_px("min"));
     assert!(msdk::tokens::css().contains("window.msdk-app.maximized"));
 }
+
+#[test]
+fn malformed_rule_targets_and_service_callbacks_are_errors() {
+    let template = msdk::templates::find("settings").unwrap();
+    for action in [
+        json!({"toggle":true}),
+        json!({"add":12}),
+        json!({"toast":false}),
+        json!({"open":false}),
+        json!({"close":null}),
+        json!({"when":true,"do":[]}),
+        json!({"quit":false}),
+        json!({"call":"process.run","args":[],"then":4}),
+    ] {
+        let mut doc: serde_json::Value = serde_json::from_str(template.ui).unwrap();
+        doc["capabilities"] = json!(["subprocess"]);
+        doc["update"]["SetEnabled"] = json!([action]);
+        assert!(msdk::check(&doc).iter().any(|d| d.code == "wrong-type"), "{doc}");
+    }
+}

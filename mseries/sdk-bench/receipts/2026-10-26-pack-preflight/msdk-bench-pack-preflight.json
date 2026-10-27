@@ -1,0 +1,137 @@
+[
+  {
+    "action": {
+      "action": "list"
+    },
+    "response": {
+      "ok": true,
+      "result": {
+        "files": []
+      }
+    }
+  },
+  {
+    "action": {
+      "action": "run",
+      "command": "new",
+      "template": "settings",
+      "path": "pack-smoke"
+    },
+    "response": {
+      "ok": true,
+      "result": {
+        "code": 0,
+        "limit": null,
+        "seconds": 0.02263030398171395,
+        "output": "created /work/bench-app/pack-smoke from `settings` (id io.github.techmore.PackSmoke); next: cd /work/bench-app/pack-smoke && msdk check app.ui.json && msdk gate app.ui.json app.gates.json\n",
+        "argv": [
+          "/work/target/debug/msdk",
+          "new",
+          "settings",
+          "/work/bench-app/pack-smoke"
+        ]
+      }
+    }
+  },
+  {
+    "action": {
+      "action": "run",
+      "command": "gen",
+      "path": "pack-smoke/app.ui.json",
+      "output": "pack-generated"
+    },
+    "response": {
+      "ok": true,
+      "result": {
+        "code": 0,
+        "limit": null,
+        "seconds": 0.02093451702967286,
+        "output": "created standalone Cargo application in /work/bench-app/pack-generated; next: cargo run --manifest-path /work/bench-app/pack-generated/Cargo.toml\n",
+        "argv": [
+          "/work/target/debug/msdk",
+          "gen",
+          "/work/bench-app/pack-smoke/app.ui.json",
+          "/work/bench-app/pack-generated",
+          "--sdk-root",
+          "/work/sdk"
+        ]
+      }
+    }
+  },
+  {
+    "action": {
+      "action": "run",
+      "command": "build",
+      "project": "pack-generated"
+    },
+    "response": {
+      "ok": true,
+      "result": {
+        "code": 0,
+        "limit": null,
+        "seconds": 4.000191212049685,
+        "output": "     Locking 74 packages to latest Rust 1.93.1 compatible versions\n   Compiling msdk-packsmoke v0.1.0 (/work/bench-app/pack-generated)\n    Finished `dev` profile [unoptimized] target(s) in 3.93s\n",
+        "argv": [
+          "/usr/bin/cargo",
+          "build",
+          "--manifest-path",
+          "/work/bench-app/pack-generated/Cargo.toml",
+          "--offline"
+        ]
+      }
+    }
+  },
+  {
+    "action": {
+      "action": "run",
+      "command": "pack",
+      "project": "pack-generated"
+    },
+    "response": {
+      "ok": true,
+      "result": {
+        "code": 0,
+        "limit": null,
+        "seconds": 2.2099140870850533,
+        "output": "created /work/bench-app/evidence/package-1793042940367896262.deb; no installation performed\n",
+        "argv": [
+          "/work/target/debug/msdk",
+          "pack",
+          "/work/bench-app/pack-generated",
+          "--binary",
+          "/work/bench-target/debug/msdk-packsmoke",
+          "--output",
+          "/work/bench-app/evidence/package-1793042940367896262.deb"
+        ],
+        "package": "evidence/package-1793042940367896262.deb"
+      }
+    }
+  },
+  {
+    "action": {
+      "action": "run",
+      "command": "launch",
+      "project": "pack-generated"
+    },
+    "response": {
+      "ok": true,
+      "result": {
+        "code": 0,
+        "limit": null,
+        "seconds": 0.9050211129942909,
+        "output": "libEGL warning: DRI3 error: Could not get DRI3 device\nlibEGL warning: Ensure your X server supports DRI3 to get accelerated rendering\ndbus-daemon[4788]: [session uid=2000 pid=4788 pidfd=5] Activating service name='org.a11y.Bus' requested by ':1.0' (uid=2000 pid=4790 comm=\"/work/bench-target/debug/msdk-packsmoke\" label=\"unconfined\")\ndbus-daemon[4788]: [session uid=2000 pid=4788 pidfd=5] Successfully activated service 'org.a11y.Bus'\ndbus-daemon[4818]: Activating service name='org.a11y.atspi.Registry' requested by ':1.0' (uid=2000 pid=4790 comm=\"/work/bench-target/debug/msdk-packsmoke\" label=\"unconfined\")\ndbus-daemon[4818]: Successfully activated service 'org.a11y.atspi.Registry'\nSpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry\n{\"mapped_seconds\": 0.17475895897950977, \"captured_seconds\": 0.746610144036822, \"frame_bytes\": 21452, \"ctrl_q_clean\": true, \"content_review\": \"pending independent review\"}\n",
+        "argv": [
+          "xvfb-run",
+          "-a",
+          "dbus-run-session",
+          "--",
+          "/usr/bin/python3",
+          "/opt/msdk-bench/capture.py",
+          "/work/bench-target/debug/msdk-packsmoke",
+          "/work/bench-app/evidence/frame-1793042942689657549.png"
+        ],
+        "frame": "evidence/frame-1793042942689657549.png"
+      }
+    }
+  }
+]

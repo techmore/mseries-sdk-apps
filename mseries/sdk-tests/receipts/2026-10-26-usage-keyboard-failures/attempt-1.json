@@ -1,0 +1,9 @@
+{
+  "binary_sha256": "7ed2c045e5c1c07c1c0873878762520c24fc95109111c17b692be889f696be99",
+  "environment": "isolated X11 / private D-Bus / synthetic data",
+  "checks": [],
+  "result": "fail",
+  "failure": "fixture app exited early (1); see process_stderr",
+  "process_stdout": "",
+  "process_stderr": "\n(usage_control_interactive:7063): Gtk-WARNING **: 21:27:56.245: Failed to open display\n"
+}

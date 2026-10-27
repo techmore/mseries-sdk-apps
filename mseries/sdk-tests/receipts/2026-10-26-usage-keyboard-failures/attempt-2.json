@@ -1,0 +1,9 @@
+{
+  "binary_sha256": "7ed2c045e5c1c07c1c0873878762520c24fc95109111c17b692be889f696be99",
+  "environment": "isolated X11 / private D-Bus / synthetic data",
+  "checks": [],
+  "result": "fail",
+  "failure": "refresh button is not accessible",
+  "process_stdout": "",
+  "process_stderr": "libEGL warning: DRI3 error: Could not get DRI3 device\nlibEGL warning: Ensure your X server supports DRI3 to get accelerated rendering\n"
+}

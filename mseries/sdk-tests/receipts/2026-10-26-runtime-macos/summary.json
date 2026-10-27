@@ -1,0 +1,25 @@
+{
+  "schema": "msdk.validation.v1",
+  "source_commit": "8ece6a52140c68b857cebc6abca3da4818f6625d",
+  "platform": "Darwin arm64",
+  "rust": "rustc 1.98.1 (48a229cea 2026-09-01) (Homebrew)",
+  "core_tests_passed": 77,
+  "strict_clippy": "passed",
+  "format": "passed",
+  "native_current_source": "pending",
+  "native_blocker": "Source transfer to SER8 rejected by automatic approval review pending explicit payload/destination authorization; no retry or workaround used.",
+  "scope": [
+    "core rules/checker/generator/model compilation",
+    "real macOS process bounds/cancellation/reaping",
+    "service diagnostic privacy and discovery",
+    "Home Storage exact command missing-HOME failure and real-environment retry"
+  ],
+  "not_proven": [
+    "Linux current source",
+    "GTK current source",
+    "new reference app visual/accessibility/install qualification",
+    "real backend OS protocol compatibility",
+    "streaming",
+    "whole SDK completion"
+  ]
+}

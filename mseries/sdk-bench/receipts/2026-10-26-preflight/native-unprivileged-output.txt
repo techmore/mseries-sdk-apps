@@ -1,0 +1,35 @@
+   Compiling serde_core v1.0.229
+   Compiling msdk-gtk v0.1.0 (/work/sdk/msdk-gtk)
+   Compiling serde_json v1.0.154
+   Compiling msdk v0.1.0 (/work/sdk/msdk)
+    Finished `test` profile [unoptimized] target(s) in 12.26s
+     Running tests/cli.rs (/work/bench-target/debug/deps/cli-bf1f6f7448344ac7)
+
+running 1 test
+test preview_failures_have_nonzero_exit_status ... dbus-daemon[2545]: [session uid=2000 pid=2545 pidfd=5] Activating service name='org.a11y.Bus' requested by ':1.1' (uid=2000 pid=3505 comm="/work/bench-target/debug/msdk-run app.ui.json --sc" label="unconfined")
+dbus-daemon[2545]: [session uid=2000 pid=2545 pidfd=5] Successfully activated service 'org.a11y.Bus'
+dbus-daemon[3529]: Activating service name='org.a11y.atspi.Registry' requested by ':1.0' (uid=2000 pid=3505 comm="/work/bench-target/debug/msdk-run app.ui.json --sc" label="unconfined")
+dbus-daemon[3529]: Successfully activated service 'org.a11y.atspi.Registry'
+SpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.15s
+
+     Running tests/lifecycle.rs (/work/bench-target/debug/deps/lifecycle-a32b65b8167f1055)
+
+running 1 test
+test closing_stops_owned_work_ignores_late_events_and_releases_the_host ... libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.80s
+
+     Running tests/runtime.rs (/work/bench-target/debug/deps/runtime-6bc4f4cd54f6ddf2)
+
+running 1 test
+test extension_mismatch_recovers_and_closed_hosts_kill_owned_commands ... libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+

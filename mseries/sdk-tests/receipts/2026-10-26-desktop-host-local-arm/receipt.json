@@ -1,0 +1,29 @@
+{
+  "environment": "local Colima ARM64 VM, disposable Ubuntu 26.04 container, GTK 4.22.4, Rust 1.93.1, private X11 and D-Bus, synthetic data",
+  "source_sha256": {
+    "rust/msdk-gtk/src/usage_ffi.rs": "1321160d79bf251285411855672c3f4e7caaaf48af0768e0809f8c8db0b5c782",
+    "rust/msdk-gtk/src/usage_control.rs": "5b0fe6296531f4cc7ee51237a9f286dc0940106ce46e723ff2ab7a0575fb529c",
+    "rust/msdk-gtk/include/msdk-usage.h": "f8f63a7c7557ee8ef8f93b4fcff079b178c7e7b55f373fa2cdb3c79b2d0012aa",
+    "mseries/sdk-status-host/UsagePage.vala": "efcba8414d8d6279e98a285857ba52bec8e6e92137c8fd68aef5174f069119a5",
+    "mseries/sdk-status-host/msdk-usage.vapi": "011db5b5fe577fefbddb44eedf3716d944ab1b7447d1348583c098e40477fc29",
+    "mseries/dock-taskbar/TaskbarT3RPopover.vala": "8730c3e6ffee4483a735321750ce0f9d9e9c022eac7bdee94e30bc0b5136d401",
+    "mseries/sdk-tests/status-host-integration.vala": "7a0a596935f7ef9556a8ca5ef84dbd435aef26e42f82480245c71c6d2813d78a",
+    "mseries/sdk-tests/status-host-stubs.vala": "5943501cc901ec39545f18b7686048eba9b5c39920ed3768283f1ca534652f5c",
+    "mseries/sdk-tests/usage-host-abi.c": "e4d1002164ac80bc4c7ed00e143399612c39951f1baed2c00e8d4aa641117bfc",
+    "mseries/sdk-tests/usage-vala-host.vala": "6d2dc820857fd55da32b7e1cd7decb97773f009a9929ecbc012055e6c7e59b81"
+  },
+  "checks": [
+    "C host constructor, no read until open, bounded synthetic read and teardown",
+    "Vala page invalid executable and synthetic read lifecycle",
+    "shared T3 menu in hosted and dock modes with stub neighboring indicators: displays 75% remaining, page switch, no reads after close",
+    "msdk-gtk strict all-target clippy",
+    "msdk-gtk lifecycle, runtime, cli, usage and codexbar tests",
+    "Wingpanel Meson configuration with configure-only stub dependency",
+    "pinned dock source opt-in preparation"
+  ],
+  "limitations": [
+    "No actual Wingpanel/Dock module build or installation",
+    "No elementary target desktop, real accounts, owner visual acceptance or accessibility check",
+    "Initial C probe failed because gtk-rs was not initialized; corrected before passing run"
+  ]
+}

@@ -36,7 +36,10 @@ fn main() -> ExitCode {
             }
         },
         Some("complete") if args.len() > 2 => {
-            load_services(Some(&args[1]), &args);
+            if let Err(error) = load_services(Some(&args[1]), &args) {
+                eprintln!("{error}");
+                return ExitCode::FAILURE;
+            }
             let doc = match load(&args[1]) {
                 Ok((d, _)) => d,
                 Err(e) => {
@@ -80,9 +83,11 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some("new") if args.len() > 2 => run_new(&args[1..]),
+        Some("gen") if args.len() > 2 => run_gen(&args[1..]),
+        Some("pack") if args.len() > 1 => run_pack(&args[1..]),
         _ => {
             eprintln!(
-                "usage: msdk check [--json] <file.ui.json>...\n       msdk describe [Name] | explain <code> | complete <file> <json-pointer>\n       msdk gate <file.ui.json> [gates.json]\n       msdk agent-manifest <file> [--mcp] [--services f.json]\n       msdk render <file> [--surface NAME] [--state JSON] [--json]\n       msdk fmt [--check|--stdout] <file.msdk>... | text <file.ui.json> | json <file.msdk>\n       msdk templates | new <template> <dir> [--text] [--id ID] [--name NAME]\n       msdk schema | components | contrast [--json] | tokens [--json]"
+                "usage: msdk check [--json] <file.ui.json>...\n       msdk describe [Name] | explain <code> | complete <file> <json-pointer>\n       msdk gate <file.ui.json> [gates.json]\n       msdk agent-manifest <file> [--mcp] [--services f.json]\n       msdk render <file> [--surface NAME] [--state JSON] [--json]\n       msdk fmt [--check|--stdout] <file.msdk>... | text <file.ui.json> | json <file.msdk>\n       msdk templates | new <template> <dir> [--text] [--id ID] [--name NAME]\n       msdk gen <description> <new-dir> [--sdk-root <rust-dir>]\n       msdk pack <project> --binary <executable> --output <new.deb> [--version VERSION]\n       msdk schema | components | contrast [--json] | tokens [--json]"
             );
             ExitCode::from(2)
         }
@@ -94,12 +99,110 @@ fn print_json(v: &serde_json::Value) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+fn run_gen(args: &[String]) -> ExitCode {
+    let root = match args.iter().position(|a| a == "--sdk-root") {
+        Some(i) => match args.get(i + 1) {
+            Some(path) => std::path::PathBuf::from(path),
+            None => {
+                eprintln!("gen: --sdk-root requires the directory containing msdk and msdk-gtk");
+                return ExitCode::from(2);
+            }
+        },
+        None => std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf(),
+    };
+    let result = (|| {
+        let parent = std::path::Path::new(&args[0]).parent().unwrap_or(std::path::Path::new("."));
+        let mut paths: Vec<_> =
+            std::fs::read_dir(if parent.as_os_str().is_empty() { std::path::Path::new(".") } else { parent })
+                .map_err(|e| e.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .map(|entry| entry.path())
+                .filter(|path| path.to_string_lossy().ends_with(".services.json"))
+                .collect();
+        paths.sort();
+        let manifests = paths
+            .iter()
+            .map(|path| {
+                let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+                serde_json::from_str::<serde_json::Value>(&text).map_err(|e| e.to_string())
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        load(&args[0])
+            .map(|(doc, _)| doc)
+            .and_then(|doc| msdk::generate::project_with_manifests(&doc, &root, &manifests))
+            .and_then(|files| msdk::generate::write_project(std::path::Path::new(&args[1]), &files))
+    })();
+    match result {
+        Ok(()) => {
+            println!(
+                "created standalone Cargo application in {}; next: cargo run --manifest-path {}/Cargo.toml",
+                args[1], args[1]
+            );
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run_pack(args: &[String]) -> ExitCode {
+    let option = |name: &str| args.iter().position(|a| a == name).and_then(|index| args.get(index + 1));
+    let (Some(binary), Some(output)) = (option("--binary"), option("--output")) else {
+        eprintln!(
+            "usage: msdk pack <generated-project> --binary <built-executable> --output <new.deb> [--version VERSION]"
+        );
+        return ExitCode::from(2);
+    };
+    let result = msdk::package::pack(
+        std::path::Path::new(&args[0]),
+        std::path::Path::new(binary),
+        std::path::Path::new(output),
+        option("--version").map(String::as_str).unwrap_or("0.1.0"),
+    );
+    match result {
+        Ok(()) => {
+            println!("created {output}; no installation performed");
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 fn run_check(args: &[String]) -> ExitCode {
     let json = args.iter().any(|a| a == "--json");
     let mut failed = false;
     let mut report = Vec::new();
-    for file in files_of(args) {
-        load_services(Some(file), args);
+    let files = files_of(args);
+    if files.is_empty() {
+        if json {
+            println!(
+                "{}",
+                serde_json::json!([{"severity":"error","code":"missing-input","message":"check requires at least one description"}])
+            );
+        } else {
+            eprintln!("check requires at least one description");
+        }
+        return ExitCode::from(2);
+    }
+    for file in files {
+        if let Err(error) = load_services(Some(file), args) {
+            failed = true;
+            if json {
+                report.push(
+                    serde_json::json!({"file":file,"severity":"error","code":"service-manifest","message":error}),
+                );
+            } else {
+                println!("{file}: error[service-manifest] {error}");
+            }
+            continue;
+        }
         let (doc, parsed) = match load(file) {
             Ok(v) => v,
             Err(e) => {
@@ -144,7 +247,10 @@ fn run_check(args: &[String]) -> ExitCode {
 
 /// `msdk agent-manifest <file> [--mcp] [--services f.json]`: what an agent may ask this app for, from its `agent` block.
 fn run_agent_manifest(args: &[String]) -> ExitCode {
-    load_services(args.first().map(String::as_str), args);
+    if let Err(error) = load_services(args.first().map(String::as_str), args) {
+        eprintln!("{error}");
+        return ExitCode::FAILURE;
+    }
     let doc = match load(&args[0]) {
         Ok((d, _)) => d,
         Err(e) => {
@@ -164,7 +270,10 @@ fn run_agent_manifest(args: &[String]) -> ExitCode {
 }
 
 fn run_gate(args: &[String]) -> ExitCode {
-    load_services(args.first().map(String::as_str), args);
+    if let Err(error) = load_services(args.first().map(String::as_str), args) {
+        eprintln!("{error}");
+        return ExitCode::FAILURE;
+    }
     let read = |p: &str| {
         std::fs::read_to_string(p)
             .map_err(|e| e.to_string())
@@ -177,10 +286,11 @@ fn run_gate(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let gates = match args.get(1).map(|p| read(p)) {
+    let files = files_of(args);
+    let gates = match files.get(1).map(|p| read(p)) {
         Some(Ok(g)) => Some(g),
         Some(Err(e)) => {
-            eprintln!("{}: {e}", args[1]);
+            eprintln!("{}: {e}", files[1]);
             return ExitCode::FAILURE;
         }
         None => None,
@@ -317,31 +427,34 @@ fn run_fmt(args: &[String]) -> ExitCode {
 }
 
 /// Loads plug-in service manifests: every `*.services.json` next to `file`, plus any `--services path` flags.
-fn load_services(file: Option<&str>, args: &[String]) {
+fn load_services(file: Option<&str>, args: &[String]) -> Result<(), String> {
     let mut paths: Vec<std::path::PathBuf> = Vec::new();
     if let Some(dir) = file.and_then(|f| std::path::Path::new(f).parent()) {
         let dir = if dir.as_os_str().is_empty() { std::path::Path::new(".") } else { dir };
-        if let Ok(rd) = std::fs::read_dir(dir) {
-            paths.extend(rd.flatten().map(|e| e.path()).filter(|p| p.to_string_lossy().ends_with(".services.json")));
+        for entry in std::fs::read_dir(dir).map_err(|error| format!("{}: {error}", dir.display()))? {
+            let path = entry.map_err(|error| error.to_string())?.path();
+            if path.to_string_lossy().ends_with(".services.json") {
+                paths.push(path);
+            }
         }
     }
-    for (i, a) in args.iter().enumerate() {
-        if a == "--services"
-            && let Some(p) = args.get(i + 1)
-        {
-            paths.push(p.into());
+    for (i, arg) in args.iter().enumerate() {
+        if arg == "--services" {
+            let path =
+                args.get(i + 1).filter(|path| !path.starts_with("--")).ok_or("--services requires a manifest path")?;
+            paths.push(path.into());
         }
     }
-    for p in paths {
-        match std::fs::read_to_string(&p)
-            .map_err(|e| e.to_string())
-            .and_then(|t| serde_json::from_str(&t).map_err(|e| e.to_string()))
-            .and_then(|v| msdk::vocab::load_manifest(&v))
-        {
-            Ok(_) => {}
-            Err(e) => eprintln!("{}: {e}", p.display()),
-        }
+    paths.sort();
+    paths.dedup();
+    for path in paths {
+        std::fs::read_to_string(&path)
+            .map_err(|error| error.to_string())
+            .and_then(|text| serde_json::from_str(&text).map_err(|error| error.to_string()))
+            .and_then(|manifest| msdk::vocab::load_manifest(&manifest))
+            .map_err(|error| format!("{}: {error}", path.display()))?;
     }
+    Ok(())
 }
 
 /// The positional arguments with flags (and the value after `--services`) removed.
@@ -363,7 +476,10 @@ fn files_of(args: &[String]) -> Vec<&String> {
 /// `msdk render app.msdk [--surface main] [--state '{"key":value}'] [--json]`: what the app shows, headless.
 fn run_render(args: &[String]) -> ExitCode {
     let file = args[0].as_str();
-    load_services(Some(file), args);
+    if let Err(error) = load_services(Some(file), args) {
+        eprintln!("{error}");
+        return ExitCode::FAILURE;
+    }
     let doc = match load(file) {
         Ok((d, _)) => d,
         Err(e) => {

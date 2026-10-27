@@ -454,55 +454,148 @@ fn want_of(s: &str) -> Result<Want, String> {
 /// `{"services":[{"name","capability","about","then":"none|text|bool","args":{"thread":"text"}}],
 ///   "feeds":[{"name","capability","about","fields":{"id":"text"}}]}`.
 /// A crate that provides services ships this file next to its code so `msdk check` knows them without loading the crate.
+pub const SERVICE_MANIFEST_VERSION: u64 = 1;
+
+fn manifest_object<'a>(
+    value: &'a serde_json::Value,
+    allowed: &[&str],
+    context: &str,
+) -> Result<&'a serde_json::Map<String, serde_json::Value>, String> {
+    let object = value.as_object().ok_or_else(|| format!("{context}: expected an object"))?;
+    if let Some(key) = object.keys().find(|key| !allowed.contains(&key.as_str())) {
+        return Err(format!("{context}: unknown property `{key}`"));
+    }
+    Ok(object)
+}
+
+/// Validates the whole manifest and conflicts before publishing any declarations.
+/// Omitted manifest_version is the legacy v1 representation. This version does
+/// not identify an OS/network backend protocol or the Services extension ABI.
 pub fn load_manifest(v: &serde_json::Value) -> Result<usize, String> {
-    let mut n = 0;
-    let known_cap = |c: &str| CAPABILITIES.contains(&c);
+    manifest_object(v, &["manifest_version", "services", "feeds"], "manifest")?;
+    if let Some(version) = v.get("manifest_version")
+        && version.as_u64() != Some(SERVICE_MANIFEST_VERSION)
+    {
+        return Err(format!(
+            "unsupported service manifest version; expected {SERVICE_MANIFEST_VERSION}; use a compatible SDK or migrate the manifest, do not relabel it"
+        ));
+    }
+    for key in ["services", "feeds"] {
+        if v.get(key).is_some_and(|value| !value.is_array()) {
+            return Err(format!("manifest: `{key}` must be an array"));
+        }
+    }
+    let mut services = Vec::new();
+    let mut feeds = Vec::new();
+    let mut service_names = std::collections::HashSet::new();
+    let mut feed_names = std::collections::HashSet::new();
     for s in v["services"].as_array().into_iter().flatten() {
-        let name = s["name"].as_str().ok_or("a service needs a name")?;
+        manifest_object(s, &["name", "capability", "about", "then", "args"], "service")?;
+        let name =
+            s["name"].as_str().filter(|name| !name.trim().is_empty()).ok_or("a service needs a nonempty name")?;
+        if !service_names.insert(name) {
+            return Err(format!("duplicate service `{name}`"));
+        }
         let cap = s["capability"].as_str().ok_or_else(|| format!("{name}: capability missing"))?;
-        if !known_cap(cap) {
+        if !CAPABILITIES.contains(&cap) {
             return Err(format!("{name}: unknown capability `{cap}`"));
         }
-        let mut args: Vec<(&'static str, Want)> = Vec::new();
-        for (k, t) in s["args"].as_object().into_iter().flatten() {
-            args.push((leak(k), want_of(t.as_str().unwrap_or(""))?));
+        let mut args = Vec::new();
+        if let Some(value) = s.get("args") {
+            let object = value.as_object().ok_or_else(|| format!("{name}: args must be an object"))?;
+            for (key, ty) in object {
+                args.push((key.as_str(), want_of(ty.as_str().unwrap_or(""))?));
+            }
         }
-        let then = match s["then"].as_str().unwrap_or("none") {
-            "none" => Payload::None,
-            "text" => Payload::Text,
-            "bool" => Payload::Bool,
-            other => return Err(format!("{name}: bad then payload `{other}`")),
+        let then = match s.get("then") {
+            None => Payload::None,
+            Some(value) => match value.as_str() {
+                Some("none") => Payload::None,
+                Some("text") => Payload::Text,
+                Some("bool") => Payload::Bool,
+                _ => return Err(format!("{name}: then must be none, text or bool")),
+            },
         };
-        register_service(Service {
-            name: leak(name),
-            capability: leak(cap),
-            args: Box::leak(args.into_boxed_slice()),
-            then,
-            about: leak(s["about"].as_str().unwrap_or("")),
-        });
-        n += 1;
+        let about = match s.get("about") {
+            None => "",
+            Some(value) => value.as_str().ok_or_else(|| format!("{name}: about must be text"))?,
+        };
+        services.push((name, cap, args, then, about));
     }
     for f in v["feeds"].as_array().into_iter().flatten() {
-        let name = f["name"].as_str().ok_or("a feed needs a name")?;
+        manifest_object(f, &["name", "capability", "about", "fields"], "feed")?;
+        let name = f["name"].as_str().filter(|name| !name.trim().is_empty()).ok_or("a feed needs a nonempty name")?;
+        if !feed_names.insert(name) {
+            return Err(format!("duplicate feed `{name}`"));
+        }
         let cap = f["capability"].as_str().ok_or_else(|| format!("{name}: capability missing"))?;
-        if !known_cap(cap) {
+        if !CAPABILITIES.contains(&cap) {
             return Err(format!("{name}: unknown capability `{cap}`"));
         }
-        let mut fields: Vec<(&'static str, &'static str)> = Vec::new();
-        for (k, t) in f["fields"].as_object().into_iter().flatten() {
-            let t = t.as_str().unwrap_or("");
-            if !SCALARS.contains(&t) {
-                return Err(format!("{name}: field `{k}` has bad type `{t}`"));
+        let mut fields = Vec::new();
+        if let Some(value) = f.get("fields") {
+            let object = value.as_object().ok_or_else(|| format!("{name}: fields must be an object"))?;
+            for (key, value) in object {
+                let ty = value.as_str().unwrap_or("");
+                if !SCALARS.contains(&ty) {
+                    return Err(format!("{name}: field `{key}` has bad type `{ty}`"));
+                }
+                fields.push((key.as_str(), ty));
             }
-            fields.push((leak(k), leak(t)));
         }
-        register_feed(Feed {
-            name: leak(name),
-            capability: leak(cap),
-            fields: Box::leak(fields.into_boxed_slice()),
-            about: leak(f["about"].as_str().unwrap_or("")),
-        });
-        n += 1;
+        let about = match f.get("about") {
+            None => "",
+            Some(value) => value.as_str().ok_or_else(|| format!("{name}: about must be text"))?,
+        };
+        feeds.push((name, cap, fields, about));
     }
-    Ok(n)
+    let mut registry = REGISTRY.write().map_err(|_| "service registry is unavailable")?;
+    // Conflict validation and commit share a write lock, including concurrent
+    // loaders. No leaked strings or partially visible declarations on failure.
+    for (name, cap, args, then, about) in &services {
+        if let Some(old) = SERVICES.iter().chain(registry.0.iter().copied()).find(|old| old.name == *name)
+            && (old.capability != *cap
+                || (old.args.len() != args.len() || !args.iter().all(|arg| old.args.contains(arg)))
+                || old.then != *then
+                || old.about != *about)
+        {
+            return Err(format!("conflicting service declaration `{name}`"));
+        }
+    }
+    for (name, cap, fields, about) in &feeds {
+        if let Some(old) = FEEDS.iter().chain(registry.1.iter().copied()).find(|old| old.name == *name)
+            && (old.capability != *cap
+                || (old.fields.len() != fields.len() || !fields.iter().all(|field| old.fields.contains(field)))
+                || old.about != *about)
+        {
+            return Err(format!("conflicting feed declaration `{name}`"));
+        }
+    }
+    let count = services.len() + feeds.len();
+    for (name, cap, args, then, about) in services {
+        if !SERVICES.iter().chain(registry.0.iter().copied()).any(|old| old.name == name) {
+            registry.0.push(Box::leak(Box::new(Service {
+                name: leak(name),
+                capability: leak(cap),
+                then,
+                about: leak(about),
+                args: Box::leak(
+                    args.into_iter().map(|(key, ty)| (leak(key), ty)).collect::<Vec<_>>().into_boxed_slice(),
+                ),
+            })));
+        }
+    }
+    for (name, cap, fields, about) in feeds {
+        if !FEEDS.iter().chain(registry.1.iter().copied()).any(|old| old.name == name) {
+            registry.1.push(Box::leak(Box::new(Feed {
+                name: leak(name),
+                capability: leak(cap),
+                about: leak(about),
+                fields: Box::leak(
+                    fields.into_iter().map(|(key, ty)| (leak(key), leak(ty))).collect::<Vec<_>>().into_boxed_slice(),
+                ),
+            })));
+        }
+    }
+    Ok(count)
 }

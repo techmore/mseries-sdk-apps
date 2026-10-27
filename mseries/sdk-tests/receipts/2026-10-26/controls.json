@@ -1,0 +1,19 @@
+{
+  "binary_sha256": "e68aefa505ea9f16eeb8d475d6997f4340cd10e3cfe31b9d504ed92e78c91feb",
+  "environment": "isolated X11 / private D-Bus / synthetic XDG state",
+  "checks": [
+    "live accessible names and roles",
+    "Tab reaches switch; Space changes persisted state",
+    "Tab reaches dropdown; keyboard selection saves",
+    "Tab reaches reset; Space restores defaults",
+    "Ctrl+Q closes cleanly"
+  ],
+  "accessible_roles": {
+    "Turn on work mode": "switch",
+    "Schedule": "combo box",
+    "Reset to defaults": "button"
+  },
+  "result": "pass",
+  "process_stdout": "",
+  "process_stderr": "libEGL warning: DRI3 error: Could not get DRI3 device\nlibEGL warning: Ensure your X server supports DRI3 to get accelerated rendering\n"
+}

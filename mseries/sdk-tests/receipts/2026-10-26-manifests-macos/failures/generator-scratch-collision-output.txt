@@ -1,0 +1,75 @@
+   Compiling msdk v0.1.0 (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.46s
+     Running unittests src/lib.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/msdk-4ab7f0c78bb642ee)
+
+running 1 test
+test intents::tests::sha256_matches_the_known_vectors ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/msdk-c308555b757d7c34)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/agent.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/agent-ca68a0b395d353a5)
+
+running 4 tests
+test completion_knows_values_keys_and_row_fields ... ok
+test every_diagnostic_code_has_an_explanation ... ok
+test describe_gives_a_valid_example_for_every_component ... ok
+test gates_pass_for_the_example_and_fail_with_a_reason ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/check.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/check-a83ee1f001b74d2d)
+
+running 22 tests
+test feeds_must_match_the_record_shape ... ok
+test custom_component_is_reported_as_a_gap ... ok
+test contrast_gate_covers_every_accent_in_both_themes_and_passes ... ok
+test design_rules ... ok
+test empty_label_and_state_binding_types ... ok
+test list_actions_check_the_record ... ok
+test rust_logic_and_rules_do_not_mix ... ok
+test examples_have_no_errors ... ok
+test messages_must_be_declared_and_payloads_must_match ... ok
+test enums_capabilities_ids_and_top_level ... ok
+test corner_tokens_nest_and_concentric_radii_never_collapse ... ok
+test layout_props_validate_and_round_trip ... ok
+test missing_and_unknown_properties ... ok
+test row_fields_are_not_visible_outside_the_row ... ok
+test list_rows_see_record_fields_and_need_key_and_empty ... ok
+test unknown_component_suggests_the_nearest ... ok
+test stack_children_need_ids_and_tabs_bind_text ... ok
+test surfaces_validate_their_own_properties ... ok
+test services_need_capabilities_and_typed_arguments ... ok
+test update_rules_are_type_checked ... ok
+test malformed_rule_targets_and_service_callbacks_are_errors ... ok
+test schema_and_tokens_are_derived_from_the_tables ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/generate.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/generate-5618a8097656d3fa)
+
+running 3 tests
+test projects_are_complete_deterministic_and_never_overwrite_existing_files ... FAILED
+test invalid_documents_and_missing_rust_logic_fail_before_generation ... ok
+test generated_models_compile_and_preserve_state_and_events ... ok
+
+failures:
+
+---- projects_are_complete_deterministic_and_never_overwrite_existing_files stdout ----
+
+thread 'projects_are_complete_deterministic_and_never_overwrite_existing_files' (468574) panicked at tests/generate.rs:12:36:
+called `Result::unwrap()` on an `Err` value: Os { code: 17, kind: AlreadyExists, message: "File exists" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    projects_are_complete_deterministic_and_never_overwrite_existing_files
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.04s
+
+error: test failed, to rerun pass `--test generate`

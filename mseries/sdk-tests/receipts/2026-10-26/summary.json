@@ -1,0 +1,114 @@
+{
+  "status": "partial SDK qualification; full goal remains active",
+  "source_commit": "287886e3b4399c742bf286bbaf3905b36439467d",
+  "source_fingerprints_matched": 67,
+  "environment": {
+    "host": "SER8",
+    "isolation": "new unprivileged ephemeral Incus container; private Xvfb/D-Bus; synthetic XDG state",
+    "os": "Ubuntu 26.04",
+    "architecture": "x86_64",
+    "rust": "1.93.1",
+    "gtk": "4.22.4",
+    "renderer": "cairo",
+    "container_limits": {
+      "memory": "6GiB",
+      "cpu": 4
+    }
+  },
+  "verified": {
+    "core_tests_passed": 65,
+    "strict_core_and_runtime_lint": "pass",
+    "generated_app_build_tests_lint": "pass",
+    "native_dbus_lifecycle": "pass: enabled reads, close veto, accepted close, stopped polling, ignored late events, disabled zero reads, Host released",
+    "schema": {
+      "valid_descriptions": 11,
+      "malformed_actions_rejected_by_both": 7,
+      "validator": "jsonschema.Draft202012Validator"
+    },
+    "keyboard_accessibility": [
+      "live accessible names and roles",
+      "Tab reaches switch; Space changes persisted state",
+      "Tab reaches dropdown; keyboard selection saves",
+      "Tab reaches reset; Space restores defaults",
+      "Ctrl+Q closes cleanly"
+    ],
+    "render_matrix": {
+      "screenshots": 8,
+      "themes": [
+        "Adwaita light",
+        "Adwaita dark"
+      ],
+      "widths": [
+        480,
+        900
+      ],
+      "height": 400,
+      "font_profiles": [
+        "Sans 10",
+        "Sans 15"
+      ],
+      "font_setting_asserted": true,
+      "reviewer": "Codex visual inspection",
+      "result": "labels/actions readable and unclipped in all eight captured states",
+      "owner_accepted": false
+    },
+    "package": "AppStream/desktop validation; actual ELF architecture and native dependencies; fresh install, reinstall, byte equality, installed launch and all owned files removed"
+  },
+  "artifact_sha256": {
+    "built_and_installed_binary": "e68aefa505ea9f16eeb8d475d6997f4340cd10e3cfe31b9d504ed92e78c91feb",
+    "development_deb": "ebc6015c44c2adc4ebe394ef3f0561edfab0ab5900b3230130e95a0feb69f317"
+  },
+  "retained_failures": [
+    "first CI offline generated test lacked provisioned serde derive; fixed dependency/lock",
+    "generated empty records module had unused imports; fixed qualified derives",
+    "Azure CI provisioning exceeded 25 minute job limit; official Ubuntu ports selected",
+    "AppStream rejected uppercase developer ID and absent homepage; corrected metadata",
+    "initial custom window controls were oversized; native theme controls restored",
+    "first AT-SPI probe selected static labels; repaired selection of named interactive roles",
+    "GDK_DPI_SCALE had no visible effect; those images are excluded from larger-text acceptance; real GTK font profiles now asserted",
+    "schema probe encountered AppleDouble metadata from an early source archive; filter and source preparation corrected"
+  ],
+  "ci_reference_runs": [
+    "https://github.com/techmore/ElementaryOS_MSeries/actions/runs/40354229616",
+    "https://github.com/techmore/ElementaryOS_MSeries/actions/runs/40354775593",
+    "https://github.com/techmore/ElementaryOS_MSeries/actions/runs/40355512113"
+  ],
+  "remaining": [
+    "versioned OS/service API and structured recoverable errors",
+    "bounded/cancelable/streaming process work and app adapter lifecycle",
+    "reusable native status module and both desktop-profile host contracts",
+    "T3 real provider/account/GitHub semantic and interaction conformance",
+    "complete golden path and controlled repeated model usability trials",
+    "same-host resource/performance baseline",
+    "supported architecture/distro packaging and target Pantheon/physical scale/owner acceptance",
+    "final v1 compatibility/deprecation contract and full requirement audit"
+  ],
+  "qualification_limits": [
+    "settings starter scenario only",
+    "no physical Apple Silicon/Wayland/owner desktop acceptance",
+    "no GPU performance or screen-reader narration result",
+    "no model trial or 30-minute novice claim",
+    "development metadata must be reviewed before public app distribution",
+    "Signal/Messages remain deferred"
+  ],
+  "harness_sha256": {
+    "check-schema.py": "076d5cfb001fc1a8b0bc9aff9e5691c8c93f8f1315633033e745dc34d2c6a62f",
+    "controls.py": "6fc6cdb5463c7f9eb07b6353ff3f62d406af78ccbfcd4480073006a677462ba2",
+    "font-profile.py": "0a7910365b44226f39abac2a747d664c0ad95821dbd113ec0f85d383a0899019",
+    "prepare.py": "93b81dedef01caa7afaf7275557a20bafabbb822972f6febe56edad74b29e4b3",
+    "render-matrix.sh": "466c1d5afccdcc24cf8732cc5626326719baee9e01b9e2a77aaa5d95bd6609ff",
+    "source-manifest.py": "be345646804d6d1c54eef7ed3a8b0ea50fa946583037c94a19baf12ae5088868"
+  },
+  "retained_output_files": {
+    "installed": "installed-output.txt",
+    "controls": "controls-output.txt",
+    "core": "core-output.txt",
+    "lint": "lint-output.txt",
+    "lifecycle": "lifecycle-output.txt",
+    "generated": "generated-output.txt",
+    "remove": "remove-output.txt",
+    "matrix": "matrix-output.txt",
+    "install": "install-output.txt",
+    "package": "package-output.txt"
+  }
+}

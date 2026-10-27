@@ -1,0 +1,20 @@
+{
+  "devices": {
+    "eth0": {
+      "type": "none"
+    },
+    "root": {
+      "path": "/",
+      "pool": "default",
+      "size": "16GiB",
+      "type": "disk"
+    }
+  },
+  "limits": {
+    "limits.cpu": "4",
+    "limits.memory": "6GiB",
+    "limits.processes": "256"
+  },
+  "privileged": "false",
+  "worker_identity": "uid2000 zero CapEff/CapAmb verified by protected worker before each successful tool call"
+}

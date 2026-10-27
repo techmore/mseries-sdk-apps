@@ -15,12 +15,27 @@ product work and scope changes. Continue independent work while awaiting feedbac
 
 ## SDK and template direction
 
+The owner clarified that not every app needs a native experience (2026-10-26).
+Focus SDK work on reusable capabilities and a small set of representative
+consumers. Keep an existing web UI, wrapper or hybrid architecture when it fits
+the app. Do not require a complete native port or native feature parity for each
+consumer before qualifying the SDK. A webview/hybrid integration is an explicit
+implementation choice, not a currently shipped generic WebView component.
+
+Version identifiers, ownership and qualification boundaries are published in
+[SDK compatibility](SDK-COMPATIBILITY.md). These are candidate development
+contracts; whole-SDK v1 release readiness remains unproven.
+
+For a useful read-only service/retry example and explicit pending native gates,
+follow [Home Storage developer path](SDK-GOLDEN-PATH.md).
+
 Use the implemented `.msdk`/JSON description, rules and declared-service path
 for SDK apps, with app-local Rust `Services`/`Logic` for documented gaps.
 Native Rust GTK/Granite helpers remain available in `mseries-pantheon-kit`.
 Native T3 (`claude-pantheon-rs`) and the SDK-hosted T3 executable
 (`claude-pantheon-sdk`) are separate consumers; native features do not imply
-SDK parity. Source inventory: [SDK audit](SDK-AUDIT-2026-10-23.md#2026-10-25-t3-monitoring-and-sdk-qualification-addendum).
+SDK parity, and full product parity is not an SDK completion requirement.
+Source inventory: [SDK audit](SDK-AUDIT-2026-10-23.md#2026-10-25-t3-monitoring-and-sdk-qualification-addendum).
 
 | Implemented path | Boundary |
 | --- | --- |
@@ -30,10 +45,23 @@ SDK parity. Source inventory: [SDK audit](SDK-AUDIT-2026-10-23.md#2026-10-25-t3-
 | `FixtureServices` | Isolated UI/data scenarios, not proof of live integration. |
 | Native kit | Separately consumed GTK/Granite, scaling, accessibility, polling/badge helpers; lifecycle must still be qualified by the app. |
 
-`msdk gen`, `msdk pack`, `msdk parity` and a live introspection registry remain
-proposals, not commands to give an LLM as existing tools. The implemented
-description generator is real; complete standalone app/package generation is
-not established. Follow the [T3 priority-slice gates](APP-BUILDING-GUIDE.md#t3-priority-slice-and-sdk-qualification-gates):
+`msdk gen <description> <new-directory> --sdk-root <checkout>/rust` now
+creates a standalone Cargo project with typed records, State/Message bridges,
+the embedded description and a real GTK Host executable. Neighboring
+`*.services.json` manifests are embedded, but application-specific service/feed
+implementations still require an app-local adapter. Custom Rust logic is rejected
+with a LogicFactory instruction rather than replaced with a no-op. Generation
+never installs or executes application services. See the [CLI guide](../rust/msdk/README.md).
+
+`msdk pack <generated-project> --binary <built-ELF> --output <new.deb>`
+assembles a Debian package on the matching Linux architecture using dpkg-dev,
+desktop-file-utils and appstream. It derives shared-library dependencies from
+the supplied executable, includes desktop/AppStream/icon/license assets, validates
+metadata and refuses existing outputs. It never builds, installs or runs the app.
+The exact supplied binary must separately be tied to the tested source/build.
+`msdk parity` and a live introspection registry remain proposals.
+Native build/run, packaging and full SDK readiness are tracked separately in
+[SDK-COMPLETION.md](SDK-COMPLETION.md). Follow the [T3 priority-slice gates](APP-BUILDING-GUIDE.md#t3-priority-slice-and-sdk-qualification-gates):
 token monitoring and RepoBar-derived GitHub overview first (#596), with
 Shiplog (#595) building on that data. Whole-chat parity is a separate contract.
 
@@ -47,6 +75,16 @@ appropriate; an app stylesheet cannot establish physical-panel compliance.
 Keep service authority behind explicit versioned APIs. Preserve existing clients,
 data, account boundaries and recovery paths during migrations. Do not import
 private service databases or replace transport implementations to simplify a UI.
+
+## Runtime errors and owned work
+
+Read [SDK-RUNTIME-CONTRACT.md](SDK-RUNTIME-CONTRACT.md) for the implemented
+`Services::invoke`/`ServiceReply` path, extension-version checks, typed private-safe
+diagnostics, completed-result payload validation and owned process limits.
+`msdk describe runtime` and `msdk explain CODE` expose that contract to authors.
+Backend protocol/version qualification, streaming/progress and context-specific
+adapter cancellation remain separate gates; the extension version is not an OS
+or provider API version.
 
 ## Fast build loop and honest delivery
 

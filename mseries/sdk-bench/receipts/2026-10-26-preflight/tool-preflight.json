@@ -1,0 +1,111 @@
+[
+  {
+    "action": {
+      "action": "list"
+    },
+    "response": {
+      "ok": true,
+      "result": {
+        "files": []
+      }
+    }
+  },
+  {
+    "action": {
+      "action": "run",
+      "command": "new",
+      "template": "settings",
+      "path": "preflight"
+    },
+    "response": {
+      "ok": true,
+      "result": {
+        "code": 0,
+        "limit": null,
+        "seconds": 0.02208889799658209,
+        "output": "created /work/bench-app/preflight from `settings` (id io.github.techmore.Preflight); next: cd /work/bench-app/preflight && msdk check app.ui.json && msdk gate app.ui.json app.gates.json\n",
+        "argv": [
+          "/work/target/debug/msdk",
+          "new",
+          "settings",
+          "/work/bench-app/preflight"
+        ]
+      }
+    }
+  },
+  {
+    "action": {
+      "action": "run",
+      "command": "gen",
+      "path": "preflight/app.ui.json",
+      "output": "preflight-generated"
+    },
+    "response": {
+      "ok": true,
+      "result": {
+        "code": 0,
+        "limit": null,
+        "seconds": 0.020914396969601512,
+        "output": "created standalone Cargo application in /work/bench-app/preflight-generated; next: cargo run --manifest-path /work/bench-app/preflight-generated/Cargo.toml\n",
+        "argv": [
+          "/work/target/debug/msdk",
+          "gen",
+          "/work/bench-app/preflight/app.ui.json",
+          "/work/bench-app/preflight-generated",
+          "--sdk-root",
+          "/work/sdk"
+        ]
+      }
+    }
+  },
+  {
+    "action": {
+      "action": "run",
+      "command": "build",
+      "project": "preflight-generated"
+    },
+    "response": {
+      "ok": true,
+      "result": {
+        "code": 0,
+        "limit": null,
+        "seconds": 82.12071825901512,
+        "output": "     Locking 74 packages to latest Rust 1.93.1 compatible versions\n   Compiling system-deps v9.0.1\n   Compiling smallvec v1.16.4\n   Compiling cfg-expr v0.20.10\n   Compiling cc v1.10.0\n   Compiling glib-sys v0.22.9\n   Compiling gobject-sys v0.22.9\n   Compiling gio-sys v0.22.9\n   Compiling pango-sys v0.22.9\n   Compiling gdk-pixbuf-sys v0.22.9\n   Compiling cairo-sys-rs v0.22.9\n   Compiling glib v0.22.10\n   Compiling gdk4-sys v0.11.5\n   Compiling graphene-sys v0.22.9\n   Compiling gsk4-sys v0.11.5\n   Compiling gtk4-sys v0.11.5\n   Compiling msdk-gtk v0.1.0 (/work/sdk/msdk-gtk)\n   Compiling gio v0.22.10\n   Compiling cairo-rs v0.22.9\n   Compiling graphene-rs v0.22.8\n   Compiling gdk-pixbuf v0.22.0\n   Compiling pango v0.22.9\n   Compiling gdk4 v0.11.5\n   Compiling gsk4 v0.11.5\n   Compiling gtk4 v0.11.5\n   Compiling msdk-preflight v0.1.0 (/work/bench-app/preflight-generated)\n    Finished `dev` profile [unoptimized] target(s) in 1m 22s\n",
+        "argv": [
+          "/usr/bin/cargo",
+          "build",
+          "--manifest-path",
+          "/work/bench-app/preflight-generated/Cargo.toml",
+          "--offline"
+        ]
+      }
+    }
+  },
+  {
+    "action": {
+      "action": "run",
+      "command": "launch",
+      "project": "preflight-generated"
+    },
+    "response": {
+      "ok": true,
+      "result": {
+        "code": 0,
+        "limit": null,
+        "seconds": 1.1511555950855836,
+        "output": "libEGL warning: DRI3 error: Could not get DRI3 device\nlibEGL warning: Ensure your X server supports DRI3 to get accelerated rendering\ndbus-daemon[4547]: [session uid=2000 pid=4547 pidfd=5] Activating service name='org.a11y.Bus' requested by ':1.0' (uid=2000 pid=4549 comm=\"/work/bench-target/debug/msdk-preflight\" label=\"unconfined\")\ndbus-daemon[4547]: [session uid=2000 pid=4547 pidfd=5] Successfully activated service 'org.a11y.Bus'\ndbus-daemon[4583]: Activating service name='org.a11y.atspi.Registry' requested by ':1.0' (uid=2000 pid=4549 comm=\"/work/bench-target/debug/msdk-preflight\" label=\"unconfined\")\ndbus-daemon[4583]: Successfully activated service 'org.a11y.atspi.Registry'\nSpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry\n{\"mapped_seconds\": 0.28292891499586403, \"captured_seconds\": 0.9269498030189425, \"frame_bytes\": 21141, \"ctrl_q_clean\": true, \"content_review\": \"pending independent review\"}\n",
+        "argv": [
+          "xvfb-run",
+          "-a",
+          "dbus-run-session",
+          "--",
+          "/usr/bin/python3",
+          "/opt/msdk-bench/capture.py",
+          "/work/bench-target/debug/msdk-preflight",
+          "/work/bench-app/evidence/frame-1793041874547625959.png"
+        ],
+        "frame": "evidence/frame-1793041874547625959.png"
+      }
+    }
+  }
+]

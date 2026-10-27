@@ -241,7 +241,20 @@ fn build(node: &Value, d: &D, row: &Row) -> Built {
                     dd2.set_selected(i as u32);
                 }
             }));
-            dd.upcast()
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+            if let Some(label) = s(node, "label") {
+                let label = gtk::Label::builder()
+                    .label(label)
+                    .xalign(0.0)
+                    .hexpand(true)
+                    .wrap(true)
+                    .build();
+                label.set_mnemonic_widget(Some(&dd));
+                row.append(&label);
+            }
+            dd.set_valign(gtk::Align::Center);
+            row.append(&dd);
+            row.upcast()
         }
         "List" => list(node, d, row, &mut refresh),
         "Transcript" => transcript(node, d, row, &mut refresh),

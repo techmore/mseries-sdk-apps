@@ -1,0 +1,3 @@
+# Desktop SDK host ARM workflow
+
+Hosted ARM SDK workflow run 40418084280 at commit 64ca2db passed on attempt 2, including C and Vala SDK boundaries, the shared T3 menu in hosted and dock modes with synthetic neighboring indicators, SDK core/native tests, popup interactions and package install/reinstall/remove. Attempt 1 passed both new host checks but the later usage accessibility fixture failed because GTK could not open its private X display; its synthetic receipt is retained here. The retry was requested once on that evidence. These tests do not build or load the full actual Wingpanel or Dock modules, exercise real accounts, or qualify an elementary desktop.

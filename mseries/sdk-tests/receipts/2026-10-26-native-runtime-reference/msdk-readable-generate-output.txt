@@ -1,0 +1,1 @@
+created standalone Cargo application in /work/home-storage-readable; next: cargo run --manifest-path /work/home-storage-readable/Cargo.toml

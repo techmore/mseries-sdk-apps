@@ -1,0 +1,2 @@
+    Checking msdk-homestorage v0.1.0 (/work/home-storage-readable)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.23s

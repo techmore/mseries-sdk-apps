@@ -1,0 +1,139 @@
+   Compiling msdk v0.1.0 (/work/sdk/msdk)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.93s
+     Running unittests src/lib.rs (/work/target/debug/deps/msdk-054984f29162e1a2)
+
+running 1 test
+test intents::tests::sha256_matches_the_known_vectors ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/work/target/debug/deps/msdk-54c77ce22c7c0035)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/agent.rs (/work/target/debug/deps/agent-f180c36d8c5dfb5e)
+
+running 4 tests
+test completion_knows_values_keys_and_row_fields ... ok
+test every_diagnostic_code_has_an_explanation ... ok
+test describe_gives_a_valid_example_for_every_component ... ok
+test gates_pass_for_the_example_and_fail_with_a_reason ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/check.rs (/work/target/debug/deps/check-fbb8190351ac2c9c)
+
+running 22 tests
+test custom_component_is_reported_as_a_gap ... ok
+test contrast_gate_covers_every_accent_in_both_themes_and_passes ... ok
+test design_rules ... ok
+test empty_label_and_state_binding_types ... ok
+test feeds_must_match_the_record_shape ... ok
+test corner_tokens_nest_and_concentric_radii_never_collapse ... ok
+test enums_capabilities_ids_and_top_level ... ok
+test list_actions_check_the_record ... ok
+test layout_props_validate_and_round_trip ... ok
+test list_rows_see_record_fields_and_need_key_and_empty ... ok
+test missing_and_unknown_properties ... ok
+test examples_have_no_errors ... ok
+test messages_must_be_declared_and_payloads_must_match ... ok
+test row_fields_are_not_visible_outside_the_row ... ok
+test rust_logic_and_rules_do_not_mix ... ok
+test stack_children_need_ids_and_tabs_bind_text ... ok
+test services_need_capabilities_and_typed_arguments ... ok
+test unknown_component_suggests_the_nearest ... ok
+test surfaces_validate_their_own_properties ... ok
+test malformed_rule_targets_and_service_callbacks_are_errors ... ok
+test update_rules_are_type_checked ... ok
+test schema_and_tokens_are_derived_from_the_tables ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/generate.rs (/work/target/debug/deps/generate-a3c088bb1d0e4cb1)
+
+running 3 tests
+test invalid_documents_and_missing_rust_logic_fail_before_generation ... ok
+test projects_are_complete_deterministic_and_never_overwrite_existing_files ... ok
+test generated_models_compile_and_preserve_state_and_events ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.32s
+
+     Running tests/inspect.rs (/work/target/debug/deps/inspect-2884d8c0b758eca4)
+
+running 5 tests
+test row_buttons_show_the_key_they_send ... ok
+test secrets_are_masked_and_missing_surfaces_are_errors ... ok
+test hidden_controls_are_left_out_and_shown_when_their_flag_is_true ... ok
+test list_rows_resolve_templates_and_carry_their_key ... ok
+test a_stack_shows_only_the_selected_page_and_tabs_report_their_value ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/intents.rs (/work/target/debug/deps/intents-e9339f7ecd6dacf3)
+
+running 11 tests
+test a_small_agent_block_on_quick_notes_checks_clean ... ok
+test an_app_with_errors_or_without_an_agent_block_has_no_manifest ... ok
+test arguments_must_match_the_single_typed_parameter ... ok
+test t3_declares_a_clean_agent_surface ... ok
+test mcp_tools_carry_risk_scope_and_the_manifest_hash ... ok
+test text_errors_name_the_line ... ok
+test the_schema_accepts_an_agent_block ... ok
+test t3_intents_each_have_a_scenario_and_hostile_arguments_are_refused ... ok
+test the_text_form_round_trips_and_is_idempotent ... ok
+test the_manifest_hash_follows_meaning_not_spelling ... ok
+test every_rule_fires ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/package.rs (/work/target/debug/deps/package-9feb0d5b7cb7cbd2)
+
+running 3 tests
+test package_architecture_comes_from_the_binary_not_the_build_host ... ok
+test desktop_fields_cannot_inject_an_extra_launcher_action ... ok
+test metadata_escapes_markup_and_uses_the_same_desktop_identity ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/t3.rs (/work/target/debug/deps/t3-0a6b0d164cdefc3a)
+
+running 4 tests
+test the_registry_knows_the_plug_in_services ... ok
+test t3_checks_clean_with_its_service_manifest ... ok
+test t3_passes_its_gates ... ok
+test t3_is_stable_under_the_formatter ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/templates.rs (/work/target/debug/deps/templates-ebfe5b78050f45e9)
+
+running 5 tests
+test replacement_values_are_not_expanded_as_template_placeholders ... ok
+test template_names_are_unique_and_documented ... ok
+test renamed_templates_stay_valid ... ok
+test custom_names_are_literal_json_strings_in_every_starter ... ok
+test every_template_is_valid_and_passes_its_own_gates ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/text.rs (/work/target/debug/deps/text-9ba5adcbdc1d1461)
+
+running 7 tests
+test aliases_and_modifiers ... ok
+test diagnostics_map_back_to_text_lines ... ok
+test parse_errors_have_a_line_and_a_suggestion ... ok
+test text_files_load_like_json_files ... ok
+test the_design_language_example_compiles_and_checks ... ok
+test every_example_round_trips_through_the_text_form ... ok
+test formatting_is_idempotent ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Doc-tests msdk
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -66,14 +66,6 @@ pub fn css() -> String {
            border-bottom: 1px solid alpha(black, 0.14); box-shadow: inset 0 1px alpha(white, 0.55); }}\n\
          headerbar.msdk-titlebar:backdrop {{ background-image: linear-gradient(to bottom, shade(@theme_bg_color, 1.02), shade(@theme_bg_color, 0.98)); box-shadow: none; }}\n\
          headerbar.msdk-titlebar .title {{ font-weight: 600; }}\n\
-         headerbar.msdk-titlebar windowcontrols {{ margin-right: {cgap}px; }}\n\
-         headerbar.msdk-titlebar windowcontrols button {{ min-width: {cs}px; min-height: {cs}px; padding: 0; margin: 0 {cg2}px; border-radius: 50%; \
-           background: alpha(currentColor, 0.22); box-shadow: none; border: 1px solid alpha(black, 0.12); }}\n\
-         headerbar.msdk-titlebar windowcontrols button image {{ opacity: 0; -gtk-icon-size: 8px; }}\n\
-         headerbar.msdk-titlebar windowcontrols:hover button image {{ opacity: 0.7; }}\n\
-         headerbar.msdk-titlebar windowcontrols:hover button.close {{ background: #ff5f57; }}\n\
-         headerbar.msdk-titlebar windowcontrols:hover button.minimize {{ background: #febc2e; }}\n\
-         headerbar.msdk-titlebar windowcontrols:hover button.maximize {{ background: #28c840; }}\n\
          headerbar.msdk-titlebar button.flat {{ border-radius: {control}px; }}\n\
          .msdk-badge {{ background: @error_color; color: @theme_bg_color; border-radius: 9px; padding: 0 5px; font-size: {caption}em; }}\n",
         px = w["outline_px"].as_i64().unwrap_or(1),
@@ -97,9 +89,6 @@ pub fn css() -> String {
         tb = t["chrome"]["titlebar_height"].as_i64().unwrap_or(46),
         silver = t["chrome"]["silver"].as_str().unwrap_or("#aeb6c4"),
         band = t["chrome"]["band_strength"].as_f64().unwrap_or(0.14),
-        cs = t["chrome"]["control_size"].as_i64().unwrap_or(13),
-        cgap = t["chrome"]["control_gap"].as_i64().unwrap_or(8),
-        cg2 = t["chrome"]["control_gap"].as_i64().unwrap_or(8) / 2,
         win = r("window"),
         bubble = r("bubble"),
     )

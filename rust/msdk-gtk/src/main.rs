@@ -53,16 +53,33 @@ fn main() -> gtk::glib::ExitCode {
         } else {
             dir
         };
+        let entries = match std::fs::read_dir(dir)
+            .and_then(|entries| entries.collect::<Result<Vec<_>, _>>())
+        {
+            Ok(entries) => entries,
+            Err(error) => {
+                eprintln!("{}: {error}", dir.display());
+                return gtk::glib::ExitCode::FAILURE;
+            }
+        };
         manifests.extend(
-            std::fs::read_dir(dir)
+            entries
                 .into_iter()
-                .flatten()
-                .flatten()
-                .map(|e| e.path())
-                .filter(|p| p.to_string_lossy().ends_with(".services.json")),
+                .map(|entry| entry.path())
+                .filter(|path| path.to_string_lossy().ends_with(".services.json")),
         );
     }
-    manifests.extend(opt("--services").map(PathBuf::from));
+    for (index, argument) in args.iter().enumerate() {
+        if argument == "--services" {
+            let Some(path) = args.get(index + 1).filter(|path| !path.starts_with("--")) else {
+                eprintln!("--services requires a manifest path");
+                return gtk::glib::ExitCode::FAILURE;
+            };
+            manifests.push(path.into());
+        }
+    }
+    manifests.sort();
+    manifests.dedup();
     for m in manifests {
         if let Err(e) = std::fs::read_to_string(&m)
             .map_err(|e| e.to_string())
@@ -70,6 +87,7 @@ fn main() -> gtk::glib::ExitCode {
             .and_then(|v| msdk::vocab::load_manifest(&v))
         {
             eprintln!("{}: {e}", m.display());
+            return gtk::glib::ExitCode::FAILURE;
         }
     }
     let services: Option<Rc<dyn Services>> = match opt("--fixture") {
@@ -84,11 +102,14 @@ fn main() -> gtk::glib::ExitCode {
     };
     let shot = opt("--screenshot");
     let keep = RefCell::new(None);
+    let failed = Rc::new(std::cell::Cell::new(false));
+    let activation_failed = failed.clone();
     app.connect_activate(move |app| {
         let doc = match msdk::text::load(&path) {
             Ok((d, _)) => d,
             Err(e) => {
                 eprintln!("{}: {e}", path.display());
+                activation_failed.set(true);
                 return app.quit();
             }
         };
@@ -104,12 +125,16 @@ fn main() -> gtk::glib::ExitCode {
             Some(h) => {
                 if let Some(out) = shot.clone() {
                     let (h2, app2) = (h.clone(), app.clone());
+                    let screenshot_failed = activation_failed.clone();
                     gtk::glib::timeout_add_local_once(
                         std::time::Duration::from_millis(1800),
                         move || {
                             match h2.screenshot(std::path::Path::new(&out)) {
                                 Ok(()) => println!("wrote {out}"),
-                                Err(e) => eprintln!("screenshot: {e}"),
+                                Err(e) => {
+                                    screenshot_failed.set(true);
+                                    eprintln!("screenshot: {e}");
+                                }
                             }
                             app2.quit();
                         },
@@ -117,8 +142,16 @@ fn main() -> gtk::glib::ExitCode {
                 }
                 *keep.borrow_mut() = Some(h);
             }
-            None => app.quit(),
+            None => {
+                activation_failed.set(true);
+                app.quit();
+            }
         }
     });
-    app.run_with_args::<&str>(&[])
+    let status = app.run_with_args::<&str>(&[]);
+    if failed.get() {
+        gtk::glib::ExitCode::FAILURE
+    } else {
+        status
+    }
 }

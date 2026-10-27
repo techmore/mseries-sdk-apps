@@ -1,0 +1,7 @@
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+dbus-daemon[16908]: [session uid=0 pid=16908 pidfd=5] Activating service name='org.a11y.Bus' requested by ':1.0' (uid=0 pid=16909 comm="/usr/bin/io.github.techmore.SdkSettings --screensh" label="unconfined")
+dbus-daemon[16908]: [session uid=0 pid=16908 pidfd=5] Successfully activated service 'org.a11y.Bus'
+dbus-daemon[16935]: Activating service name='org.a11y.atspi.Registry' requested by ':1.0' (uid=0 pid=16909 comm="/usr/bin/io.github.techmore.SdkSettings --screensh" label="unconfined")
+dbus-daemon[16935]: Successfully activated service 'org.a11y.atspi.Registry'
+SpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry

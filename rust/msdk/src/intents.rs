@@ -110,7 +110,7 @@ pub fn diagnose(root: &Map<String, Value>) -> Vec<Finding> {
                 None,
             );
         }
-        if !desc.as_str().is_some_and(|d| !d.trim().is_empty()) {
+        if desc.as_str().is_none_or(|d| d.trim().is_empty()) {
             err(
                 &path,
                 "agent-scope-needs-description",
@@ -230,7 +230,7 @@ pub fn diagnose(root: &Map<String, Value>) -> Vec<Finding> {
                         Some("add `confirm`".into()),
                     );
                 }
-                if rank(r) >= 1 && !i.get("verify").and_then(Value::as_str).is_some_and(|v| !v.trim().is_empty()) {
+                if rank(r) >= 1 && i.get("verify").and_then(Value::as_str).is_none_or(|v| v.trim().is_empty()) {
                     err(
                         &path,
                         "agent-needs-verify",
@@ -277,7 +277,7 @@ pub fn diagnose(root: &Map<String, Value>) -> Vec<Finding> {
                 fix: Some("add `show draft` (the state keys that make up the action)".into()),
             });
         }
-        if !i.get("about").and_then(Value::as_str).is_some_and(|a| !a.trim().is_empty()) {
+        if i.get("about").and_then(Value::as_str).is_none_or(|a| a.trim().is_empty()) {
             err(
                 &path,
                 "agent-needs-about",

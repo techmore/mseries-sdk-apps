@@ -1,0 +1,216 @@
+   Compiling msdk v0.1.0 (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.21s
+     Running unittests src/lib.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/msdk-4ab7f0c78bb642ee)
+
+running 1 test
+test intents::tests::sha256_matches_the_known_vectors ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/msdk-c308555b757d7c34)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/agent.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/agent-ca68a0b395d353a5)
+
+running 4 tests
+test every_diagnostic_code_has_an_explanation ... ok
+test completion_knows_values_keys_and_row_fields ... ok
+test describe_gives_a_valid_example_for_every_component ... ok
+test gates_pass_for_the_example_and_fail_with_a_reason ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/check.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/check-a83ee1f001b74d2d)
+
+running 22 tests
+test feeds_must_match_the_record_shape ... ok
+test custom_component_is_reported_as_a_gap ... ok
+test design_rules ... ok
+test empty_label_and_state_binding_types ... ok
+test contrast_gate_covers_every_accent_in_both_themes_and_passes ... ok
+test list_actions_check_the_record ... ok
+test examples_have_no_errors ... ok
+test messages_must_be_declared_and_payloads_must_match ... ok
+test missing_and_unknown_properties ... ok
+test enums_capabilities_ids_and_top_level ... ok
+test list_rows_see_record_fields_and_need_key_and_empty ... ok
+test row_fields_are_not_visible_outside_the_row ... ok
+test layout_props_validate_and_round_trip ... ok
+test corner_tokens_nest_and_concentric_radii_never_collapse ... ok
+test rust_logic_and_rules_do_not_mix ... ok
+test unknown_component_suggests_the_nearest ... ok
+test surfaces_validate_their_own_properties ... ok
+test stack_children_need_ids_and_tabs_bind_text ... ok
+test services_need_capabilities_and_typed_arguments ... ok
+test update_rules_are_type_checked ... ok
+test malformed_rule_targets_and_service_callbacks_are_errors ... ok
+test schema_and_tokens_are_derived_from_the_tables ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/cli_manifests.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/cli_manifests-9f68281e39701226)
+
+running 4 tests
+test checking_no_descriptions_is_not_a_successful_validation ... ok
+test missing_explicit_manifest_and_missing_flag_value_are_errors ... ok
+test valid_explicit_manifest_supports_check_and_gate_without_positional_confusion ... ok
+test invalid_adjacent_manifest_fails_every_consumer_instead_of_printing_success ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running tests/context.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/context-54a13b441f7482a4)
+
+running 5 tests
+test last_owner_drop_and_explicit_close_retire_tokens_without_retaining_the_owner ... ok
+test generations_discard_old_success_and_error_values_at_delivery ... ok
+test replies_crossing_a_queue_are_checked_after_the_context_switch ... ok
+test a_request_in_an_already_closed_context_never_starts_its_command ... ok
+test switching_context_cancels_and_reaps_real_work_then_allows_a_new_request ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/generate.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/generate-5618a8097656d3fa)
+
+running 3 tests
+test invalid_documents_and_missing_rust_logic_fail_before_generation ... ok
+test projects_are_complete_deterministic_and_never_overwrite_existing_files ... ok
+test generated_models_compile_and_preserve_state_and_events ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.52s
+
+     Running tests/golden_path.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/golden_path-f81c7ab40be84731)
+
+running 3 tests
+test home_storage_recovers_and_prevents_duplicate_work ... ok
+test unsupported_storage_report_is_an_error_instead_of_invented_usage ... ok
+test home_storage_actual_command_fails_then_recovers ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/inspect.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/inspect-50e68ecb8cfe4154)
+
+running 5 tests
+test secrets_are_masked_and_missing_surfaces_are_errors ... ok
+test row_buttons_show_the_key_they_send ... ok
+test hidden_controls_are_left_out_and_shown_when_their_flag_is_true ... ok
+test list_rows_resolve_templates_and_carry_their_key ... ok
+test a_stack_shows_only_the_selected_page_and_tabs_report_their_value ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/intents.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/intents-4adbccfe27989abb)
+
+running 11 tests
+test text_errors_name_the_line ... ok
+test a_small_agent_block_on_quick_notes_checks_clean ... ok
+test the_schema_accepts_an_agent_block ... ok
+test an_app_with_errors_or_without_an_agent_block_has_no_manifest ... ok
+test arguments_must_match_the_single_typed_parameter ... ok
+test t3_declares_a_clean_agent_surface ... ok
+test mcp_tools_carry_risk_scope_and_the_manifest_hash ... ok
+test the_text_form_round_trips_and_is_idempotent ... ok
+test t3_intents_each_have_a_scenario_and_hostile_arguments_are_refused ... ok
+test the_manifest_hash_follows_meaning_not_spelling ... ok
+test every_rule_fires ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/manifests.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/manifests-87777720cf45598d)
+
+running 8 tests
+test conflict_does_not_replace_a_contract_or_publish_other_entries ... ok
+test identical_reload_is_idempotent_even_when_argument_order_changes ... ok
+test malformed_later_declarations_cannot_publish_earlier_services ... ok
+test malformed_shapes_unknown_fields_and_duplicate_names_are_rejected ... ok
+test feed_shape_conflicts_are_atomic_and_identical_reloads_are_safe ... ok
+test concurrent_conflicting_loads_have_one_winner_and_no_partial_publication ... ok
+test unsupported_manifest_versions_are_refused_before_registration ... ok
+test incompatible_documents_get_migration_guidance_without_mutation ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/package.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/package-e0cc8be0d5ac9b9b)
+
+running 3 tests
+test package_architecture_comes_from_the_binary_not_the_build_host ... ok
+test desktop_fields_cannot_inject_an_extra_launcher_action ... ok
+test metadata_escapes_markup_and_uses_the_same_desktop_identity ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/process.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/process-78a09449a9d345a2)
+
+running 7 tests
+test invalid_resource_limits_are_refused ... ok
+test dropping_an_owned_handle_cancels_instead_of_detaching_the_command ... ok
+test inherited_pipes_do_not_stall_after_the_leader_exits ... ok
+test real_output_and_nonzero_exit_are_distinct ... ok
+test cancellation_reaps_the_leader_and_stops_its_process_group ... ok
+test stdout_and_stderr_share_one_hard_byte_limit ... ok
+test timeout_stops_a_real_long_running_process ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+
+     Running tests/runtime.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/runtime-72e2a74824c12ecf)
+
+running 3 tests
+test incompatible_extensions_are_typed_and_recoverable ... ok
+test diagnostic_and_debug_never_serialize_private_backend_details ... ok
+test runtime_discovery_and_explanations_match_actual_limits_and_failures ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/streaming.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/streaming-3ea37e5b715b6e45)
+
+running 5 tests
+test raw_bytes_remain_exact_including_non_utf8_output ... ok
+test slow_consumer_has_a_hard_queue_bound_and_a_terminal_failure ... ok
+test dropping_subscription_cancels_a_silent_command ... ok
+test private_partial_output_arrives_before_completion_and_survives_cancel ... ok
+test timeout_keeps_already_queued_partial_output ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/t3.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/t3-130bd8b0fd4fb4a1)
+
+running 4 tests
+test the_registry_knows_the_plug_in_services ... ok
+test t3_checks_clean_with_its_service_manifest ... ok
+test t3_passes_its_gates ... ok
+test t3_is_stable_under_the_formatter ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/templates.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/templates-daeaa23dbb377819)
+
+running 5 tests
+test template_names_are_unique_and_documented ... ok
+test replacement_values_are_not_expanded_as_template_placeholders ... ok
+test renamed_templates_stay_valid ... ok
+test custom_names_are_literal_json_strings_in_every_starter ... ok
+test every_template_is_valid_and_passes_its_own_gates ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/text.rs (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk/target/debug/deps/text-da05419791d24613)
+
+running 7 tests
+test aliases_and_modifiers ... ok
+test diagnostics_map_back_to_text_lines ... ok
+test parse_errors_have_a_line_and_a_suggestion ... ok
+test text_files_load_like_json_files ... ok
+test the_design_language_example_compiles_and_checks ... ok
+test every_example_round_trips_through_the_text_form ... ok
+test formatting_is_idempotent ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests msdk
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

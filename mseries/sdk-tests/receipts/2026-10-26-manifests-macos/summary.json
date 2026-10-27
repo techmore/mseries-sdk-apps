@@ -1,0 +1,27 @@
+{
+  "schema": "msdk.validation.v1",
+  "source_commit": "467729942f4f51e6ce766e8a4617cc531af7037a",
+  "platform": "Darwin arm64",
+  "rust": "rustc 1.98.1 (48a229cea 2026-09-01) (Homebrew)",
+  "core_tests_passed": 90,
+  "manifest_tests_passed": 8,
+  "strict_clippy": "passed",
+  "format": "passed",
+  "scope": [
+    "atomic full-manifest validation and conflict rollback",
+    "concurrent conflicting loaders",
+    "idempotent service/feed reloads independent of object order",
+    "legacy manifest compatibility and explicit unsupported version rejection",
+    "incompatible document rejection and migration guidance",
+    "complete core regression suite"
+  ],
+  "retained_failure": "Generator-test simultaneous timestamp scratch collision; repaired exclusive-create retry and atomic serial. Original failure retained.",
+  "not_proven": [
+    "Linux current source",
+    "GTK adapter qualification",
+    "real backend protocol negotiation",
+    "physical supported-host matrix",
+    "whole SDK completion"
+  ],
+  "remote_blocker": "Explicit authorization for updated SDK source transfer to SER8 still pending; automatic approval review rejected prior transfer and no bypass used."
+}

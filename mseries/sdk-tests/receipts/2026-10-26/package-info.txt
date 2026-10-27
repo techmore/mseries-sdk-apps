@@ -1,0 +1,9 @@
+ new Debian package, version 2.0.
+ size 11307984 bytes: control archive=386 bytes.
+     465 bytes,     6 lines      control
+ Package: msdk-io.github.techmore.sdksettings
+ Version: 0.1.0
+ Architecture: amd64
+ Maintainer: SDK app developer <developer@example.invalid>
+ Description: Application built with the M-series SDK
+ Depends: libc6 (>= 2.39), libcairo-gobject2 (>= 1.10.0), libcairo2 (>= 1.2.4), libgcc-s1 (>= 4.2), libgdk-pixbuf-2.0-0 (>= 2.22.0), libglib2.0-0t64 (>= 2.54.0), libgraphene-1.0-0 (>= 1.5.4), libgtk-4-1 (>= 4.12.0), libpango-1.0-0 (>= 1.14.0), libwayland-client0 (>= 1.20.0)

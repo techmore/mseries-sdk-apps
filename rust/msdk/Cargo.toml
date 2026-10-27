@@ -15,3 +15,11 @@ path = "src/main.rs"
 
 [dependencies]
 serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+# Generated model compilation is an offline integration test, so its derive
+# dependency must be provisioned by Cargo before running the test executable.
+serde = { version = "1", features = ["derive"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

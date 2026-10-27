@@ -1,0 +1,2 @@
+    Checking msdk v0.1.0 (/Users/seandolbec/Documents/Codex/2026-10-26/we-x20/work/msdk-check/msdk)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.79s

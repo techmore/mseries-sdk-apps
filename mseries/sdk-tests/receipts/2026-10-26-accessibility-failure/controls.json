@@ -1,0 +1,9 @@
+{
+  "binary_sha256": "d618edc6ff5720271212f8042bfac298e004fbe3dd41c2bdf072c6953cc86e1f",
+  "environment": "isolated X11 / private D-Bus / synthetic XDG state",
+  "checks": [],
+  "result": "fail",
+  "failure": "generated app did not publish an accessibility root",
+  "process_stdout": "",
+  "process_stderr": "\n(msdk-sdksettings:5029): Gtk-WARNING **: 20:06:32.540: Failed to open display\n"
+}

@@ -1,0 +1,14 @@
+{
+  "binary_sha256": "c713618d16748dd571b466d281bf7c49ee54e9bac88b9282f0295693f268464c",
+  "environment": "isolated X11 / private D-Bus / synthetic data",
+  "checks": [
+    "Tab reaches the named refresh button",
+    "Space refreshes; failure keeps stale data and hides stderr",
+    "keyboard retry recovers",
+    "Ctrl+Q closes cleanly"
+  ],
+  "refresh_accessible_role": "button",
+  "result": "pass",
+  "process_stdout": "",
+  "process_stderr": "libEGL warning: DRI3 error: Could not get DRI3 device\nlibEGL warning: Ensure your X server supports DRI3 to get accelerated rendering\n"
+}

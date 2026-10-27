@@ -1,0 +1,22 @@
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+GTK font profile: Sans 10
+dbus-daemon[28034]: [session uid=0 pid=28034 pidfd=5] Activating service name='org.a11y.Bus' requested by ':1.1' (uid=0 pid=28051 comm="python3 /work/home-probes-readable/home-storage-co" label="unconfined")
+dbus-daemon[28034]: [session uid=0 pid=28034 pidfd=5] Successfully activated service 'org.a11y.Bus'
+dbus-daemon[28062]: Activating service name='org.a11y.atspi.Registry' requested by ':1.0' (uid=0 pid=28051 comm="python3 /work/home-probes-readable/home-storage-co" label="unconfined")
+dbus-daemon[28062]: Successfully activated service 'org.a11y.atspi.Registry'
+SpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry
+{
+  "binary_sha256": "74b64bfb42c5a65a65e924e5d6ea49438f8e9f11471ce115f388798af40fb464",
+  "environment": "private X11/D-Bus, synthetic HOME/XDG",
+  "checks": [
+    "keyboard starts actual df; absent synthetic HOME gives recoverable error and retry action",
+    "keyboard retry after harness creates synthetic HOME succeeds in same process; stale error disappears",
+    "actual generated executable captures recovered result and exits cleanly"
+  ],
+  "accessible_role": "button",
+  "result": "pass",
+  "stdout_empty": true,
+  "diagnostics_omit_synthetic_home": true,
+  "diagnostics": "libEGL warning: DRI3 error: Could not get DRI3 device\nlibEGL warning: Ensure your X server supports DRI3 to get accelerated rendering\n{\"schema\":\"msdk.runtime.diagnostic.v1\",\"code\":\"process-failed\",\"service\":\"process.run\",\"source\":\"/update/Refresh\",\"operation\":1,\"expected_version\":null,\"actual_version\":null,\"message\":\"The command failed. Check its output and retry.\"}\n"
+}

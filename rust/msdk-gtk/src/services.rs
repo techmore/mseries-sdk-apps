@@ -27,7 +27,7 @@ async fn proxy() -> Result<gio::DBusProxy, glib::Error> {
     .await
 }
 
-/// Parses the reply of `GetWindows`: `a(ua{sv})` inside a one-tuple.
+/// Parses the reply of `GetWindows`: `a(ta{sv})` inside a one-tuple.
 fn parse_windows(reply: &glib::Variant) -> Vec<Value> {
     let Some(list) = reply.try_child_value(0) else {
         return vec![];
@@ -57,10 +57,29 @@ async fn poll(p: &gio::DBusProxy, on: &Rc<dyn Fn(Value)>) {
     }
 }
 
-/// Calls `on` with the current window list now, on every compositor change signal, and every two seconds as a safety net.
-pub fn watch_windows(on: impl Fn(Value) + 'static) {
+/// An owned watcher. Dropping it cancels its pending D-Bus call, signal listener
+/// and safety polling task. It must be retained only while the feature is active.
+pub struct WindowWatch(glib::JoinHandle<()>);
+
+impl Drop for WindowWatch {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+struct SignalConnection(gio::DBusProxy, Option<glib::SignalHandlerId>);
+impl Drop for SignalConnection {
+    fn drop(&mut self) {
+        if let Some(handler) = self.1.take() {
+            self.0.disconnect(handler);
+        }
+    }
+}
+
+/// Calls `on` now, on compositor change signals, and every two seconds while owned.
+pub fn watch_windows(on: impl Fn(Value) + 'static) -> WindowWatch {
     let on: Rc<dyn Fn(Value)> = Rc::new(on);
-    glib::spawn_future_local(async move {
+    WindowWatch(glib::spawn_future_local(async move {
         let p = match proxy().await {
             Ok(p) => p,
             Err(e) => {
@@ -69,22 +88,22 @@ pub fn watch_windows(on: impl Fn(Value) + 'static) {
         };
         // The signal handler must be thread-safe, so it only pokes a channel that this thread listens to.
         let (poke, mut pokes) = futures_channel::mpsc::unbounded::<()>();
-        p.connect_g_signal(move |_, _, signal, _| {
+        let handler = p.connect_g_signal(move |_, _, signal, _| {
             if matches!(signal, "WindowsChanged" | "RunningApplicationsChanged") {
                 let _ = poke.unbounded_send(());
             }
         });
-        let (p2, on2) = (p.clone(), on.clone());
-        glib::spawn_future_local(async move {
-            while pokes.next().await.is_some() {
-                poll(&p2, &on2).await;
-            }
-        });
+        let _signals = SignalConnection(p.clone(), Some(handler));
         loop {
             poll(&p, &on).await;
-            glib::timeout_future(Duration::from_secs(2)).await;
+            // One task owns all work; signals cannot create overlapping reads.
+            futures_util::future::select(
+                Box::pin(pokes.next()),
+                Box::pin(glib::timeout_future(Duration::from_secs(2))),
+            )
+            .await;
         }
-    });
+    }))
 }
 
 pub fn focus_window(id: &str) {

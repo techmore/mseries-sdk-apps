@@ -1,0 +1,80 @@
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+GTK font profile: Sans 10
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+dbus-daemon[16247]: [session uid=0 pid=16247 pidfd=5] Activating service name='org.a11y.Bus' requested by ':1.1' (uid=0 pid=16264 comm="/work/target/debug/msdk-sdksettings --screenshot /" label="unconfined")
+dbus-daemon[16247]: [session uid=0 pid=16247 pidfd=5] Successfully activated service 'org.a11y.Bus'
+dbus-daemon[16292]: Activating service name='org.a11y.atspi.Registry' requested by ':1.0' (uid=0 pid=16264 comm="/work/target/debug/msdk-sdksettings --screenshot /" label="unconfined")
+dbus-daemon[16292]: Successfully activated service 'org.a11y.atspi.Registry'
+SpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+GTK font profile: Sans 10
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+dbus-daemon[16321]: [session uid=0 pid=16321 pidfd=5] Activating service name='org.a11y.Bus' requested by ':1.1' (uid=0 pid=16338 comm="/work/target/debug/msdk-sdksettings --screenshot /" label="unconfined")
+dbus-daemon[16321]: [session uid=0 pid=16321 pidfd=5] Successfully activated service 'org.a11y.Bus'
+dbus-daemon[16366]: Activating service name='org.a11y.atspi.Registry' requested by ':1.0' (uid=0 pid=16338 comm="/work/target/debug/msdk-sdksettings --screenshot /" label="unconfined")
+dbus-daemon[16366]: Successfully activated service 'org.a11y.atspi.Registry'
+SpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+GTK font profile: Sans 15
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+dbus-daemon[16396]: [session uid=0 pid=16396 pidfd=5] Activating service name='org.a11y.Bus' requested by ':1.1' (uid=0 pid=16413 comm="/work/target/debug/msdk-sdksettings --screenshot /" label="unconfined")
+dbus-daemon[16396]: [session uid=0 pid=16396 pidfd=5] Successfully activated service 'org.a11y.Bus'
+dbus-daemon[16441]: Activating service name='org.a11y.atspi.Registry' requested by ':1.0' (uid=0 pid=16413 comm="/work/target/debug/msdk-sdksettings --screenshot /" label="unconfined")
+dbus-daemon[16441]: Successfully activated service 'org.a11y.atspi.Registry'
+SpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+GTK font profile: Sans 15
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+dbus-daemon[16470]: [session uid=0 pid=16470 pidfd=5] Activating service name='org.a11y.Bus' requested by ':1.1' (uid=0 pid=16487 comm="/work/target/debug/msdk-sdksettings --screenshot /" label="unconfined")
+dbus-daemon[16470]: [session uid=0 pid=16470 pidfd=5] Successfully activated service 'org.a11y.Bus'
+dbus-daemon[16515]: Activating service name='org.a11y.atspi.Registry' requested by ':1.0' (uid=0 pid=16487 comm="/work/target/debug/msdk-sdksettings --screenshot /" label="unconfined")
+dbus-daemon[16515]: Successfully activated service 'org.a11y.atspi.Registry'
+SpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+GTK font profile: Sans 10
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+dbus-daemon[16544]: [session uid=0 pid=16544 pidfd=5] Activating service name='org.a11y.Bus' requested by ':1.1' (uid=0 pid=16561 comm="/work/target/debug/msdk-sdksettings --screenshot /" label="unconfined")
+dbus-daemon[16544]: [session uid=0 pid=16544 pidfd=5] Successfully activated service 'org.a11y.Bus'
+dbus-daemon[16589]: Activating service name='org.a11y.atspi.Registry' requested by ':1.0' (uid=0 pid=16561 comm="/work/target/debug/msdk-sdksettings --screenshot /" label="unconfined")
+dbus-daemon[16589]: Successfully activated service 'org.a11y.atspi.Registry'
+SpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+GTK font profile: Sans 10
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+dbus-daemon[16618]: [session uid=0 pid=16618 pidfd=5] Activating service name='org.a11y.Bus' requested by ':1.1' (uid=0 pid=16635 comm="/work/target/debug/msdk-sdksettings --screenshot /" label="unconfined")
+dbus-daemon[16618]: [session uid=0 pid=16618 pidfd=5] Successfully activated service 'org.a11y.Bus'
+dbus-daemon[16663]: Activating service name='org.a11y.atspi.Registry' requested by ':1.0' (uid=0 pid=16635 comm="/work/target/debug/msdk-sdksettings --screenshot /" label="unconfined")
+dbus-daemon[16663]: Successfully activated service 'org.a11y.atspi.Registry'
+SpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+GTK font profile: Sans 15
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+dbus-daemon[16693]: [session uid=0 pid=16693 pidfd=5] Activating service name='org.a11y.Bus' requested by ':1.1' (uid=0 pid=16710 comm="/work/target/debug/msdk-sdksettings --screenshot /" label="unconfined")
+dbus-daemon[16693]: [session uid=0 pid=16693 pidfd=5] Successfully activated service 'org.a11y.Bus'
+dbus-daemon[16738]: Activating service name='org.a11y.atspi.Registry' requested by ':1.0' (uid=0 pid=16710 comm="/work/target/debug/msdk-sdksettings --screenshot /" label="unconfined")
+dbus-daemon[16738]: Successfully activated service 'org.a11y.atspi.Registry'
+SpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+GTK font profile: Sans 15
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+dbus-daemon[16767]: [session uid=0 pid=16767 pidfd=5] Activating service name='org.a11y.Bus' requested by ':1.1' (uid=0 pid=16784 comm="/work/target/debug/msdk-sdksettings --screenshot /" label="unconfined")
+dbus-daemon[16767]: [session uid=0 pid=16767 pidfd=5] Successfully activated service 'org.a11y.Bus'
+dbus-daemon[16812]: Activating service name='org.a11y.atspi.Registry' requested by ':1.0' (uid=0 pid=16784 comm="/work/target/debug/msdk-sdksettings --screenshot /" label="unconfined")
+dbus-daemon[16812]: Successfully activated service 'org.a11y.atspi.Registry'
+SpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry

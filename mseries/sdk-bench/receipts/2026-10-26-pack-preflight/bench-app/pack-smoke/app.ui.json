@@ -1,0 +1,31 @@
+{
+  "sdk": 1,
+  "app": { "id": "io.github.techmore.PackSmoke", "name": "pack smoke", "icon": "preferences-system" },
+  "capabilities": ["filesystem:data"],
+  "state": { "enabled": "bool", "schedule": "text", "show_hint": "bool" },
+  "initial": { "enabled": true, "schedule": "Weekdays", "show_hint": false },
+  "persist": ["enabled", "schedule"],
+  "messages": { "SetEnabled": "bool", "SetSchedule": "text", "Reset": "none" },
+  "update": {
+    "SetEnabled": [{ "set": "enabled", "to": "$payload" }, { "toast": "Saved" }],
+    "SetSchedule": [{ "set": "schedule", "to": "$payload" }, { "toast": "Saved" }],
+    "Reset": [{ "set": "enabled", "to": true }, { "set": "schedule", "to": "Weekdays" }, { "toast": "Settings reset" }]
+  },
+  "surfaces": {
+    "main": {
+      "kind": "window",
+      "title": "pack smoke",
+      "body": {
+        "type": "Box", "direction": "column", "spacing": "large",
+        "children": [
+          { "type": "Text", "text": "Work mode", "text_style": "title" },
+          { "type": "Card", "children": [
+            { "type": "Switch", "label": "Turn on work mode", "bind": "enabled", "on_change": "SetEnabled" },
+            { "type": "Dropdown", "label": "Schedule", "bind": "schedule", "options": ["Weekdays", "Every day", "Manual"], "on_change": "SetSchedule" }
+          ] },
+          { "type": "Button", "label": "Reset to defaults", "on": "Reset", "button_style": "flat" }
+        ]
+      }
+    }
+  }
+}

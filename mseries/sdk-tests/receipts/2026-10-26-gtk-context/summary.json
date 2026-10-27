@@ -1,0 +1,36 @@
+{
+  "schema": "msdk.validation.v1",
+  "source_commit": "6b7c5058c3d23cfee771da97c8ef66f2f9335c64",
+  "source_files_matched": 80,
+  "environment": "isolated Ubuntu26.04 x86_64 Rust1.93.1 GTK4.22.4 private Xvfb/D-Bus, synthetic app state",
+  "core_tests_passed_linux": 100,
+  "core_tests_passed_macos": 100,
+  "native_suites_passed": 3,
+  "strict_core_native_clippy": "passed",
+  "typed_gtk_context_cases": [
+    "obsolete queued success and error ignored",
+    "context binding shared with Host clone for synchronous invoke Err",
+    "context retained through additional queued error callback",
+    "rebinding rejected",
+    "current recovery updates actual visible GTK labels",
+    "bound then declined request cannot execute real unscoped fallback",
+    "provider stop retires context and Host releases despite retained reply clones"
+  ],
+  "prior_arm_pass": {
+    "head_sha": "7a5f4d27deeabf6334ba9c3d441e39eb0374ed3a",
+    "developer_path_run": 40375089386,
+    "developer_path_job": 121755848259,
+    "sdk_system_monitor_run": 40375089841,
+    "conclusion": "success",
+    "scope": "completed prior foundation; newer GTK context source still needs current CI"
+  },
+  "not_proven": [
+    "automatic scope for legacy/built-in/pre-invoke negotiation/feed/streaming/T3 adapters",
+    "real backend version/account/read lifecycle qualification",
+    "current ARM context code until new CI completes",
+    "reusable status module and both hosts",
+    "controlled model/novice trials and performance",
+    "physical Pantheon/M-series/scale/owner acceptance",
+    "whole SDK completion"
+  ]
+}

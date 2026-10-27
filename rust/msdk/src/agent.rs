@@ -35,6 +35,9 @@ fn props_json(ps: &[Prop]) -> Value {
 
 /// Describes a component, surface kind, service, feed or enum, with a minimal valid example.
 pub fn describe(name: &str) -> Option<Value> {
+    if name == "runtime" {
+        return Some(crate::runtime::description());
+    }
     if let Some(c) = vocab::component(name) {
         let mut ex = serde_json::Map::new();
         ex.insert("type".into(), json!(c.name));
@@ -73,6 +76,7 @@ pub fn describe(name: &str) -> Option<Value> {
 /// Every name `describe` knows, for "what can I use?".
 pub fn catalogue() -> Value {
     json!({
+        "runtime": crate::runtime::description(),
         "components": vocab::COMPONENTS.iter().map(|c| json!({ "name": c.name, "about": c.about })).collect::<Vec<_>>(),
         "surfaces": vocab::SURFACES.iter().map(|s| json!({ "name": s.name, "role": s.role })).collect::<Vec<_>>(),
         "services": vocab::services().into_iter().map(|s| json!({ "name": s.name, "about": s.about })).collect::<Vec<_>>(),
@@ -301,10 +305,19 @@ fn complete_update(doc: &Value, segs: &[String], state: &[(String, String)]) -> 
 
 /// One-paragraph explanation and the usual repair for each diagnostic code.
 pub fn explain(code: &str) -> Option<&'static str> {
+    if let Some(kind) = crate::runtime::FailureKind::ALL.iter().find(|kind| kind.code() == code) {
+        return Some(kind.message());
+    }
     Some(match code {
         "bad-json" => "The file is not valid JSON. Check commas, quotes and brackets near the reported line.",
+        "missing-input" => "Supply at least one app description to check.",
+        "service-manifest" => {
+            "A service manifest could not be read or validated. Fix its path, version or declarations, then retry; the command did not continue with an incomplete contract."
+        }
         "not-object" => "The document, a component or an action must be a JSON object { ... }.",
-        "unsupported-sdk-version" => "Add \"sdk\": 1 at the top of the document.",
+        "unsupported-sdk-version" => {
+            "Declare the supported sdk format for a new document. For an incompatible existing document, use a compatible SDK or migrate its content; do not just relabel the version."
+        }
         "unknown-property" => {
             "That key is not part of this component or section. The fix line suggests the nearest valid name; `msdk describe <Name>` lists them all."
         }

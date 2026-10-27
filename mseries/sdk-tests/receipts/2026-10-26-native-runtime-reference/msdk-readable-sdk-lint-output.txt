@@ -1,0 +1,3 @@
+    Checking msdk-gtk v0.1.0 (/work/sdk/msdk-gtk)
+    Checking msdk v0.1.0 (/work/sdk/msdk)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.15s

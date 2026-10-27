@@ -8,6 +8,9 @@ agent) to produce the "before" column.
 - [RUBRIC.md](RUBRIC.md): what is recorded per run and how screenshots are judged.
 - [BASELINE.md](BASELINE.md): what is known about current cost, what is not, and how to measure it.
 - [specs/](specs/): six one-page app specs, ordered easy to hard. Each names the existing app that is its golden reference.
+- [RUNNER.md](RUNNER.md): SDK-mode authoring discovery in a non-root/offline sandbox;
+  harness preflight is retained, while model admission and independently scored
+  full-spec/baseline comparisons remain separate gates.
 
 Rules: a spec is never edited after a run has been recorded against it (add `-v2` instead);
 a run records the model, runner, date and commit; failed runs are kept.

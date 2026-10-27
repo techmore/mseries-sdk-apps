@@ -1,0 +1,3 @@
+e68aefa505ea9f16eeb8d475d6997f4340cd10e3cfe31b9d504ed92e78c91feb  /work/target/debug/msdk-sdksettings
+e68aefa505ea9f16eeb8d475d6997f4340cd10e3cfe31b9d504ed92e78c91feb  /usr/bin/io.github.techmore.SdkSettings
+ebc6015c44c2adc4ebe394ef3f0561edfab0ab5900b3230130e95a0feb69f317  /work/evidence/final/settings.deb

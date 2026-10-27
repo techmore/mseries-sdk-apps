@@ -1,0 +1,4 @@
+86762f3b3477d2fff1d29fd8a1aab86db2948e0cbd50acfd45903ffa307101ca  mseries/sdk-bench/worker.py
+76ae4ab8fb952842164e5dc09ff42b4dbfd236079953d8643b08ec1fd92d8a59  mseries/sdk-bench/capture.py
+364bdc7deb918a90d51ffcd4ad52a50850ef7b74e00cd23d64e4371e82903751  mseries/sdk-bench/run-model.py
+ee8256dc20a3c9491f030904a6d9cab58f70e26fb932b814084098846d25d808  mseries/sdk-bench/fixtures/noquit.py

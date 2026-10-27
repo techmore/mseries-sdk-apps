@@ -219,15 +219,15 @@ fn mcp_tools_carry_risk_scope_and_the_manifest_hash() {
     let tools = intents::mcp_tools(&doc).unwrap();
     let tools = tools["tools"].as_array().unwrap();
     let get = |n: &str| tools.iter().find(|t| t["name"] == n).unwrap_or_else(|| panic!("no tool {n}"));
-    let send = get("claudepantheonrs_send");
+    let send = get("claudepantheonsdk_send");
     assert_eq!(send["annotations"]["readOnlyHint"], false);
     assert_eq!(send["annotations"]["destructiveHint"], true);
     assert_eq!(send["_meta"]["x-mseries-confirm"], true);
     assert_eq!(send["_meta"]["x-mseries-manifest"], hash);
-    let list = get("claudepantheonrs_list_thread");
+    let list = get("claudepantheonsdk_list_thread");
     assert_eq!(list["annotations"]["readOnlyHint"], true);
     assert_eq!(list["_meta"]["x-mseries-scope"], "chat.read");
-    let select = get("claudepantheonrs_select_thread");
+    let select = get("claudepantheonsdk_select_thread");
     assert_eq!(select["inputSchema"]["required"], json!(["thread"]));
 }
 

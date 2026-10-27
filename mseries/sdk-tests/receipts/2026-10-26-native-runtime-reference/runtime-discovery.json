@@ -1,0 +1,86 @@
+{
+  "runtime": "msdk",
+  "rust_package_version": "0.1.0",
+  "app_description_format": 1,
+  "service_manifest_format": 1,
+  "extension_api_version": 1,
+  "diagnostic_schema": "msdk.runtime.diagnostic.v1",
+  "typed_failure": "msdk::runtime::ServiceFailure",
+  "request_context": {
+    "owner": "msdk::context::RequestContext",
+    "token": "ContextToken",
+    "delivery": "Scoped::into_current on the state-owner thread",
+    "process_api": "msdk::process::spawn_scoped",
+    "gtk_adapter_automatic": false,
+    "streaming_automatic": false
+  },
+  "failure_codes": [
+    {
+      "code": "service-unavailable",
+      "recovery": "This service is unavailable. Check its installation and retry."
+    },
+    {
+      "code": "service-version-mismatch",
+      "recovery": "The app and service use incompatible APIs. Update them and retry."
+    },
+    {
+      "code": "service-permission-denied",
+      "recovery": "Access was denied. Check the service permissions and retry."
+    },
+    {
+      "code": "service-invalid-input",
+      "recovery": "The operation has invalid inputs. Correct them and retry."
+    },
+    {
+      "code": "service-malformed-data",
+      "recovery": "The service returned invalid data. Retry or update the service."
+    },
+    {
+      "code": "service-io-failure",
+      "recovery": "The operation could not read or write its data. Retry the operation."
+    },
+    {
+      "code": "process-failed",
+      "recovery": "The command failed. Check its output and retry."
+    },
+    {
+      "code": "process-timeout",
+      "recovery": "The command exceeded its time limit and was stopped. Retry when ready."
+    },
+    {
+      "code": "process-output-limit",
+      "recovery": "The command exceeded its output limit and was stopped."
+    },
+    {
+      "code": "service-cancelled",
+      "recovery": "The operation was cancelled."
+    },
+    {
+      "code": "service-busy",
+      "recovery": "Too many operations are running. Wait for one to finish and retry."
+    }
+  ],
+  "extension_negotiation": "Services::api_version is checked before calls/feeds; backend OS/network protocols require their own published contract",
+  "process": {
+    "rust_api": "msdk::process::{spawn, Limits}",
+    "description_service": "process.run",
+    "default_timeout_ms": 120000,
+    "default_combined_output_bytes": 1048576,
+    "host_max_concurrent": 4,
+    "owned_handle_drop": "cancel same-group work and reap leader",
+    "streaming": false,
+    "rust_streaming": {
+      "api": "msdk::process::spawn_streaming",
+      "queue_chunks": 32,
+      "max_chunk_bytes": 8192,
+      "backpressure": "stop with process-output-limit",
+      "drop_subscription": "cancel owned command",
+      "partial_output": "already received or queued raw bytes survive terminal failure"
+    },
+    "privileged_or_daemon_jobs": "use an OS-owned service adapter"
+  },
+  "privacy": {
+    "diagnostic_payloads": false,
+    "private_ui_detail": "ServiceFailure::detail()"
+  }
+}

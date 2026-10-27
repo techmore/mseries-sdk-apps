@@ -1,0 +1,8 @@
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+dbus-daemon[4852]: [session uid=2000 pid=4852 pidfd=5] Activating service name='org.a11y.Bus' requested by ':1.1' (uid=2000 pid=4854 comm="/usr/bin/python3 /opt/msdk-bench/noquit.py" label="unconfined")
+dbus-daemon[4852]: [session uid=2000 pid=4852 pidfd=5] Successfully activated service 'org.a11y.Bus'
+dbus-daemon[4893]: Activating service name='org.a11y.atspi.Registry' requested by ':1.0' (uid=2000 pid=4854 comm="/usr/bin/python3 /opt/msdk-bench/noquit.py" label="unconfined")
+dbus-daemon[4893]: Successfully activated service 'org.a11y.atspi.Registry'
+SpiRegistry daemon is running with well-known name - org.a11y.atspi.Registry
+{"mapped_seconds": 0.26584711589384824, "captured_seconds": 0.8346980599453673, "frame_bytes": 2773, "ctrl_q_clean": false, "content_review": "pending independent review"}

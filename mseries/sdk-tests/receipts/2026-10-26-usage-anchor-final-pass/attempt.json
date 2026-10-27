@@ -1,0 +1,52 @@
+{
+  "binary_sha256": "b057233bf8040c16c4f90f05f9bc5e10a255e4bbbc6cdaffc2a79dd9348b1ea2",
+  "environment": "isolated X11 / private D-Bus / synthetic data",
+  "checks": [
+    "hover opens without stealing focus and pointer travel stays open",
+    "unpinned popup closes after pointer leaves",
+    "hover-to-click pins; outside click dismisses; closed popup does not poll",
+    "keyboard activation opens; Escape dismisses and restores focus",
+    "Ctrl+Q closes cleanly"
+  ],
+  "window_geometry": {
+    "WINDOW": "2097157",
+    "X": "0",
+    "Y": "0",
+    "WIDTH": "480",
+    "HEIGHT": "500",
+    "SCREEN": "0"
+  },
+  "gtk_anchor_bounds": {
+    "x": 392.0,
+    "y": 454.0,
+    "width": 76.0,
+    "height": 34.0
+  },
+  "gtk_anchor_center": [
+    430,
+    471
+  ],
+  "anchor_center": [
+    "38",
+    "17"
+  ],
+  "pointer_after_hover": "X=430\nY=471\nSCREEN=0\nWINDOW=0",
+  "gtk_popup_bounds": {
+    "x": 291.0,
+    "y": 335.0,
+    "width": 278.0,
+    "height": 123.0
+  },
+  "x11_windows_before_travel": "\nxwininfo: Window id: 0x21f (the root window) (has no name)\n\n  Root window id: 0x21f (the root window) (has no name)\n  Parent window id: 0x0 (none)\n     4 children:\n     0x20001e \"usage_anchor_interactive\": (\"usage_anchor_interactive\" \"usage_anchor_interactive\")  278x123+291+335  +291+335\n        1 child:\n        0x20001f (has no name): ()  1x1+-1+-1  +290+334\n     0x20000a (has no name): ()  1x1+-1+-1  +-1+-1\n     0x200005 \"Usage status anchor test\": (\"usage_anchor_interactive\" \"usage_anchor_interactive\")  480x500+0+0  +0+0\n        1 child:\n        0x200006 (has no name): ()  1x1+-1+-1  +-1+-1\n     0x200003 \"usage_anchor_interactive\": (\"usage_anchor_interactive\" \"usage_anchor_interactive\")  1x1+0+0  +0+0\n        1 child:\n        0x200004 (has no name): ()  1x1+-1+-1  +-1+-1\n\n",
+  "x11_pointer_child": {
+    "ok": true,
+    "child": "0x20001e",
+    "root_x": 430,
+    "root_y": 396
+  },
+  "pointer_after_travel": "X=430\nY=396\nSCREEN=0\nWINDOW=0",
+  "x11_windows_after_travel": "\nxwininfo: Window id: 0x21f (the root window) (has no name)\n\n  Root window id: 0x21f (the root window) (has no name)\n  Parent window id: 0x0 (none)\n     4 children:\n     0x20001e \"usage_anchor_interactive\": (\"usage_anchor_interactive\" \"usage_anchor_interactive\")  278x123+291+335  +291+335\n        1 child:\n        0x20001f (has no name): ()  1x1+-1+-1  +290+334\n     0x20000a (has no name): ()  1x1+-1+-1  +-1+-1\n     0x200005 \"Usage status anchor test\": (\"usage_anchor_interactive\" \"usage_anchor_interactive\")  480x500+0+0  +0+0\n        1 child:\n        0x200006 (has no name): ()  1x1+-1+-1  +-1+-1\n     0x200003 \"usage_anchor_interactive\": (\"usage_anchor_interactive\" \"usage_anchor_interactive\")  1x1+0+0  +0+0\n        1 child:\n        0x200004 (has no name): ()  1x1+-1+-1  +-1+-1\n\n",
+  "result": "pass",
+  "process_stdout": "",
+  "process_stderr": "libEGL warning: DRI3 error: Could not get DRI3 device\nlibEGL warning: Ensure your X server supports DRI3 to get accelerated rendering\nanchor trace: anchor enter\nanchor trace: anchor leave\nanchor trace: popup enter\nanchor trace: popup leave\nanchor trace: popup closed\nanchor trace: anchor enter\nanchor trace: popup closed\nanchor trace: anchor leave\nanchor trace: popup enter\nanchor trace: popup leave\nanchor trace: popup closed\nanchor trace: popup enter\nanchor trace: popup closed\n"
+}
