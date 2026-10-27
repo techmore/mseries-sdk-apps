@@ -186,6 +186,19 @@ impl Provider {
         }
     }
 
+    /// One word for the provider's state: ready, disabled, not installed, else the auth state.
+    pub fn state_text(&self) -> String {
+        if self.ready() {
+            "ready".into()
+        } else if !self.enabled {
+            "disabled".into()
+        } else if !self.installed {
+            "not installed".into()
+        } else {
+            self.auth_text()
+        }
+    }
+
     pub fn auth_text(&self) -> String {
         match &self.auth {
             Value::String(s) => s.clone(),

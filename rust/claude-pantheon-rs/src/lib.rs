@@ -25,6 +25,7 @@ pub mod plugin_pages;
 pub mod plugin_repos;
 pub mod plugin_shiplog;
 pub mod probe;
+pub mod provider_status;
 pub mod quota;
 pub mod quota_view;
 pub mod render;

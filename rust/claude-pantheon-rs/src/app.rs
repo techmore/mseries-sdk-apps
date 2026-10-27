@@ -5,6 +5,7 @@
 use crate::chat::{self, label};
 use crate::index::{self, Session};
 use crate::look::{now_unix, tilde};
+use crate::provider_status;
 use crate::t3::attach;
 use crate::t3::model::Project;
 use crate::t3::model::{Provider, ServerConfig, Shell, ThreadShell, ThreadView, TurnItem};
@@ -271,6 +272,7 @@ impl App {
                 ("Open Offline Twin", "win.offline"),
                 ("Close Thread", "win.close-thread"),
                 ("Terminal", "win.terminal"),
+                ("AI Providers", "win.providers"),
                 ("SnapShot (attach a screenshot)", "win.snapshot"),
             ]),
         );
@@ -654,6 +656,7 @@ impl App {
             ("settings", &["<Control>comma"], Box::new(|a| a.settings())),
             ("reconnect", &[], Box::new(|a| a.connect_stored())),
             ("forget", &[], Box::new(|a| a.forget())),
+            ("providers", &[], Box::new(|a| a.providers_window())),
             ("about", &[], Box::new(|a| a.about())),
             ("quit", &["<Control>q"], Box::new(|a| a.window.close())),
             ("zoom-in", &["<Control>plus", "<Control>equal", "<Control>KP_Add"], Box::new(|a| a.zoom_by(0.1))),
@@ -778,6 +781,7 @@ impl App {
             ("Open offline twin", "offline"),
             ("Reconnect", "reconnect"),
             ("Close thread", "close-thread"),
+            ("AI Providers", "providers"),
             ("About Claude", "about"),
         ] {
             out.push(Entry { title: title.into(), kind: "Action".into(), action: Action::WindowAction(action.into()) });
@@ -963,6 +967,47 @@ impl App {
             self.select_provider(&p, None);
         }
         self.select_mode(&mode);
+    }
+
+    /// AI Providers: the server's provider state, with a Refresh that asks the server to re-probe.
+    fn providers_window(self: &Rc<Self>) {
+        let window = gtk::Window::builder()
+            .transient_for(&self.window)
+            .title("AI Providers")
+            .default_width(560)
+            .default_height(420)
+            .build();
+        let header = gtk::HeaderBar::builder().show_title_buttons(true).build();
+        header.add_css_class(granite::STYLE_CLASS_FLAT);
+        let refresh = gtk::Button::from_icon_name("view-refresh-symbolic");
+        refresh.set_tooltip_text(Some("Ask the server to re-check every provider"));
+        refresh.update_property(&[gtk::accessible::Property::Label("Refresh providers")]);
+        header.pack_end(&refresh);
+        window.set_titlebar(Some(&header));
+        let holder = gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never).vexpand(true).build();
+        holder.set_margin_top(12);
+        holder.set_margin_bottom(12);
+        holder.set_margin_start(16);
+        holder.set_margin_end(16);
+        holder.set_child(Some(&provider_status::list(&self.providers.borrow())));
+        window.set_child(Some(&holder));
+        let app = self.clone();
+        let weak = holder.downgrade();
+        refresh.connect_clicked(move |b| {
+            let Some(rpc) = app.conn.borrow().as_ref().map(|c| c.rpc.clone()) else { return };
+            b.set_sensitive(false);
+            let (app, weak, b) = (app.clone(), weak.clone(), b.clone());
+            glib::spawn_future_local(async move {
+                let _ = rpc.call("server.refreshProviders", json!({})).await;
+                glib::timeout_future(std::time::Duration::from_secs(2)).await;
+                app.reload_config().await;
+                if let Some(holder) = weak.upgrade() {
+                    holder.set_child(Some(&provider_status::list(&app.providers.borrow())));
+                }
+                b.set_sensitive(true);
+            });
+        });
+        window.present();
     }
 
     /// About: version, server and provider state, in a Granite-styled dialog.
@@ -2924,15 +2969,7 @@ impl App {
         let names: Vec<String> = providers
             .iter()
             .map(|p| {
-                let state = if p.ready() {
-                    "ready".to_string()
-                } else if !p.enabled {
-                    "disabled".to_string()
-                } else if !p.installed {
-                    "not installed".to_string()
-                } else {
-                    p.auth_text()
-                };
+                let state = p.state_text();
                 format!("{} · {}", p.name(), state)
             })
             .collect();
