@@ -126,6 +126,30 @@ fn timed_out() -> RpcError {
     )
 }
 
+/// Whether a notification can change saved history: a message, an edit, a
+/// delete or reaction (all `dataMessage`/`editMessage`), a message sent from
+/// another device or a read sync (`syncMessage`), or a receipt. Typing
+/// indicators and call events cannot.
+pub fn event_affects_history(event: &Value) -> bool {
+    if event["method"].as_str() != Some("receive") {
+        return false;
+    }
+    let params = &event["params"];
+    let envelope = if params["result"].is_object() {
+        &params["result"]["envelope"]
+    } else {
+        &params["envelope"]
+    };
+    [
+        "dataMessage",
+        "editMessage",
+        "syncMessage",
+        "receiptMessage",
+    ]
+    .iter()
+    .any(|member| envelope[*member].is_object())
+}
+
 /// `send` parameters: a direct recipient or a group id.
 pub fn send_params(account: &str, conversation: &str, is_group: bool, text: &str) -> Value {
     let mut params = json!({"account": account, "message": text});
@@ -173,6 +197,28 @@ mod tests {
             send_params("+1", "grp==", true, "hi"),
             json!({"account": "+1", "groupId": "grp==", "message": "hi"})
         );
+    }
+
+    #[test]
+    fn only_history_changing_events_count() {
+        let wrap =
+            |member: &str| json!({"method": "receive", "params": {"envelope": {member: {}}}});
+        for member in [
+            "dataMessage",
+            "editMessage",
+            "syncMessage",
+            "receiptMessage",
+        ] {
+            assert!(event_affects_history(&wrap(member)), "{member}");
+        }
+        assert!(!event_affects_history(&wrap("typingMessage")));
+        assert!(!event_affects_history(
+            &json!({"method": "callEvent", "params": {}})
+        ));
+        // The `result` wrapper some signal-cli versions use.
+        assert!(event_affects_history(
+            &json!({"method": "receive", "params": {"result": {"envelope": {"dataMessage": {}}}}})
+        ));
     }
 
     #[test]

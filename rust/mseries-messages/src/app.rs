@@ -605,6 +605,14 @@ pub struct App {
     signal_enabled: Cell<bool>,
     signal_loading: Cell<bool>,
     signal_loaded_at: Cell<Option<std::time::Instant>>,
+    /// Wakes the app when the Signal daemon reports a history-changing event.
+    signal_listener: RefCell<Option<signal::live::Listener>>,
+    signal_reload_scheduled: Cell<bool>,
+    /// Events heard since start (used by the isolated GUI test).
+    signal_events_heard: Cell<u64>,
+    /// Signal threads opened here: key -> last message handle seen. The Pantheon
+    /// client owns the saved read state; this only keeps the list quiet meanwhile.
+    signal_seen: RefCell<HashMap<String, String>>,
     history_render_generation: Cell<u64>,
     editor: gtk::TextView,
     send_button: gtk::Button,
@@ -1135,6 +1143,10 @@ impl App {
             signal_enabled: Cell::new(preferences::load_show_signal()),
             signal_loading: Cell::new(false),
             signal_loaded_at: Cell::new(None),
+            signal_listener: RefCell::new(None),
+            signal_reload_scheduled: Cell::new(false),
+            signal_events_heard: Cell::new(0),
+            signal_seen: RefCell::new(HashMap::new()),
             history_render_generation: Cell::new(0),
             editor,
             send_button,
@@ -1177,6 +1189,7 @@ impl App {
         app.connect_responsive_layout();
         app.watch_history();
         app.install_refresh_controls();
+        app.install_signal_live();
         app.window.present();
         app.refresh_recent();
         Some(app)
@@ -2219,6 +2232,75 @@ impl App {
         *self.history_subscription.borrow_mut() = Some(id);
     }
 
+    /// Signal does not wait for BlueFerry: it is read at start, every 20 seconds,
+    /// and a moment after the Signal daemon reports a message, edit, delete,
+    /// reaction or receipt.
+    fn install_signal_live(self: &Rc<Self>) {
+        let listener = signal::live::Listener::start(|| {
+            let layout = signal::service::Layout::detect();
+            vec![layout.own_socket, layout.client_socket]
+        });
+        self.signal_listener.replace(Some(listener));
+        let weak = Rc::downgrade(self);
+        glib::timeout_add_local(Duration::from_millis(400), move || {
+            let Some(app) = weak.upgrade() else {
+                return glib::ControlFlow::Break;
+            };
+            let mut heard = 0;
+            if let Some(listener) = app.signal_listener.borrow().as_ref() {
+                while listener.events.try_recv().is_ok() {
+                    heard += 1;
+                }
+            }
+            if heard > 0 {
+                app.signal_events_heard
+                    .set(app.signal_events_heard.get() + heard);
+                app.schedule_signal_reload();
+            }
+            glib::ControlFlow::Continue
+        });
+        let weak = Rc::downgrade(self);
+        glib::timeout_add_seconds_local(20, move || {
+            let Some(app) = weak.upgrade() else {
+                return glib::ControlFlow::Break;
+            };
+            if app.window.is_mapped() {
+                app.refresh_signal();
+            }
+            glib::ControlFlow::Continue
+        });
+        self.refresh_signal();
+    }
+
+    /// Re-read the saved history shortly after an event, once per burst: the
+    /// Pantheon client saves right after it applies the event.
+    fn schedule_signal_reload(self: &Rc<Self>) {
+        if self.signal_reload_scheduled.replace(true) {
+            return;
+        }
+        let weak = Rc::downgrade(self);
+        glib::timeout_add_local_once(Duration::from_millis(1200), move || {
+            if let Some(app) = weak.upgrade() {
+                app.signal_reload_scheduled.set(false);
+                app.signal_loaded_at.set(None);
+                app.refresh_signal();
+            }
+        });
+    }
+
+    /// Total unread across every channel, shown on the dock icon.
+    fn update_dock_badge(&self) {
+        let unread = self
+            .state
+            .borrow()
+            .threads
+            .iter()
+            .fold(0_u64, |total, thread| {
+                total.saturating_add(thread.unread() as u64)
+            });
+        self.dock_badge.set_count(unread);
+    }
+
     /// Reads Signal conversations off the main thread (the keyring lookup and
     /// decryption are slow) and merges them into the list when they arrive.
     /// Looks at most every few seconds, however often the list refreshes.
@@ -2286,7 +2368,19 @@ impl App {
             drop(signal_threads);
             state.outbox.retain(|entry| !echoed.contains(&entry.id));
             let added = if self.signal_enabled.get() {
-                let threads = self.signal_threads.borrow().clone();
+                let mut threads = self.signal_threads.borrow().clone();
+                {
+                    let seen = self.signal_seen.borrow();
+                    for thread in &mut threads {
+                        let last = thread.messages.last().map(|m| m.handle.as_str());
+                        if seen.get(&thread.key).map(String::as_str) == last && last.is_some() {
+                            thread.unread_count = 0;
+                            for message in &mut thread.messages {
+                                message.read = true;
+                            }
+                        }
+                    }
+                }
                 let any = !threads.is_empty();
                 state.threads.extend(threads);
                 any
@@ -2309,6 +2403,7 @@ impl App {
                     }),
             )
         };
+        self.update_dock_badge();
         if !changed {
             return;
         }
@@ -2532,12 +2627,9 @@ impl App {
                         app.read_markers.borrow_mut().retain(|key, _| {
                             state.threads.iter().any(|thread| &thread.key == key)
                         });
-                        let unread_count = state.threads.iter().fold(0_u64, |total, thread| {
-                            total.saturating_add(thread.unread() as u64)
-                        });
-                        app.dock_badge.set_count(unread_count);
                         reconcile_outbox(&mut state);
                         drop(state);
+                        app.update_dock_badge();
                         app.sync_phone_pin_profile(status.phone_profile_id.clone());
                         app.rebuild_sidebar();
                         app.load_contact_photos();
@@ -3394,6 +3486,28 @@ impl App {
         if !self.window.is_active() {
             return;
         }
+        let signal_unread = {
+            let state = self.state.borrow();
+            state
+                .threads
+                .iter()
+                .find(|thread| {
+                    state.selected.as_deref() == Some(thread.key.as_str())
+                        && thread.key.starts_with(signal::THREAD_PREFIX)
+                        && thread.unread() > 0
+                })
+                .and_then(|thread| {
+                    thread
+                        .messages
+                        .last()
+                        .map(|message| (thread.key.clone(), message.handle.clone()))
+                })
+        };
+        if let Some((key, handle)) = signal_unread {
+            self.signal_seen.borrow_mut().insert(key, handle);
+            self.apply_signal_threads();
+            return;
+        }
         let thread = {
             let state = self.state.borrow();
             state
@@ -3768,7 +3882,8 @@ impl App {
                 buffer.set_text(&draft);
             }
         } else {
-            let backend_available = self.backend_available.get();
+            let backend_available =
+                self.backend_available.get() || !self.signal_threads.borrow().is_empty();
             self.conversation_title.set_text(if backend_available {
                 "Select a conversation"
             } else {
@@ -5371,6 +5486,87 @@ mod tests {
         app.editor.buffer().set_text("");
     }
 
+    /// Signal shows and updates with BlueFerry offline: a daemon event wakes the
+    /// app, and opening a conversation quiets its unread count. Runs inside the offline GUI test.
+    fn assert_signal_live(app: &std::rc::Rc<super::App>) {
+        use std::io::Write;
+        let layout = crate::signal::service::Layout::detect();
+        std::fs::create_dir_all(layout.client_socket.parent().unwrap()).unwrap();
+        std::fs::remove_file(&layout.client_socket).ok();
+        let server = std::os::unix::net::UnixListener::bind(&layout.client_socket).unwrap();
+        server.set_nonblocking(true).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        let mut stream = loop {
+            if let Ok((stream, _)) = server.accept() {
+                break stream;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the app did not attach to the Signal daemon"
+            );
+            gtk::glib::MainContext::default().iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        stream.set_nonblocking(false).unwrap();
+        let heard = app.signal_events_heard.get();
+        writeln!(
+            stream,
+            r#"{{"method":"receive","params":{{"envelope":{{"typingMessage":{{}}}}}}}}"#
+        )
+        .unwrap();
+        writeln!(
+            stream,
+            r#"{{"method":"receive","params":{{"envelope":{{"dataMessage":{{"message":"hi"}}}}}}}}"#
+        )
+        .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while app.signal_events_heard.get() == heard {
+            assert!(std::time::Instant::now() < deadline, "event was not heard");
+            gtk::glib::MainContext::default().iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(
+            app.signal_events_heard.get(),
+            heard + 1,
+            "typing is ignored"
+        );
+        app.signal_loaded_at.set(Some(std::time::Instant::now()));
+
+        // Unread counts show for Signal alone and clear once the conversation was opened.
+        let snapshot = r#"{"id":"+15550000002","name":"Alice","group":false,"unread":2,
+            "messages":[{"text":"new","author":"+15550000002","timestamp":1790000000000,
+            "outgoing":false,"localRead":false}]}"#;
+        let thread = crate::signal::thread_from_snapshot("+15550000001", snapshot)
+            .unwrap()
+            .unwrap();
+        let key = thread.key.clone();
+        let handle = thread.messages[0].handle.clone();
+        *app.signal_threads.borrow_mut() = vec![thread];
+        app.signal_enabled.set(true);
+        app.signal_loading.set(true);
+        app.apply_signal_threads();
+        let unread = |app: &std::rc::Rc<super::App>| {
+            app.state
+                .borrow()
+                .threads
+                .iter()
+                .find(|thread| thread.key == key)
+                .map(|thread| thread.unread())
+        };
+        assert_eq!(unread(app), Some(2));
+        assert!(!app.backend_available.get());
+        app.signal_seen.borrow_mut().insert(key.clone(), handle);
+        app.apply_signal_threads();
+        assert_eq!(unread(app), Some(0));
+        app.signal_seen.borrow_mut().clear();
+        app.signal_loading.set(false);
+        app.signal_enabled.set(false);
+        app.signal_threads.borrow_mut().clear();
+        app.apply_signal_threads();
+        drop(stream);
+        std::fs::remove_file(&layout.client_socket).ok();
+    }
+
     /// Runs inside the offline GUI test: GTK may only be initialised on one thread.
     fn assert_timeline_updates_in_place(app: &std::rc::Rc<super::App>) {
         use gtk::prelude::*;
@@ -5514,6 +5710,7 @@ mod tests {
         assert_timeline_updates_in_place(&app);
         assert_signal_threads_merge(&app);
         assert_signal_send(&app);
+        assert_signal_live(&app);
         app.state
             .borrow_mut()
             .drafts

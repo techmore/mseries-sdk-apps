@@ -31,6 +31,7 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 
+pub mod live;
 pub mod owner;
 pub mod rpc;
 pub mod service;
