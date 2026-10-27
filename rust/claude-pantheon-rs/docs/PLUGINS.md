@@ -17,7 +17,5 @@ Disable a built-in: `~/.config/claude-pantheon/plugins.json` → `{"disabled": [
 `Plugin::open(app)` lets a built-in page keep its own navigation; plugins that return false get a stack page built from `build()`.
 Disabling a plugin removes its menu item and palette entry; the code behind the page stays compiled in.
 
-Known: `tests/render.rs` times out waiting for the repos page in this environment (also on the commit before the plugins).
-
 Each further move must keep the
 PERFORMANCE.md idle-RSS number flat.
