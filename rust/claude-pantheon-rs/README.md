@@ -1,4 +1,4 @@
-# Claude for elementary OS (Rust)
+# T3 for elementary OS (Rust)
 
 A native Pantheon client for AI coding agents: Claude Code, Codex, OpenCode and Grok through the
 [T3 Code](https://github.com/pingdotgg/t3code) server, with your local Claude Code transcripts
@@ -8,23 +8,27 @@ Apple Silicon Mac running elementary OS; numbers in [`docs/PERFORMANCE.md`](docs
 findings in [`mseries/GTK-PERFORMANCE-ASAHI.md`](../../mseries/GTK-PERFORMANCE-ASAHI.md). This directory is the source;
 the standalone checkout at `~/Projects/claude-pantheon-rs` is a retired pointer.
 
-![Milestone 2: a live thread](docs/screenshot-m2.png)
+![T3: threads grouped by repo, then issue](docs/t3-thread.png)
 
-## Read-only monitoring and Dock status
+## One app, one Dock icon
 
-The existing T3 Dock dropdown shows token history alongside selected-account
-plan windows using native GTK/Granite controls. Token totals are provider-wide
-across accounts, not selected-account consumption or remaining subscription
-quota. Date windows, observation time and stale/unknown/unavailable states remain
-visible; only fresh, valid percentages become live gauges. Estimated history
-cost is not actual billed cost.
+T3 is a regular elementary app: its Dock launcher opens or raises this window, right-click gives the
+quicklist (New Thread, Usage, Repositories, Activity), and the launcher badge counts threads waiting on
+you. There is no second taskbar button, Dock dropdown or Wingpanel indicator any more; everything
+those showed lives in the window's sidebar:
 
-`--usage` opens the detailed usage page; `--repositories` opens the read-only
-RepoBar-derived overview. GitHub host/login and observation coverage remain
-separate from the T3 server/provider identity. An unchecked Actions repository
-is not a successful-empty result. The Dock watches the native client's local
-status snapshot rather than making another server connection; history refresh
-uses the existing connection and configuration-refresh cadence.
+- **Usage**: one card per provider account with a level bar for each plan limit and a plain
+  "Resets in 2 h 10 min · 4:10 PM" line; *Live*, *Last known* and *Not reported* are labelled, never
+  shown as zero. Below it, token totals for the last 7 days with a row per provider, and the reports
+  saved on this computer.
+- **Repositories**: the read-only RepoBar overview (open issues and PRs, CI, Actions, releases).
+- **Activity**: today's commits and issues in pinned checkouts.
+
+![Usage](docs/t3-usage.png)
+
+Token totals are provider-wide across accounts, not one account's consumption, and costs are
+API-price estimates, not your bill. `--usage` and `--repositories` open those views directly.
+GitHub host/login stays separate from the T3 server/provider identity.
 
 The native launcher must actually be pinned: installing the binary and desktop
 entry alone does not add a Dock item. The Electron `com.anthropic.Claude.desktop`
@@ -117,11 +121,15 @@ provider selection. Use per-account collectors; already-merged upstream records
 cannot recover identities. See the
 [source and compatibility audit](../../mseries/upstream-audits/apps/agent-usage-more-2026-10-25.md).
 
-Threads sit under their project with the provider's accent dot, a spinner while a turn runs, a
+Threads are grouped by GitHub repo (several checkouts of one repo share a group), then by the issue or
+pull request they work on: the server's linked pull request first, then a number in the branch name
+(`fix/123-crash`, `issue-123`), then `#123` in the title. Issue titles and states come from `gh api`
+(read-only) and are cached in `~/.cache/claude-pantheon-rs/issues.json`. Opening a thread shows its
+issue under the header bar with its state and a View on GitHub button. Each thread row has the provider's accent dot, a spinner while a turn runs, a
 "?" badge when a prompt waits and a blue dot for activity since the last visit (the server's
-`lastVisitedAt`; opening a thread records a visit). Pinned threads lead their section. Right-click or
+`lastVisitedAt`; opening a thread records a visit). Pinned threads lead their group. Right-click or
 long-press a thread for Pin, Rename, Hand Off to Repo, Copy Link (a `claude-pantheon-rs --thread <id>`
-command) and Archive. Section headers collapse on click and project headers can be dragged into the
+command) and Archive. Repo headers collapse on click and can be dragged into the
 order you want; both persist in `~/.config/claude-pantheon-rs/sidebar.json`.
 
 ## Composer
@@ -179,6 +187,10 @@ dbus-run-session -- env -u WAYLAND_DISPLAY GDK_BACKEND=x11 GSETTINGS_BACKEND=mem
   CLAUDE_PANTHEON_SHOT_M3=docs/screenshot-m3.png \
   xvfb-run -a -s "-screen 0 1400x900x24" cargo test --release --test render
 ```
+
+`CLAUDE_PANTHEON_SHOT_T3=<dir>` (with `tests/run-render-sandbox.sh`, optionally `CLAUDE_PANTHEON_DARK=1`)
+draws the sidebar, a thread with its issue and the Usage page from `tests/fixtures/t3-preview.json`, with no
+server; CI uploads those PNGs as the `t3-preview-screenshots` artifact.
 
 The render test needs the real transcripts and, for the live parts, a stored credential (under the
 test's D-Bus session the keyring is not reachable: copy the credential JSON to

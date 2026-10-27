@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Build claude-pantheon-rs_<version>_<arch>.deb from this source tree: the app (binary, desktop entry with
-# actions, D-Bus service, metainfo, hicolor icons) and the Wingpanel indicator.
+# actions, D-Bus service, metainfo, hicolor icons). T3 has one presence, its Dock launcher and window, so
+# the retired Wingpanel indicator is only built when CLAUDE_PANTHEON_WITH_INDICATOR=1.
 #   bash rust/claude-pantheon-rs/build-deb.sh            # writes build/claude-pantheon-rs-deb/*.deb
 # Needs: cargo, libgtk-4-dev, libgranite-7-dev, meson, valac, libwingpanel-dev, libjson-glib-dev,
-# libgee-0.8-dev, librsvg2-bin, dpkg-deb. Set CLAUDE_PANTHEON_SKIP_INDICATOR=1 to package the app alone.
+# libgee-0.8-dev, librsvg2-bin, dpkg-deb (the meson/valac/wingpanel tools only with the indicator).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,12 +16,11 @@ id=io.github.techmore.ClaudePantheonRs
 for tool in cargo dpkg-deb rsvg-convert; do
   command -v "$tool" >/dev/null || { echo "Missing build tool: $tool" >&2; exit 2; }
 done
-with_indicator=1
-if [[ ${CLAUDE_PANTHEON_SKIP_INDICATOR:-0} == 1 ]]; then
-  with_indicator=0
-else
+with_indicator=0
+if [[ ${CLAUDE_PANTHEON_WITH_INDICATOR:-0} == 1 && ${CLAUDE_PANTHEON_SKIP_INDICATOR:-0} != 1 ]]; then
+  with_indicator=1
   for tool in meson ninja valac; do
-    command -v "$tool" >/dev/null || { echo "Missing build tool: $tool (set CLAUDE_PANTHEON_SKIP_INDICATOR=1 to skip the indicator)" >&2; exit 2; }
+    command -v "$tool" >/dev/null || { echo "Missing build tool: $tool (unset CLAUDE_PANTHEON_WITH_INDICATOR to skip the indicator)" >&2; exit 2; }
   done
 fi
 
@@ -91,7 +91,7 @@ Description: Native elementary OS client of the T3 Code server (Claude Code, Cod
  One window drives Claude Code, Codex, OpenCode and Grok threads through the
  T3 Code server, with the local Claude Code transcripts as the offline view:
  pairing, streamed turns, permission prompts, usage with plan windows,
- repos and issues, diagnostics. Includes the Wingpanel indicator.
+ threads grouped by repo and issue, diagnostics.
 CONTROL
 
 cat >"$stage/DEBIAN/postinst" <<'POST'

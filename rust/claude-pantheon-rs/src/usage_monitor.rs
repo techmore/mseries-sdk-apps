@@ -61,7 +61,7 @@ pub fn account_rows(providers: &[Provider], now: i64) -> Vec<Value> {
             let title = if !w.label.is_empty() { w.label.as_str() } else if !w.kind.is_empty() { w.kind.as_str() } else { "Plan window" };
             json!({"id": format!("{}:{key}", p.instance_id), "title": title,
                 "kind": w.kind, "state": window_state, "used_percent": if valid { Some(w.used_percent) } else { None },
-                "live": window_state == "fresh", "resets_at": w.resets_at.as_deref().filter(|s| timestamp(s).is_some()),
+                "live": window_state == "fresh", "window_duration_mins": w.window_duration_mins, "resets_at": w.resets_at.as_deref().filter(|s| timestamp(s).is_some()),
                 "source": "t3-server-plan", "observed_at": observed})
         }).collect();
         json!({"id": p.instance_id, "title": p.name(), "detail": format!("{} · {} · {}", p.driver, p.instance_id, explanation),

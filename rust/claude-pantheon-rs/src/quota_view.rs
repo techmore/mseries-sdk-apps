@@ -1,5 +1,6 @@
 //! Supplemental local subscription reports within the existing Usage page.
 use crate::{chat::label as base_label, quota};
+use granite::prelude::HeaderLabelExt;
 use gtk::{gio, glib, prelude::*};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -28,10 +29,14 @@ impl QuotaView {
         root.set_margin_top(12);
         root.set_margin_bottom(12);
         let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        let title = label("Local subscription reports", &["title-4"]);
+        let title = granite::HeaderLabel::new("This Computer");
+        title.set_secondary_text(Some("Subscription reports saved by provider tools on this computer"));
         title.set_hexpand(true);
         header.append(&title);
-        let refresh = gtk::Button::with_label("Read reports");
+        let refresh = gtk::Button::from_icon_name("view-refresh-symbolic");
+        refresh.add_css_class(granite::STYLE_CLASS_FLAT);
+        refresh.set_valign(gtk::Align::Center);
+        refresh.update_property(&[gtk::accessible::Property::Label("Read local reports")]);
         refresh.set_tooltip_text(Some("Read existing local quota files; does not contact providers"));
         header.append(&refresh);
         root.append(&header);

@@ -148,3 +148,48 @@ levelbar.usage-gauge block.full { background: @error_color; }
 .changes-bar { padding: 8px 12px; border-bottom: 1px solid alpha(currentColor, 0.1); }
 .diff-old { background: alpha(@error_color, 0.06); }
 .diff-new { background: alpha(@success_color, 0.06); }
+
+/* Sidebar: top views, repo groups, issues and the threads under them */
+.sb-nav { padding: 5px 2px; }
+.sb-nav image { color: @accent_color; }
+.sb-issue { padding: 6px 2px 0 6px; }
+.sb-issue-number { font-weight: 600; font-feature-settings: "tnum"; opacity: 0.75; font-size: 0.92em; }
+.sb-issue-title { font-size: 0.92em; opacity: 0.85; }
+.sb-issue-mark { opacity: 0.7; }
+.sb-issue-mark.open { color: @success_color; opacity: 1; }
+.sb-issue-mark.closed, .sb-issue-mark.merged { color: #a56de2; opacity: 1; }
+row.sb-nested .sb-row { margin-left: 18px; }
+
+/* The open thread's issue or pull request, under the header bar */
+.issue-bar {
+  padding: 8px 18px;
+  border-bottom: 1px solid alpha(currentColor, 0.1);
+  background: alpha(@accent_color, 0.06);
+}
+.issue-title { font-weight: 600; }
+.issue-number { font-weight: 600; font-feature-settings: "tnum"; }
+.issue-state {
+  font-size: 0.85em; font-weight: 700;
+  padding: 2px 10px; border-radius: 999px;
+  color: white; background: alpha(currentColor, 0.5);
+}
+.issue-state.open { background: @success_color; }
+.issue-state.closed, .issue-state.merged { background: #a56de2; }
+.issue-state.unknown { color: inherit; background: alpha(currentColor, 0.12); }
+
+/* Usage: plan limit cards, token totals, provider rows */
+.usage-plan { padding: 14px 16px; }
+.usage-provider { font-weight: 600; font-size: 1.05em; }
+.usage-mark { min-width: 30px; min-height: 30px; border-radius: 15px; padding: 0; font-weight: 700; }
+.usage-amount { font-weight: 600; }
+.usage-num { font-feature-settings: "tnum"; }
+.usage-gauge-stale { opacity: 0.45; }
+.usage-chip { font-size: 0.8em; font-weight: 700; padding: 1px 8px; border-radius: 999px; }
+.usage-chip.live { color: @success_color; background: alpha(@success_color, 0.14); }
+.usage-chip.stale { color: @warning_color; background: alpha(@warning_color, 0.16); }
+.usage-chip.missing { background: alpha(currentColor, 0.1); }
+.usage-totals { padding: 12px 8px; margin-top: 6px; }
+.usage-totals .usage-value { font-size: 1.45em; }
+.usage-list { margin-top: 12px; }
+.usage-row { padding: 10px 14px; }
+.usage-list row:not(:last-child) { border-bottom: 1px solid alpha(currentColor, 0.08); }

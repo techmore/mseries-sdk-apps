@@ -3,7 +3,7 @@
   <id>io.github.techmore.ClaudePantheonRs</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
-  <name>Claude</name>
+  <name>T3</name>
   <summary>Claude Code, Codex, OpenCode and Grok in one native window</summary>
   <description>
     <p>A native elementary OS client of the T3 Code server: one window drives Claude Code, Codex, OpenCode and Grok threads, with your local Claude Code transcripts as the offline view.</p>
