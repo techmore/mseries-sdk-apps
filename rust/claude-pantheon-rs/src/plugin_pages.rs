@@ -39,6 +39,34 @@ impl Plugin for Page {
 pub fn builtin() -> Vec<Rc<dyn Plugin>> {
     vec![
         Rc::new(Page {
+            id: "activity",
+            title: "Activity",
+            subtitle: "What the agents did",
+            icon: "document-open-recent-symbolic",
+            open: |a| a.show_activity(),
+        }),
+        Rc::new(Page {
+            id: "fleet",
+            title: "Remote Machines",
+            subtitle: "T3 Fleet",
+            icon: "network-workgroup-symbolic",
+            open: |a| a.show_fleet(),
+        }),
+        Rc::new(Page {
+            id: "tstack",
+            title: "Tstack Workflows",
+            subtitle: "Native tstack workflows",
+            icon: "view-list-symbolic",
+            open: |a| a.show_tstack(),
+        }),
+        Rc::new(Page {
+            id: "repository-overview",
+            title: "Repository Overview",
+            subtitle: "Read-only RepoBar GitHub status",
+            icon: "folder-git-symbolic",
+            open: |a| a.show_repository_overview(),
+        }),
+        Rc::new(Page {
             id: "usage",
             title: "Usage",
             subtitle: "Tokens and cost across providers",

@@ -255,15 +255,6 @@ impl App {
                 ("Search Threads", "win.search"),
             ]),
         );
-        menu_model.append_section(
-            None,
-            &section(&[
-                ("Activity", "win.activity"),
-                ("Remote Machines", "win.fleet"),
-                ("Tstack Workflows", "win.tstack"),
-                ("Repository Overview", "win.repository-overview"),
-            ]),
-        );
         let plugin_items = crate::plugin::menu_items();
         if !plugin_items.is_empty() {
             let m = gio::Menu::new();
@@ -773,13 +764,6 @@ impl App {
                 });
             }
         }
-        for (title, page) in [
-            ("Open Activity", "activity"),
-            ("Remote Machines", "fleet"),
-            ("Open Repository Overview", "repository-overview"),
-        ] {
-            out.push(Entry { title: title.into(), kind: "Page".into(), action: Action::Page(page.into()) });
-        }
         for p in self.plugins.all() {
             out.push(Entry {
                 title: format!("Open {}", p.title()),
@@ -788,7 +772,6 @@ impl App {
             });
         }
         for (title, action) in [
-            ("Tstack Workflows", "tstack"),
             ("Pair with a T3 environment", "pair"),
             ("Import sessions from Claude Code and Codex", "import"),
             ("Hand off to repo", "handoff"),

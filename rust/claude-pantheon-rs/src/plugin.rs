@@ -54,6 +54,10 @@ pub fn disabled_ids() -> Vec<String> {
 /// Built-in plugins as (id, title); the menu is built before the registry exists.
 pub const BUILTIN: &[(&str, &str)] = &[
     ("usage", "Usage"),
+    ("activity", "Activity"),
+    ("fleet", "Remote Machines"),
+    ("tstack", "Tstack Workflows"),
+    ("repository-overview", "Repository Overview"),
     ("repos", "Repos and Issues"),
     ("changes", "Changes in This Thread"),
     ("diagnostics", "Diagnostics"),

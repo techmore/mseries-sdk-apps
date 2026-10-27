@@ -11,6 +11,7 @@ Disable a built-in: `~/.config/claude-pantheon/plugins.json` → `{"disabled": [
 |---|---|---|
 | `accounts` | Done: list and switch saved Codex accounts | `codexbar-accounts.py` (shared with the CodexBar indicator) |
 | `repos` | Done as an adapter: `plugin_repos.rs` registers `ReposPage` (src/repos.rs stays; the runner, webhooks and thread-to-issue map reach into it) so it has a menu/palette entry, can be disabled, and reports open issues. Wingpanel `repobar-wingpanel` stays separate | `repobar.py`, GitHub via `gh` |
+| `activity`, `fleet`, `tstack`, `repository-overview` (the RepoBar GitHub monitor) | Done as adapters (`plugin_pages.rs`) | existing pages |
 | `usage`, `changes`, `diagnostics` | Done as adapters (`plugin_pages.rs`): menu and palette entries, can be disabled | server RPCs |
 | `shiplog` | Done (v1): merged PRs of the pinned repos grouped by day, via `gh pr list`; nothing stored. Later: release tags and thread outcomes as extra sources | `gh` |
 
