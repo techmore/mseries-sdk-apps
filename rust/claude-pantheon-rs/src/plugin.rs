@@ -8,6 +8,9 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use crate::app::App;
+use crate::repos::ReposPage;
+
 pub struct StatusLine {
     pub label: String,
     pub detail: String,
@@ -20,6 +23,10 @@ pub trait Plugin {
     fn icon(&self) -> &'static str;
     /// The page body; called once, on first show.
     fn build(&self) -> gtk::Widget;
+    /// Built-in pages that already have their own navigation take over here; return true when handled.
+    fn open(&self, _app: &Rc<App>) -> bool {
+        false
+    }
     /// Called every time the page is shown.
     fn refresh(&self) {}
     /// Lines for the Wingpanel indicator feed (`status.json` → `plugins.<id>`).
@@ -34,6 +41,27 @@ pub fn config_path() -> PathBuf {
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
         .unwrap_or_default();
     base.join("claude-pantheon").join("plugins.json")
+}
+
+pub fn disabled_ids() -> Vec<String> {
+    std::fs::read_to_string(config_path())
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .map(|v| disabled_from(&v))
+        .unwrap_or_default()
+}
+
+/// Built-in plugins as (id, title); the menu is built before the registry exists.
+pub const BUILTIN: &[(&str, &str)] = &[("repos", "Repos and Issues"), ("accounts", "Accounts")];
+
+/// Menu items `(title, detailed action)` for the enabled built-ins.
+pub fn menu_items() -> Vec<(String, String)> {
+    let off = disabled_ids();
+    BUILTIN
+        .iter()
+        .filter(|(id, _)| !off.iter().any(|d| d == id))
+        .map(|(id, title)| (title.to_string(), format!("win.plugin::{id}")))
+        .collect()
 }
 
 pub fn disabled_from(config: &Value) -> Vec<String> {
@@ -55,13 +83,10 @@ impl Registry {
         Registry { plugins, built: RefCell::new(Vec::new()) }
     }
 
-    pub fn builtin() -> Registry {
-        let disabled = std::fs::read_to_string(config_path())
-            .ok()
-            .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-            .map(|v| disabled_from(&v))
-            .unwrap_or_default();
-        Registry::new(vec![Rc::new(crate::plugin_accounts::Accounts::new())], &disabled)
+    pub fn builtin(repos: Rc<ReposPage>) -> Registry {
+        let plugins: Vec<Rc<dyn Plugin>> =
+            vec![Rc::new(crate::plugin_repos::Repos::new(repos)), Rc::new(crate::plugin_accounts::Accounts::new())];
+        Registry::new(plugins, &disabled_ids())
     }
 
     pub fn all(&self) -> &[Rc<dyn Plugin>] {
@@ -133,6 +158,13 @@ mod tests {
     fn status_is_keyed_by_plugin_id() {
         let r = Registry::new(vec![Rc::new(Fake("two"))], &[]);
         assert_eq!(r.status()["two"][0]["label"], "a");
+    }
+
+    #[test]
+    fn builtin_ids_have_menu_actions() {
+        for (id, _) in BUILTIN {
+            assert!(menu_items().iter().any(|(_, a)| a == &format!("win.plugin::{id}")) || disabled_ids().iter().any(|d| d == id));
+        }
     }
 
     #[test]

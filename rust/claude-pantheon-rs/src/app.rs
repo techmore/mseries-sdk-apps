@@ -263,11 +263,18 @@ impl App {
                 ("Remote Machines", "win.fleet"),
                 ("Tstack Workflows", "win.tstack"),
                 ("Repository Overview", "win.repository-overview"),
-                ("Repos and Issues", "win.repos"),
                 ("Changes in This Thread", "win.changes"),
                 ("Diagnostics", "win.diagnostics"),
             ]),
         );
+        let plugin_items = crate::plugin::menu_items();
+        if !plugin_items.is_empty() {
+            let m = gio::Menu::new();
+            for (title, action) in &plugin_items {
+                m.append(Some(title), Some(action));
+            }
+            menu_model.append_section(None, &m);
+        }
         menu_model.append_section(
             None,
             &section(&[
@@ -398,6 +405,7 @@ impl App {
         let repo_monitor = crate::repo_monitor_view::RepoMonitorView::new();
         let diagnostics_page = Rc::new(diagnostics::DiagnosticsPage::new());
         let changes_page = changes::ChangesPage::new();
+        let plugins = crate::plugin::Registry::builtin(repos_page.clone());
 
         let stack = gtk::Stack::new();
         stack.set_transition_type(gtk::StackTransitionType::Crossfade);
@@ -499,7 +507,7 @@ impl App {
             repo_monitor,
             diagnostics_page,
             changes_page,
-            plugins: crate::plugin::Registry::builtin(),
+            plugins,
             terminal_pane,
             terminal_revealer,
             conn: RefCell::new(None),
@@ -681,6 +689,14 @@ impl App {
             });
             self.window.add_action(&action);
         }
+        let plugin_action = gio::SimpleAction::new("plugin", Some(glib::VariantTy::STRING));
+        let a = self.clone();
+        plugin_action.connect_activate(move |_, param| {
+            if let Some(id) = param.and_then(|p| p.get::<String>()) {
+                a.show_plugin(&id);
+            }
+        });
+        self.window.add_action(&plugin_action);
         // Y and N answer the oldest pending permission prompt when nothing is being typed.
         let keys = gtk::EventControllerKey::new();
         let a = self.clone();
@@ -765,7 +781,6 @@ impl App {
             ("Open Activity", "activity"),
             ("Remote Machines", "fleet"),
             ("Open Repository Overview", "repository-overview"),
-            ("Open Repos and Issues", "repos"),
             ("Open Diagnostics", "diagnostics"),
             ("Changes in this thread", "changes"),
         ] {
@@ -3334,6 +3349,9 @@ impl App {
 
     pub fn show_plugin(self: &Rc<Self>, id: &str) {
         let Some(p) = self.plugins.get(id) else { return };
+        if p.open(self) {
+            return;
+        }
         self.leave_live();
         self.list.unselect_all();
         self.title.set_text(p.title());
