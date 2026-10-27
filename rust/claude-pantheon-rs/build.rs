@@ -1,6 +1,6 @@
 //! Compiles the vendored T3 contracts (`contracts/PROTOCOL_VERSION`, `contracts/METHODS`) into
 //! `t3::contracts`, and when the sparse clone of pingdotgg/t3code is on this machine
-//! (`T3_CONTRACTS_REPO` or `~/claude-work/repos/t3code`) compares the vendored copy with it: drift
+//! (`T3_CONTRACTS_REPO` or `~/src/t3code`) compares the vendored copy with it: drift
 //! fails the build, naming `scripts/refresh-contracts.sh` (set `T3_CONTRACTS_DRIFT=warn` to only warn).
 //! CI has no clone, so there the vendored copy is the contract.
 
@@ -59,7 +59,7 @@ fn main() {
 
     let repo = std::env::var_os("T3_CONTRACTS_REPO")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join("claude-work/repos/t3code")));
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join("src/t3code")));
     if let Some(src) = repo.map(|r| r.join("packages/contracts/src")).filter(|p| p.is_dir()) {
         for f in ["environment.ts", "rpc.ts", "orchestrationV2.ts"] {
             println!("cargo:rerun-if-changed={}", src.join(f).display());

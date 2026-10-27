@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # refresh-contracts.sh [--check] [--record]
 #
-# Refreshes the sparse clone of pingdotgg/t3code (T3_CONTRACTS_REPO, default ~/claude-work/repos/t3code),
+# Refreshes the techmore/t3code fork checkout (keep it merged with pingdotgg/t3code upstream) (T3_CONTRACTS_REPO, default ~/src/t3code),
 # extracts ORCHESTRATION_PROTOCOL_VERSION and the RPC method lists from packages/contracts/src into
 # contracts/PROTOCOL_VERSION and contracts/METHODS (what build.rs compiles in), and with --record
 # re-records tests/fixtures from the running server (`claude-pantheon-rs --t3-dump`).
 # --check only compares upstream with the vendored copy and exits 2 on drift (CI uses this).
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
-repo="${T3_CONTRACTS_REPO:-$HOME/claude-work/repos/t3code}"
+repo="${T3_CONTRACTS_REPO:-$HOME/src/t3code}"
 check=0; record=0
 for a in "$@"; do case "$a" in --check) check=1 ;; --record) record=1 ;; *) echo "usage: $0 [--check] [--record]" >&2; exit 1 ;; esac; done
 

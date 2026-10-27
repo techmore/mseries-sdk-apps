@@ -112,6 +112,7 @@ pub struct App {
     repo_monitor: Rc<crate::repo_monitor_view::RepoMonitorView>,
     diagnostics_page: Rc<diagnostics::DiagnosticsPage>,
     changes_page: Rc<changes::ChangesPage>,
+    plugins: crate::plugin::Registry,
     terminal_pane: Rc<terminal::TerminalPane>,
     terminal_revealer: gtk::Revealer,
     // state
@@ -254,19 +255,14 @@ impl App {
                 ("Search Threads", "win.search"),
             ]),
         );
-        menu_model.append_section(
-            None,
-            &section(&[
-                ("Usage", "win.usage"),
-                ("Activity", "win.activity"),
-                ("Remote Machines", "win.fleet"),
-                ("Tstack Workflows", "win.tstack"),
-                ("Repository Overview", "win.repository-overview"),
-                ("Repos and Issues", "win.repos"),
-                ("Changes in This Thread", "win.changes"),
-                ("Diagnostics", "win.diagnostics"),
-            ]),
-        );
+        let plugin_items = crate::plugin::menu_items();
+        if !plugin_items.is_empty() {
+            let m = gio::Menu::new();
+            for (title, action) in &plugin_items {
+                m.append(Some(title), Some(action));
+            }
+            menu_model.append_section(None, &m);
+        }
         menu_model.append_section(
             None,
             &section(&[
@@ -397,6 +393,7 @@ impl App {
         let repo_monitor = crate::repo_monitor_view::RepoMonitorView::new();
         let diagnostics_page = Rc::new(diagnostics::DiagnosticsPage::new());
         let changes_page = changes::ChangesPage::new();
+        let plugins = crate::plugin::Registry::builtin(repos_page.clone());
 
         let stack = gtk::Stack::new();
         stack.set_transition_type(gtk::StackTransitionType::Crossfade);
@@ -498,6 +495,7 @@ impl App {
             repo_monitor,
             diagnostics_page,
             changes_page,
+            plugins,
             terminal_pane,
             terminal_revealer,
             conn: RefCell::new(None),
@@ -679,6 +677,14 @@ impl App {
             });
             self.window.add_action(&action);
         }
+        let plugin_action = gio::SimpleAction::new("plugin", Some(glib::VariantTy::STRING));
+        let a = self.clone();
+        plugin_action.connect_activate(move |_, param| {
+            if let Some(id) = param.and_then(|p| p.get::<String>()) {
+                a.show_plugin(&id);
+            }
+        });
+        self.window.add_action(&plugin_action);
         // Y and N answer the oldest pending permission prompt when nothing is being typed.
         let keys = gtk::EventControllerKey::new();
         let a = self.clone();
@@ -758,19 +764,14 @@ impl App {
                 });
             }
         }
-        for (title, page) in [
-            ("Open Usage", "usage"),
-            ("Open Activity", "activity"),
-            ("Remote Machines", "fleet"),
-            ("Open Repository Overview", "repository-overview"),
-            ("Open Repos and Issues", "repos"),
-            ("Open Diagnostics", "diagnostics"),
-            ("Changes in this thread", "changes"),
-        ] {
-            out.push(Entry { title: title.into(), kind: "Page".into(), action: Action::Page(page.into()) });
+        for p in self.plugins.all() {
+            out.push(Entry {
+                title: format!("Open {}", p.title()),
+                kind: "Plugin".into(),
+                action: Action::Page(format!("plugin:{}", p.id())),
+            });
         }
         for (title, action) in [
-            ("Tstack Workflows", "tstack"),
             ("Pair with a T3 environment", "pair"),
             ("Import sessions from Claude Code and Codex", "import"),
             ("Hand off to repo", "handoff"),
@@ -847,7 +848,11 @@ impl App {
                 "repos" => self.show_repos(),
                 "diagnostics" => self.show_diagnostics(),
                 "changes" => self.show_changes(),
-                _ => {}
+                other => {
+                    if let Some(id) = other.strip_prefix("plugin:") {
+                        self.show_plugin(id);
+                    }
+                }
             },
             Action::Repo(repo) => {
                 self.show_repos();
@@ -1810,7 +1815,7 @@ impl App {
             Some(c) => (true, &c.cred.label, &c.shell.threads),
             None => (false, "", &[]),
         };
-        crate::status::write(&crate::status::build(
+        let mut feed = crate::status::build(
             connected,
             label_text,
             &self.selected_provider_id.borrow(),
@@ -1818,7 +1823,11 @@ impl App {
             threads,
             self.usage_summary.borrow().as_ref(),
             self.usage_refresh_failed.get(),
-        ));
+        );
+        if let Some(o) = feed.as_object_mut() {
+            o.insert("plugins".into(), self.plugins.status());
+        }
+        crate::status::write(&feed);
     }
 
     fn refresh_status(&self) {
@@ -3313,6 +3322,25 @@ impl App {
 
     pub fn repository_overview(&self) -> &Rc<crate::repo_monitor_view::RepoMonitorView> {
         &self.repo_monitor
+    }
+
+    pub fn show_plugin(self: &Rc<Self>, id: &str) {
+        let Some(p) = self.plugins.get(id) else { return };
+        if p.open(self) {
+            return;
+        }
+        self.leave_live();
+        self.list.unselect_all();
+        self.title.set_text(p.title());
+        self.window.set_title(Some(&format!("{} - Claude", p.title())));
+        self.subtitle.set_text(p.subtitle());
+        self.subtitle.set_visible(true);
+        let name = format!("plugin:{id}");
+        if let Some(widget) = self.plugins.build_once(id) {
+            self.stack.add_named(&widget, Some(&name));
+        }
+        self.show_page(&name);
+        p.refresh();
     }
 
     pub fn show_repos(self: &Rc<Self>) {

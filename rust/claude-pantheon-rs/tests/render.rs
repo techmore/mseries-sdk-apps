@@ -562,7 +562,7 @@ fn main() {
         app.show_repos();
         assert!(pump_until("repos", 90, || shown(&app)
             .iter()
-            .any(|x| x.contains("GitHub repos known") || x.contains("No GitHub checkouts"))));
+            .any(|x| x.contains("GitHub repos known") || x.contains("No GitHub repos yet"))));
         pump(500);
         let pinned = app.repos_page().config().repos;
         if let Some(first) = pinned.first().cloned() {
