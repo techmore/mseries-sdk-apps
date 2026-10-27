@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Signal Pantheon
+Comment=Native unofficial Signal text client
+Exec=signal-pantheon
+Icon=mail-message-new
+Terminal=false
+Categories=Network;InstantMessaging;GTK;
+StartupNotify=true
