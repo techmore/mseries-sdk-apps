@@ -1,0 +1,45 @@
+name: PolyBagger Print Manager
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - "mseries/polybagger-print-manager/**"
+      - "docs/polybagger-t1000-printer-link-troubleshooting.md"
+      - ".github/workflows/polybagger-print-manager.yml"
+  pull_request:
+    paths:
+      - "mseries/polybagger-print-manager/**"
+      - "docs/polybagger-t1000-printer-link-troubleshooting.md"
+      - ".github/workflows/polybagger-print-manager.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: Syntax and import checks (no printer)
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      # The app talks to CUPS and a USB printer; CI never sends a label.
+      - name: Python syntax and headless import
+        run: |
+          python3 -I -m py_compile mseries/polybagger-print-manager/polybagger_print_manager.py
+          cd "$RUNNER_TEMP"
+          python3 - <<PY
+          import importlib.util as u
+          s = u.spec_from_file_location("pbpm", "$GITHUB_WORKSPACE/mseries/polybagger-print-manager/polybagger_print_manager.py")
+          m = u.module_from_spec(s); s.loader.exec_module(m)
+          PY
+
+      - name: Installer and icon
+        run: |
+          bash -n mseries/polybagger-print-manager/install.sh
+          python3 -c 'import xml.etree.ElementTree as ET; ET.parse("mseries/polybagger-print-manager/io.techmore.PolyBaggerPrintManager.svg")'
