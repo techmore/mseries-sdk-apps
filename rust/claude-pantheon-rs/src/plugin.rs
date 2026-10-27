@@ -52,7 +52,13 @@ pub fn disabled_ids() -> Vec<String> {
 }
 
 /// Built-in plugins as (id, title); the menu is built before the registry exists.
-pub const BUILTIN: &[(&str, &str)] = &[("repos", "Repos and Issues"), ("accounts", "Accounts")];
+pub const BUILTIN: &[(&str, &str)] = &[
+    ("usage", "Usage"),
+    ("repos", "Repos and Issues"),
+    ("changes", "Changes in This Thread"),
+    ("diagnostics", "Diagnostics"),
+    ("accounts", "Accounts"),
+];
 
 /// Menu items `(title, detailed action)` for the enabled built-ins.
 pub fn menu_items() -> Vec<(String, String)> {
@@ -60,7 +66,11 @@ pub fn menu_items() -> Vec<(String, String)> {
     BUILTIN
         .iter()
         .filter(|(id, _)| !off.iter().any(|d| d == id))
-        .map(|(id, title)| (title.to_string(), format!("win.plugin::{id}")))
+        .map(|(id, title)| {
+            // Usage keeps its own action so the menu still shows the Ctrl+Shift+U accelerator.
+            let action = if *id == "usage" { "win.usage".to_string() } else { format!("win.plugin::{id}") };
+            (title.to_string(), action)
+        })
         .collect()
 }
 
@@ -84,8 +94,11 @@ impl Registry {
     }
 
     pub fn builtin(repos: Rc<ReposPage>) -> Registry {
-        let plugins: Vec<Rc<dyn Plugin>> =
-            vec![Rc::new(crate::plugin_repos::Repos::new(repos)), Rc::new(crate::plugin_accounts::Accounts::new())];
+        let mut plugins: Vec<Rc<dyn Plugin>> = vec![
+            Rc::new(crate::plugin_repos::Repos::new(repos)),
+            Rc::new(crate::plugin_accounts::Accounts::new()),
+        ];
+        plugins.extend(crate::plugin_pages::builtin());
         Registry::new(plugins, &disabled_ids())
     }
 
@@ -163,7 +176,8 @@ mod tests {
     #[test]
     fn builtin_ids_have_menu_actions() {
         for (id, _) in BUILTIN {
-            assert!(menu_items().iter().any(|(_, a)| a == &format!("win.plugin::{id}")) || disabled_ids().iter().any(|d| d == id));
+            let wanted = if *id == "usage" { "win.usage".to_string() } else { format!("win.plugin::{id}") };
+            assert!(menu_items().iter().any(|(_, a)| *a == wanted) || disabled_ids().iter().any(|d| d == id));
         }
     }
 

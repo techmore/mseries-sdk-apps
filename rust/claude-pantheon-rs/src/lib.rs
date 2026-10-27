@@ -21,6 +21,7 @@ pub mod notify;
 pub mod palette;
 pub mod plugin;
 pub mod plugin_accounts;
+pub mod plugin_pages;
 pub mod plugin_repos;
 pub mod probe;
 pub mod quota;

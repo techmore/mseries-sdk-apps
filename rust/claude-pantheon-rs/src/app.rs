@@ -258,13 +258,10 @@ impl App {
         menu_model.append_section(
             None,
             &section(&[
-                ("Usage", "win.usage"),
                 ("Activity", "win.activity"),
                 ("Remote Machines", "win.fleet"),
                 ("Tstack Workflows", "win.tstack"),
                 ("Repository Overview", "win.repository-overview"),
-                ("Changes in This Thread", "win.changes"),
-                ("Diagnostics", "win.diagnostics"),
             ]),
         );
         let plugin_items = crate::plugin::menu_items();
@@ -777,12 +774,9 @@ impl App {
             }
         }
         for (title, page) in [
-            ("Open Usage", "usage"),
             ("Open Activity", "activity"),
             ("Remote Machines", "fleet"),
             ("Open Repository Overview", "repository-overview"),
-            ("Open Diagnostics", "diagnostics"),
-            ("Changes in this thread", "changes"),
         ] {
             out.push(Entry { title: title.into(), kind: "Page".into(), action: Action::Page(page.into()) });
         }

@@ -110,7 +110,6 @@ pub fn dump(dir: Option<String>, pairing: Option<String>) -> glib::ExitCode {
         };
         for (name, tag, payload) in [
             ("server.getConfig", "server.getConfig", json!({})),
-            ("projects.list", "projects.list", json!({})),
             ("agentSessions.scan", "agentSessions.scan", json!({})),
             ("server.getHostResources", "server.getHostResources", json!({})),
         ] {
