@@ -93,7 +93,7 @@ Other entry points:
 | Ctrl+Q | Quit |
 | Y / N | Allow once / deny the oldest waiting permission prompt (when not typing) |
 
-The same actions sit in the app menu (header bar, right) with their accelerator labels, plus Repos
+The same actions sit in the app menu (header bar, right) with their accelerator labels, plus AI Providers (server-reported state, Refresh), Repos
 and Issues, Changes, Diagnostics, Import Sessions, Hand Off to Repo, Open Offline Twin, Reconnect,
 Forget Pairing and About (version, server, providers ready).
 
