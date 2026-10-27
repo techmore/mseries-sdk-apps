@@ -72,11 +72,51 @@
 /* Messages keeps desktop font scaling and adds a modest reading-size increase. */
 .mseries-messages {
     font-size: 1.12em;
-    background: mix(@theme_bg_color, #dba96b, 0.10);
 }
-.mseries-messages .pantheon-history {
-    background: mix(@theme_base_color, #dba96b, 0.12);
+
+/* Message bubbles follow iMessage conventions: yours on the right in colour with
+   white text, theirs on the left in grey. Colours are the elementary OS palette:
+   Blueberry 700 #0d52bf (iMessage/SMS), Grape 700 #7239b3 (Signal),
+   Silver 300 #d4d4d4 with Black 500 #333333 (received), and in dark mode
+   Slate 500 #485a6c with Silver 100 #fafafa. White on the 700 shades is
+   at least 7:1, so body text stays easy to read. */
+.pantheon-bubble {
+    padding: 0.5em 0.95em;
+    border-radius: 18px;
 }
+
+.pantheon-bubble-incoming {
+    background: #d4d4d4;
+    color: #333333;
+}
+
+.pantheon-bubble-incoming link {
+    color: #0d52bf;
+}
+
+.pantheon-bubble-outgoing {
+    background: #0d52bf;
+    color: #fafafa;
+}
+
+.pantheon-bubble-outgoing link {
+    color: #fafafa;
+    text-decoration: underline;
+}
+
+.pantheon-bubble-outgoing.pantheon-bubble-signal {
+    background: #7239b3;
+}
+
+.pantheon-dark .pantheon-bubble-incoming {
+    background: #485a6c;
+    color: #fafafa;
+}
+
+.pantheon-dark .pantheon-bubble-incoming link {
+    color: #8cd5ff;
+}
+
 .messaging-channel-messages {
     background: mix(@theme_bg_color, #dba96b, 0.12);
 }
