@@ -1190,6 +1190,7 @@ impl App {
         app.watch_history();
         app.install_refresh_controls();
         app.install_signal_live();
+        app.follow_dark_style();
         app.window.present();
         app.refresh_recent();
         Some(app)
@@ -2230,6 +2231,41 @@ impl App {
             }
         });
         *self.history_subscription.borrow_mut() = Some(id);
+    }
+
+    /// Bubble colours differ in dark style. The window's own text colour says which
+    /// style is in effect (light text means a dark theme), so this follows the
+    /// system choice whatever sets it, now and when it changes.
+    fn follow_dark_style(self: &Rc<Self>) {
+        fn update(window: &gtk::ApplicationWindow) {
+            let text = window.color();
+            let light_text =
+                (0.2126 * text.red() + 0.7152 * text.green() + 0.0722 * text.blue()) > 0.5;
+            if light_text {
+                window.add_css_class("pantheon-dark");
+            } else {
+                window.remove_css_class("pantheon-dark");
+            }
+        }
+        let window = self.window.clone();
+        self.window.connect_map(move |_| update(&window));
+        if let Some(settings) = gtk::Settings::default() {
+            for property in [
+                "gtk-application-prefer-dark-theme",
+                "gtk-interface-color-scheme",
+                "gtk-theme-name",
+            ] {
+                let window = self.window.downgrade();
+                settings.connect_notify_local(Some(property), move |_, _| {
+                    let window = window.clone();
+                    glib::idle_add_local_once(move || {
+                        if let Some(window) = window.upgrade() {
+                            update(&window);
+                        }
+                    });
+                });
+            }
+        }
     }
 
     /// Signal does not wait for BlueFerry: it is read at start, every 20 seconds,
@@ -3749,8 +3785,17 @@ impl App {
                         .selectable(true)
                         .max_width_chars(72)
                         .build();
-                    text.add_css_class("card");
-                    text.add_css_class("pantheon-surface");
+                    // iMessage conventions (own messages on the right in a colour, others
+                    // on the left in grey), in elementary OS palette colours (see pantheon-kit.css).
+                    text.add_css_class("pantheon-bubble");
+                    text.add_css_class(if message.outgoing {
+                        "pantheon-bubble-outgoing"
+                    } else {
+                        "pantheon-bubble-incoming"
+                    });
+                    if thread.key.starts_with(signal::THREAD_PREFIX) {
+                        text.add_css_class("pantheon-bubble-signal");
+                    }
                     let markup = crate::links::linkify_message(&visible_body);
                     text.set_markup(&markup);
                     let expected = visible_body.replace("\r\n", "\n").replace('\r', "\n");
@@ -5644,6 +5689,97 @@ mod tests {
         // No thread clears the timeline.
         app.render_conversation(None);
         assert!(app.rendered_rows.borrow().is_empty());
+    }
+
+    /// Writes PNG screenshots of the window with fixture conversations to $MSERIES_SHOT_DIR.
+    #[test]
+    #[ignore = "manual: needs Xvfb and MSERIES_SHOT_DIR"]
+    fn screenshot_fixture() {
+        use gtk::prelude::*;
+        let dir = std::env::var("MSERIES_SHOT_DIR").expect("MSERIES_SHOT_DIR");
+        gtk::init().expect("display");
+        granite::init();
+        mseries_pantheon_kit::install_css(&gtk::gdk::Display::default().unwrap());
+        let application = gtk::Application::builder()
+            .application_id("io.elementary.mseries.MessagesRust.Shot")
+            .build();
+        application
+            .register(None::<&gtk::gio::Cancellable>)
+            .unwrap();
+        let app = super::App::build(&application).expect("app");
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while app.refresh_gate.in_flight.get() && std::time::Instant::now() < until {
+            gtk::glib::MainContext::default().iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        app.signal_enabled.set(true);
+        app.signal_loading.set(true);
+        let m = |body: &str, out: bool, min: u32| Message {
+            handle: format!("h{min}{out}"),
+            body: body.into(),
+            timestamp: format!("2026-10-27T09:{min:02}:00Z"),
+            outgoing: out,
+            read: true,
+            ..Message::default()
+        };
+        let mut a = Thread {
+            key: "a".into(),
+            name: "Maya Chen".into(),
+            recipients: vec!["+12025550123".into()],
+            reply_ready: true,
+            messages: vec![
+                m("Are we still on for lunch?", false, 1),
+                m("Yes! 12:30 at the usual place", true, 3),
+                m("Perfect, see you there", false, 5),
+                m("Running 5 min late, sorry!", false, 40),
+            ],
+            ..Thread::default()
+        };
+        a.messages[3].read = false;
+        a.last_ts = "2026-10-27T09:40:00Z".into();
+        let mut b = Thread {
+            key: "b".into(),
+            name: "Dad".into(),
+            recipients: vec!["+12025550124".into()],
+            reply_ready: true,
+            messages: vec![m("Call me when you get a chance", false, 10)],
+            ..Thread::default()
+        };
+        b.last_ts = "2026-10-26T18:00:00Z".into();
+        let sig = crate::signal::thread_from_snapshot("+15550000001", r#"{"id":"+15550000002","name":"Alice (Signal)","group":false,"unread":2,
+            "messages":[{"text":"hi from signal","author":"+15550000002","timestamp":1790500000000,"outgoing":false,"localRead":false},
+            {"text":"Sounds good, talk tomorrow","author":"+15550000001","timestamp":1790500100000,"outgoing":true}]}"#).unwrap().unwrap();
+        {
+            let mut state = app.state.borrow_mut();
+            state.threads = vec![a, b];
+            state.map_ready = true;
+        }
+        *app.signal_threads.borrow_mut() = vec![sig];
+        app.apply_signal_threads();
+        app.backend_available.set(true);
+        app.status
+            .set_text("Connected to BlueFerry · iPhone Messages available");
+        app.rebuild_sidebar();
+        let save = |name: &str| {
+            for _ in 0..80 {
+                gtk::glib::MainContext::default().iteration(false);
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            let paintable = gtk::WidgetPaintable::new(Some(&app.window));
+            let (w, h) = (app.window.width().max(1), app.window.height().max(1));
+            let snapshot = gtk::Snapshot::new();
+            paintable.snapshot(&snapshot, w as f64, h as f64);
+            let node = snapshot.to_node().expect("render node");
+            let renderer = app.window.native().unwrap().renderer().unwrap();
+            let texture = renderer.render_texture(&node, None);
+            texture.save_to_png(format!("{dir}/{name}.png")).unwrap();
+        };
+        app.window.present();
+        save("list");
+        app.select_thread("a");
+        save("imessage");
+        app.select_thread("signal:+15550000001:+15550000002");
+        save("signal");
     }
 
     #[test]
