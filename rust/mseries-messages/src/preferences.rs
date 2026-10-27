@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const DEFAULT_ENTER_SENDS: bool = true;
 pub const DEFAULT_AUTO_REFRESH: bool = true;
+pub const DEFAULT_SHOW_SIGNAL: bool = true;
 
 fn path() -> PathBuf {
     gtk::glib::user_config_dir()
@@ -26,6 +27,14 @@ pub fn load_enter_sends() -> bool {
 
 fn load_enter_sends_from(path: &Path) -> bool {
     load_bool_from(path, "enter_sends", DEFAULT_ENTER_SENDS)
+}
+
+pub fn load_show_signal() -> bool {
+    load_bool_from(&rust_path(), "show_signal", DEFAULT_SHOW_SIGNAL)
+}
+
+pub fn save_show_signal(value: bool) -> io::Result<()> {
+    save_boolean_to(&rust_path(), "show_signal", value)
 }
 
 pub fn load_auto_refresh() -> bool {
