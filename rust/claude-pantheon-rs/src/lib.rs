@@ -19,6 +19,8 @@ pub mod look;
 pub mod markdown;
 pub mod notify;
 pub mod palette;
+pub mod plugin;
+pub mod plugin_accounts;
 pub mod probe;
 pub mod quota;
 pub mod quota_view;
