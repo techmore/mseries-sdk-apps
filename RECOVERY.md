@@ -12,6 +12,17 @@ deleted and never pushed.
 - `src/qrcodegen.c/.h` is the MIT-licensed Nayuki QR generator, fetched from
   github.com/nayuki/QR-Code-generator `c/` (the original did the same).
 
+## Branch `recover-newer-features`
+Re-implements, from the installed binary's symbols, strings and CSS, the features
+added after the last logged edit: avatars/initials with photos from
+`~/.local/share/signal-pantheon/avatars`, clickable safe links (`message-links.vala`),
+inline images, thumbnails, image viewer, shared-media window, conversation row
+previews/times/unread dot, "Today at / Yesterday at" stamps, empty states, and the
+`sp-*` stylesheet (CSS text recovered verbatim from the binary). All symbols that
+exist in the installed binary now exist here (the `sp-*` CSS and UI strings
+match); behaviour was reconstructed, not copied, so details may differ. 9/9 test
+suites pass, including the UI suite under Xvfb.
+
 ## What this is NOT
 The installed binary (`~/.local/bin/signal-pantheon-client`, built
 2026-10-21 12:06) is **newer** than this source. About 62 symbols exist only in

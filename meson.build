@@ -23,7 +23,7 @@ executable(
     'src/main.vala',
     'src/call-controller.vala',
     'src/call-media.vala', 'src/call-video.vala',
-    'src/appearance.vala',
+    'src/appearance.vala', 'src/message-links.vala',
     'src/message-composer.vala',
     'src/attachment-files.vala',
     'src/main-window.vala',
@@ -68,7 +68,7 @@ conversation_test = executable('conversation-test',
 test('conversation-and-commands', conversation_test)
 
 ui_test = executable('ui-test',
-  ['tests/ui.vala', 'src/call-controller.vala', 'src/call-media.vala', 'src/call-video.vala', 'src/appearance.vala', 'src/message-composer.vala', 'src/attachment-files.vala', 'src/main-window.vala', 'src/signal-backend.vala',
+  ['tests/ui.vala', 'src/call-controller.vala', 'src/call-media.vala', 'src/call-video.vala', 'src/appearance.vala', 'src/message-links.vala', 'src/message-composer.vala', 'src/attachment-files.vala', 'src/main-window.vala', 'src/signal-backend.vala',
    'src/message-event.vala', 'src/conversation.vala', 'src/client-store.vala', 'src/expiration-service.vala',
    'src/message-commands.vala', 'src/history-store.c', 'src/qr-image.c', 'src/qrcodegen.c'],
   vala_args: ['--define=UI_TEST'],

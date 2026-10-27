@@ -272,6 +272,10 @@ namespace SignalNative {
             return history.get_array ().get_object_element (0).get_string_member ("message");
         }
 
+        public string avatar_directory { owned get {
+            return Path.build_filename (data_directory, "avatars");
+        } }
+
         public string attachment_directory { owned get {
             return Path.build_filename (data_directory, "attachments");
         } }

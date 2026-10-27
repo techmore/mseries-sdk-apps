@@ -8,6 +8,9 @@ namespace SignalNative {
         private Gtk.ListBox conversation_list;
         private Gtk.Label conversation_title;
         private Gtk.Label conversation_status;
+        private Gtk.Box heading_avatar;
+        private Gtk.Button media_button;
+        private Gtk.Window? media_window;
         private Gtk.Box message_history;
         private MessageComposer message_entry;
         private Gtk.Button send_button;
@@ -206,13 +209,7 @@ namespace SignalNative {
             var show = new SimpleAction ("show-conversation", VariantType.STRING);
             show.activate.connect ((parameter) => {
                 if (parameter == null) { return; }
-                present ();
-                for (Gtk.Widget? row = conversation_list.get_first_child (); row != null; row = row.get_next_sibling ()) {
-                    if (row.get_data<string> ("recipient") == parameter.get_string ()) {
-                        conversation_list.select_row ((Gtk.ListBoxRow) row);
-                        break;
-                    }
-                }
+                open_conversation (parameter.get_string ());
             });
             application.add_action (show);
             maintenance_timer = Timeout.add_seconds (10, () => { flush_all_reads.begin (); return Source.CONTINUE; });
@@ -241,6 +238,356 @@ namespace SignalNative {
             });
         }
 
+        private class MediaEntry : Object {
+            public MessageRecord message;
+            public Json.Object attachment;
+            public bool image;
+            public MediaEntry (MessageRecord message, Json.Object attachment) {
+                this.message = message;
+                this.attachment = attachment;
+                image = MainWindow.is_viewable_image (JsonFields.text (attachment, "contentType"));
+            }
+        }
+
+        private static bool is_viewable_image (string mime) {
+            return mime == "image/png" || mime == "image/jpeg" || mime == "image/gif" || mime == "image/webp";
+        }
+
+        // 14:05 today, "Yesterday" the day before, otherwise the locale's short date.
+        private static string short_time (int64 milliseconds) {
+            var moment = new DateTime.from_unix_local (milliseconds / 1000);
+            var now = new DateTime.now_local ();
+            if (moment.get_year () == now.get_year () && moment.get_day_of_year () == now.get_day_of_year ()) {
+                return moment.format ("%H:%M");
+            }
+            var yesterday = now.add_days (-1);
+            if (moment.get_year () == yesterday.get_year () && moment.get_day_of_year () == yesterday.get_day_of_year ()) {
+                return "Yesterday";
+            }
+            return moment.format ("%x");
+        }
+
+        // Stamp shown between groups of messages: "Today at 14:05", "Yesterday at 09:30", "3/4/26 at 09:30".
+        private static string heading_time (int64 milliseconds) {
+            var moment = new DateTime.from_unix_local (milliseconds / 1000);
+            var now = new DateTime.now_local ();
+            if (moment.get_year () == now.get_year () && moment.get_day_of_year () == now.get_day_of_year ()) {
+                return "Today at " + moment.format ("%H:%M");
+            }
+            var yesterday = now.add_days (-1);
+            if (moment.get_year () == yesterday.get_year () && moment.get_day_of_year () == yesterday.get_day_of_year ()) {
+                return "Yesterday at " + moment.format ("%H:%M");
+            }
+            return moment.format ("%x at %H:%M");
+        }
+
+        private Gtk.Widget empty_state (string title, string detail = "") {
+            var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 8) {
+                halign = Gtk.Align.CENTER, valign = Gtk.Align.CENTER, vexpand = true, margin_top = 48, margin_bottom = 48
+            };
+            box.add_css_class ("sp-empty");
+            box.append (new Gtk.Image.from_icon_name ("mail-send-symbolic") { pixel_size = 48, opacity = 0.6 });
+            var heading = new Gtk.Label (title) { wrap = true, justify = Gtk.Justification.CENTER, max_width_chars = 40 };
+            heading.add_css_class ("title-2");
+            box.append (heading);
+            if (detail != "") {
+                var text = new Gtk.Label (detail) { wrap = true, justify = Gtk.Justification.CENTER, max_width_chars = 44 };
+                text.add_css_class ("dim-label");
+                box.append (text);
+            }
+            return box;
+        }
+
+        private bool is_active_conversation (Conversation c) {
+            return is_active && current == c;
+        }
+
+        private void open_conversation (string id) {
+            for (Gtk.Widget? row = conversation_list.get_first_child (); row != null; row = row.get_next_sibling ()) {
+                if (row.get_data<string> ("recipient") == id) {
+                    conversation_list.select_row ((Gtk.ListBoxRow) row);
+                    present ();
+                    return;
+                }
+            }
+        }
+
+        // ---- avatars ----
+
+        // Identities become file names; refuse anything that could leave the avatar folder.
+        private static string safe_avatar_name (string prefix, string identity) {
+            if (identity == "" || identity.contains ("/") || identity.contains ("\\") || identity.has_prefix (".")) { return ""; }
+            return prefix + identity;
+        }
+
+        private string avatar_directory { owned get { return backend.avatar_directory; } }
+
+        private File? resolve_avatar (string identity, bool is_group) {
+            string[] prefixes = is_group ? new string[] { "group-" } : new string[] { "contact-", "profile-" };
+            foreach (string prefix in prefixes) {
+                string name = safe_avatar_name (prefix, identity);
+                if (name == "") { continue; }
+                var file = File.new_for_path (Path.build_filename (avatar_directory, name));
+                try {
+                    var info = file.query_info ("standard::type,standard::is-symlink,standard::size", FileQueryInfoFlags.NOFOLLOW_SYMLINKS);
+                    if (info.get_file_type () == FileType.REGULAR && !info.get_is_symlink () && info.get_size () < 8 * 1024 * 1024) {
+                        return file;
+                    }
+                } catch (Error ignored) {}
+            }
+            return null;
+        }
+
+        private static Gdk.Texture? texture_from_pixbuf (Gdk.Pixbuf? pixbuf) {
+            if (pixbuf == null) { return null; }
+            return Gdk.Texture.for_pixbuf (pixbuf);
+        }
+
+        private Gtk.Widget avatar_for (string identity, string name, int size) {
+            return Appearance.avatar (identity, name, size);
+        }
+
+        private void set_avatar (Gtk.Box slot, string identity, string name, int size, Gdk.Texture? photo) {
+            Gtk.Widget? child = slot.get_first_child ();
+            while (child != null) {
+                Gtk.Widget? next = child.get_next_sibling ();
+                slot.remove (child);
+                child = next;
+            }
+            slot.append (Appearance.avatar (identity, name, size, photo));
+        }
+
+        private void show_photo_everywhere (string identity, string name, Gdk.Texture photo) {
+            for (Gtk.Widget? row = conversation_list.get_first_child (); row != null; row = row.get_next_sibling ()) {
+                if (row.get_data<string> ("recipient") == identity) {
+                    var slot = row.get_data<Gtk.Box> ("avatar-slot");
+                    if (slot != null) { set_avatar (slot, identity, name, 40, photo); }
+                }
+            }
+            if (current != null && current.id == identity && heading_avatar != null) {
+                set_avatar (heading_avatar, identity, name, 44, photo);
+            }
+        }
+
+        private async void avatar_photo (string identity, string name, bool is_group) {
+            var file = resolve_avatar (identity, is_group);
+            if (file == null) { return; }
+            var photo = yield load_image_file (file, 128);
+            if (photo != null) { show_photo_everywhere (identity, name, photo); }
+        }
+
+        // ---- images ----
+
+        private async Gdk.Texture? load_image_file (File file, int largest_side) {
+            try {
+                var stream = yield file.read_async ();
+                try {
+                    var pixbuf = yield new Gdk.Pixbuf.from_stream_at_scale_async (stream, largest_side, largest_side, true, null);
+                    return texture_from_pixbuf (pixbuf);
+                } finally {
+                    try { stream.close (null); } catch (Error ignored) {}
+                }
+            } catch (Error error) {
+                return null;
+            }
+        }
+
+        private async Gdk.Texture? load_attachment_image (Json.Object attachment, int largest_side) {
+            try {
+                var file = yield AttachmentFiles.resolve (backend.attachment_directory, attachment);
+                var info = yield file.query_info_async ("standard::size", FileQueryInfoFlags.NOFOLLOW_SYMLINKS);
+                if (info.get_size () > 40 * 1024 * 1024) { return null; }
+                return yield load_image_file (file, largest_side);
+            } catch (Error error) {
+                return null;
+            }
+        }
+
+        private async Gdk.Texture? load_inline_image (Json.Object attachment) {
+            return yield load_attachment_image (attachment, 520);
+        }
+
+        private async Gdk.Texture? load_thumbnail (Json.Object attachment) {
+            return yield load_attachment_image (attachment, 96);
+        }
+
+        private async Gdk.Texture? load_viewer_image (Json.Object attachment) {
+            return yield load_attachment_image (attachment, 2400);
+        }
+
+        private void show_inline_image (Gtk.Box box, Json.Object attachment) {
+            var picture = new Gtk.Picture () { can_shrink = true, content_fit = Gtk.ContentFit.COVER };
+            picture.add_css_class ("message-image");
+            picture.overflow = Gtk.Overflow.HIDDEN;
+            picture.width_request = 240;
+            picture.height_request = 160;
+            var button = new Gtk.Button () { child = picture, halign = box.halign, tooltip_text = "Open image" };
+            button.add_css_class ("flat");
+            button.update_property (Gtk.AccessibleProperty.LABEL,
+                "Image attachment " + JsonFields.text (attachment, "filename", "image"), -1);
+            button.clicked.connect (() => show_image_viewer (attachment));
+            box.append (button);
+            var kept = attachment.ref ();
+            load_inline_image.begin (kept, (obj, result) => {
+                var texture = load_inline_image.end (result);
+                if (texture == null) {
+                    picture.set_visible (false);
+                    button.child = new Gtk.Label ("Image could not be shown");
+                    return;
+                }
+                picture.paintable = texture;
+                picture.width_request = int.min (texture.width, 420);
+                picture.height_request = int.min (texture.height, 320);
+                picture.content_fit = Gtk.ContentFit.CONTAIN;
+            });
+        }
+
+        private void show_image_viewer (Json.Object attachment) {
+            var window = new Gtk.Window () {
+                title = JsonFields.text (attachment, "filename", "Image"),
+                transient_for = this, default_width = 900, default_height = 700
+            };
+            var header = new Gtk.HeaderBar ();
+            var save = new Gtk.Button.with_label ("Save…");
+            save.clicked.connect (() => save_attachment.begin (attachment));
+            header.pack_end (save);
+            window.set_titlebar (header);
+            var picture = new Gtk.Picture () { can_shrink = true, content_fit = Gtk.ContentFit.CONTAIN, hexpand = true, vexpand = true };
+            window.set_child (picture);
+            var escape = new Gtk.EventControllerKey ();
+            escape.key_pressed.connect ((key, code, state) => {
+                if (key == Gdk.Key.Escape) { window.close (); return true; }
+                return false;
+            });
+            ((Gtk.Widget) window).add_controller (escape);
+            var kept = attachment.ref ();
+            load_viewer_image.begin (kept, (obj, result) => {
+                var texture = load_viewer_image.end (result);
+                if (texture != null) { picture.paintable = texture; } else { window.set_child (new Gtk.Label ("Image could not be shown")); }
+            });
+            window.present ();
+        }
+
+        // ---- shared media ----
+
+        private GenericArray<MediaEntry> media_items (Conversation c) {
+            var entries = new GenericArray<MediaEntry> ();
+            for (uint i = c.messages.length; i > 0; i--) {
+                var message = c.messages[i - 1];
+                if (message.deleted || message.view_once) { continue; }
+                for (uint j = 0; j < message.attachments.get_length (); j++) {
+                    if (message.attachments.get_element (j).get_node_type () != Json.NodeType.OBJECT) { continue; }
+                    entries.add (new MediaEntry (message, message.attachments.get_object_element (j)));
+                }
+            }
+            return entries;
+        }
+
+        private void update_media_button () {
+            if (media_button == null) { return; }
+            uint count = current != null ? media_items (current).length : 0;
+            media_button.label = count > 0 ? "Media (%u)".printf (count) : "Media";
+            media_button.sensitive = current != null;
+        }
+
+        private void build_media_window () {
+            if (current == null) { return; }
+            if (media_window != null) { media_window.close (); }
+            var entries = media_items (current);
+            var window = new Gtk.Window () {
+                title = "Media (%u)".printf (entries.length), transient_for = this, default_width = 460, default_height = 560
+            };
+            window.set_titlebar (new Gtk.HeaderBar ());
+            if (entries.length == 0) {
+                window.set_child (empty_state ("No media yet", "Photos and files shared in this conversation appear here."));
+            } else {
+                var list = new Gtk.ListBox () { selection_mode = Gtk.SelectionMode.NONE, margin_start = 12, margin_end = 12, margin_top = 12, margin_bottom = 12 };
+                list.add_css_class ("boxed-list");
+                for (uint i = 0; i < entries.length; i++) {
+                    var entry = entries[i];
+                    var row = new Gtk.ListBoxRow () { activatable = true };
+                    var line = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 12) { margin_start = 10, margin_end = 10, margin_top = 8, margin_bottom = 8 };
+                    var thumb_holder = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0) { width_request = 48, height_request = 48 };
+                    string mime = JsonFields.text (entry.attachment, "contentType");
+                    var icon = new Gtk.Image.from_icon_name (
+                        entry.image ? "image-x-generic-symbolic" :
+                        mime.has_prefix ("video/") ? "video-x-generic-symbolic" :
+                        mime.has_prefix ("audio/") ? "audio-x-generic-symbolic" : "text-x-generic-symbolic"
+                    ) { pixel_size = 32, hexpand = true };
+                    thumb_holder.append (icon);
+                    if (entry.image) {
+                        var kept = entry.attachment.ref ();
+                        load_thumbnail.begin (kept, (obj, result) => {
+                            var texture = load_thumbnail.end (result);
+                            if (texture == null) { return; }
+                            var picture = new Gtk.Picture.for_paintable (texture) { content_fit = Gtk.ContentFit.COVER, can_shrink = true, hexpand = true };
+                            picture.add_css_class ("message-image");
+                            picture.overflow = Gtk.Overflow.HIDDEN;
+                            thumb_holder.remove (icon);
+                            thumb_holder.append (picture);
+                        });
+                    }
+                    line.append (thumb_holder);
+                    var text = new Gtk.Box (Gtk.Orientation.VERTICAL, 2) { hexpand = true, valign = Gtk.Align.CENTER };
+                    text.append (new Gtk.Label (JsonFields.text (entry.attachment, "filename", entry.image ? "Photo" : "Attachment")) {
+                        xalign = 0.0f, ellipsize = Pango.EllipsizeMode.MIDDLE
+                    });
+                    var when = new Gtk.Label (heading_time (entry.message.timestamp)) { xalign = 0.0f };
+                    when.add_css_class ("sp-time");
+                    text.append (when);
+                    line.append (text);
+                    row.set_child (line);
+                    row.set_data<MediaEntry> ("entry", entry);
+                    list.append (row);
+                }
+                list.row_activated.connect ((row) => {
+                    var entry = row.get_data<MediaEntry> ("entry");
+                    if (entry == null) { return; }
+                    if (entry.image) { show_image_viewer (entry.attachment); } else { save_attachment.begin (entry.attachment); }
+                });
+                window.set_child (new Gtk.ScrolledWindow () { child = list, hscrollbar_policy = Gtk.PolicyType.NEVER });
+            }
+            window.close_request.connect (() => { media_window = null; return false; });
+            media_window = window;
+            window.present ();
+        }
+
+        // ---- conversation rows ----
+
+        private void refresh_row_summary (Conversation c) {
+            for (Gtk.Widget? row = conversation_list.get_first_child (); row != null; row = row.get_next_sibling ()) {
+                if (row.get_data<string> ("recipient") != c.id) { continue; }
+                var name_label = row.get_data<Gtk.Label> ("name-label");
+                var preview = row.get_data<Gtk.Label> ("preview-label");
+                var time = row.get_data<Gtk.Label> ("time-label");
+                var dot = row.get_data<Gtk.Widget> ("unread-dot");
+                if (name_label != null) {
+                    name_label.label = c.name;
+                    if (c.unread > 0) { name_label.add_css_class ("sp-unread-name"); } else { name_label.remove_css_class ("sp-unread-name"); }
+                }
+                if (dot != null) { dot.visible = c.unread > 0; }
+                MessageRecord? last = null;
+                for (uint i = c.messages.length; i > 0; i--) {
+                    if (!c.messages[i - 1].deleted) { last = c.messages[i - 1]; break; }
+                }
+                if (preview != null) {
+                    string text = "";
+                    if (last != null) {
+                        if (last.view_once) { text = "View-once media"; }
+                        else if (last.text != "") { text = last.text.replace ("\n", " "); }
+                        else if (last.attachments.get_length () > 0) {
+                            var first = last.attachments.get_element (0).get_node_type () == Json.NodeType.OBJECT ? last.attachments.get_object_element (0) : null;
+                            text = first != null && is_viewable_image (JsonFields.text (first, "contentType")) ? "Photo" : "Attachment";
+                        }
+                        if (last.outgoing) { text = "You: " + text; }
+                    }
+                    preview.label = text;
+                }
+                if (time != null) { time.label = last != null ? short_time (last.timestamp) : ""; }
+                return;
+            }
+        }
+
         private Gtk.Widget build_sidebar () {
             var sidebar = new Gtk.Box (Gtk.Orientation.VERTICAL, 12) {
                 margin_start = 16,
@@ -248,14 +595,22 @@ namespace SignalNative {
                 margin_top = 12,
                 margin_bottom = 16
             };
-            sidebar.append (new Granite.HeaderLabel ("Conversations"));
-            new_conversation_button = new Gtk.Button.with_label ("New conversation…") { sensitive = false };
+            var sidebar_header = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+            var sidebar_title = new Granite.HeaderLabel ("Conversations") { hexpand = true };
+            sidebar_header.append (sidebar_title);
+            new_conversation_button = new Gtk.Button.from_icon_name ("document-edit-symbolic") {
+                sensitive = false, tooltip_text = "New conversation…"
+            };
+            new_conversation_button.add_css_class ("flat");
+            new_conversation_button.update_property (Gtk.AccessibleProperty.LABEL, "New conversation", -1);
             new_conversation_button.clicked.connect (new_conversation_dialog);
-            sidebar.append (new_conversation_button);
+            sidebar_header.append (new_conversation_button);
+            sidebar.append (sidebar_header);
 
             var search = new Gtk.SearchEntry () {
                 placeholder_text = "Search conversations"
             };
+            search.add_css_class ("sp-search");
             search.search_changed.connect (() => {
                 conversation_query = search.text.casefold ();
                 conversation_list.invalidate_filter ();
@@ -267,6 +622,7 @@ namespace SignalNative {
                 vexpand = true
             };
             conversation_list.add_css_class ("navigation-sidebar");
+            conversation_list.add_css_class ("sp-list");
             conversation_list.set_filter_func ((row) => {
                 string? name = row.get_data<string> ("contact-name");
                 string? recipient = row.get_data<string> ("recipient");
@@ -285,6 +641,9 @@ namespace SignalNative {
                 editing_timestamp = 0;
                 conversation_title.set_text (current.name);
                 conversation_status.set_text (selected_group ? "Signal group" : "Signal contact");
+                set_avatar (heading_avatar, current.id, current.name, 44, null);
+                avatar_photo.begin (current.id, current.name, current.is_group);
+                update_media_button ();
                 updating_composer = true;
                 message_entry.text = current.draft;
                 updating_composer = false;
@@ -294,16 +653,15 @@ namespace SignalNative {
                 mark_read.begin (current);
             });
 
-            var empty = new Gtk.Label (
-                "No matching conversations. Link or refresh Signal to load contacts and groups."
-            ) {
-                wrap = true,
-                xalign = 0.0f,
-                margin_start = 12,
-                margin_end = 12,
-                margin_top = 12
+            var empty = new Gtk.Box (Gtk.Orientation.VERTICAL, 4) { margin_start = 12, margin_end = 12, margin_top = 24 };
+            var empty_title = new Gtk.Label ("No conversations yet.") { wrap = true, xalign = 0.5f };
+            empty_title.add_css_class ("heading");
+            var empty_detail = new Gtk.Label ("Choose the pencil above to message someone. Link or refresh Signal to load contacts and groups.") {
+                wrap = true, xalign = 0.5f, justify = Gtk.Justification.CENTER
             };
-            empty.add_css_class ("dim-label");
+            empty_detail.add_css_class ("dim-label");
+            empty.append (empty_title);
+            empty.append (empty_detail);
             conversation_list.set_placeholder (empty);
 
             var list_scroll = new Gtk.ScrolledWindow () {
@@ -327,6 +685,8 @@ namespace SignalNative {
                 margin_top = 14,
                 margin_bottom = 14
             };
+            top.add_css_class ("sp-heading");
+            heading_avatar = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0) { valign = Gtk.Align.CENTER };
             conversation_title = new Gtk.Label ("No conversation selected") {
                 ellipsize = Pango.EllipsizeMode.END,
                 xalign = 0.0f
@@ -337,8 +697,17 @@ namespace SignalNative {
                 xalign = 0.0f
             };
             conversation_status.add_css_class ("dim-label");
-            top.append (conversation_title);
-            top.append (conversation_status);
+            conversation_title.add_css_class ("sp-name");
+            var heading_line = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 12);
+            heading_line.append (heading_avatar);
+            var heading_text = new Gtk.Box (Gtk.Orientation.VERTICAL, 2) { hexpand = true, valign = Gtk.Align.CENTER };
+            heading_text.append (conversation_title);
+            heading_text.append (conversation_status);
+            heading_line.append (heading_text);
+            top.append (heading_line);
+            media_button = new Gtk.Button.with_label ("Media") { halign = Gtk.Align.START, sensitive = false };
+            media_button.clicked.connect (() => build_media_window ());
+            top.append (media_button);
             var info_button = new Gtk.Button.with_label ("Conversation details") { halign = Gtk.Align.START };
             info_button.clicked.connect (() => show_details ());
             top.append (info_button);
@@ -353,6 +722,7 @@ namespace SignalNative {
                 placeholder_text = "Search messages in this conversation",
                 margin_start = 16, margin_end = 16, margin_top = 8, margin_bottom = 8
             };
+            history_search.add_css_class ("sp-search-messages");
             history_search.search_changed.connect (() => render_history ());
             conversation.append (history_search);
             conversation.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
@@ -371,6 +741,7 @@ namespace SignalNative {
                 hexpand = true,
                 hscrollbar_policy = Gtk.PolicyType.NEVER
             };
+            message_history.append (empty_state ("Choose a conversation to start messaging."));
             conversation.append (history_scroll);
 
             var composer = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8) {
@@ -395,20 +766,24 @@ namespace SignalNative {
                     return Source.REMOVE;
                 });
             });
-            send_button = new Gtk.Button.with_label ("Send") {
-                sensitive = false
+            send_button = new Gtk.Button.from_icon_name ("mail-send-symbolic") {
+                sensitive = false, tooltip_text = "Send"
             };
+            send_button.add_css_class ("suggested-action");
+            send_button.add_css_class ("sp-send");
+            send_button.update_property (Gtk.AccessibleProperty.LABEL, "Send", -1);
             send_button.clicked.connect (() => send_message.begin ());
             attach_button = new Gtk.Button.from_icon_name ("mail-attachment-symbolic") {
                 tooltip_text = "Attach a file", sensitive = false
             };
             attach_button.clicked.connect (() => choose_attachment.begin ());
+            composer.add_css_class ("sp-composer");
             composer.append (attach_button);
             var composer_scroll = new Gtk.ScrolledWindow () {
                 child = message_entry, min_content_height = 44, max_content_height = 140,
                 propagate_natural_height = true, hscrollbar_policy = Gtk.PolicyType.NEVER, hexpand = true
             };
-            composer_scroll.add_css_class ("frame");
+            composer_scroll.add_css_class ("sp-field");
             composer.append (composer_scroll);
             composer.append (send_button);
             conversation.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
@@ -716,21 +1091,42 @@ namespace SignalNative {
             row.set_data<string> ("recipient", recipient);
             row.set_data<string> ("contact-name", name);
             row.set_data<bool> ("is-group", is_group);
-            var layout = new Gtk.Box (Gtk.Orientation.VERTICAL, 4) {
-                margin_start = 12,
-                margin_end = 12,
-                margin_top = 10,
-                margin_bottom = 10
-            };
-            var label = new Gtk.Label (name) {
-                xalign = 0.0f,
-                ellipsize = Pango.EllipsizeMode.END
-            };
-            label.add_css_class ("heading");
-            layout.append (label);
+            var layout = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 10);
+            layout.add_css_class ("sp-row");
+            var avatar_slot = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0) { valign = Gtk.Align.CENTER };
+            avatar_slot.append (Appearance.avatar (recipient, name, 40));
+            layout.append (avatar_slot);
+            var text = new Gtk.Box (Gtk.Orientation.VERTICAL, 2) { hexpand = true, valign = Gtk.Align.CENTER };
+            var top_line = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+            var label = new Gtk.Label (name) { xalign = 0.0f, hexpand = true, ellipsize = Pango.EllipsizeMode.END };
+            label.add_css_class ("sp-name");
+            var time_label = new Gtk.Label ("") { xalign = 1.0f };
+            time_label.add_css_class ("sp-time");
+            top_line.append (label);
+            top_line.append (time_label);
+            var bottom_line = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+            var preview_label = new Gtk.Label ("") { xalign = 0.0f, hexpand = true, ellipsize = Pango.EllipsizeMode.END, single_line_mode = true };
+            preview_label.add_css_class ("sp-preview");
+            var dot = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0) { visible = false, valign = Gtk.Align.CENTER };
+            dot.add_css_class ("sp-unread-dot");
+            dot.update_property (Gtk.AccessibleProperty.LABEL, "Unread messages", -1);
+            bottom_line.append (preview_label);
+            bottom_line.append (dot);
+            text.append (top_line);
+            text.append (bottom_line);
+            layout.append (text);
             row.set_data<Gtk.Label> ("name-label", label);
+            row.set_data<Gtk.Label> ("preview-label", preview_label);
+            row.set_data<Gtk.Label> ("time-label", time_label);
+            row.set_data<Gtk.Widget> ("unread-dot", dot);
+            row.set_data<Gtk.Box> ("avatar-slot", avatar_slot);
             row.set_child (layout);
             conversation_list.append (row);
+            if (store != null) {
+                var known = store.lookup (recipient);
+                if (known != null) { refresh_row_summary (known); }
+            }
+            avatar_photo.begin (recipient, name, is_group);
         }
 
         private void remove_all_rows () {
@@ -1514,13 +1910,7 @@ namespace SignalNative {
         }
 
         private void update_unread (Conversation c) {
-            for (Gtk.Widget? row = conversation_list.get_first_child (); row != null; row = row.get_next_sibling ()) {
-                if (row.get_data<string> ("recipient") == c.id) {
-                    var label = row.get_data<Gtk.Label> ("name-label");
-                    if (label != null) { label.label = c.unread > 0 ? "%s (%u)".printf (c.name, c.unread) : c.name; }
-                    return;
-                }
-            }
+            refresh_row_summary (c);
         }
 
         private async void mark_read (Conversation c) {
@@ -1581,7 +1971,10 @@ namespace SignalNative {
 
         private void render_history () {
             clear_history ();
-            if (current == null) { return; }
+            if (current == null) {
+                message_history.append (empty_state ("Choose a conversation to start messaging."));
+                return;
+            }
             Conversation c = current;
             c.expire (expiration != null ? expiration.now_ms () : GLib.get_real_time () / 1000);
             string query = history_search.text.casefold ();
@@ -1592,14 +1985,25 @@ namespace SignalNative {
                 message_history.append (older);
             }
             uint shown = 0;
+            int64 last_stamp = 0;
             for (uint i = start; i < c.messages.length; i++) {
                 var message = c.messages[i];
                 if (query != "" && !message.text.casefold ().contains (query) &&
                     !attachment_names (message).casefold ().contains (query)) { continue; }
+                if (last_stamp == 0 || message.timestamp - last_stamp > 30 * 60 * 1000 ||
+                    new DateTime.from_unix_local (message.timestamp / 1000).get_day_of_year () !=
+                    new DateTime.from_unix_local (last_stamp / 1000).get_day_of_year ()) {
+                    var stamp = new Gtk.Label (heading_time (message.timestamp));
+                    stamp.add_css_class ("sp-stamp");
+                    message_history.append (stamp);
+                }
+                last_stamp = message.timestamp;
                 append_record (c, message);
                 shown++;
             }
             refresh_expiry_labels (expiration != null ? expiration.now_ms () : GLib.get_real_time () / 1000);
+            refresh_row_summary (c);
+            update_media_button ();
             if (shown == 0) {
                 message_history.append (new Gtk.Label (query == "" ? "No messages yet" : "No matching messages"));
             }
@@ -1678,10 +2082,21 @@ namespace SignalNative {
             var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 6) {
                 halign = message.outgoing ? Gtk.Align.END : Gtk.Align.START
             };
+            box.add_css_class ("sp-message");
             var bubble = new Gtk.Label (message.deleted ? "Message deleted" : message.text) {
                 wrap = true, selectable = true, xalign = 0.0f, max_width_chars = 58,
                 wrap_mode = Pango.WrapMode.WORD_CHAR
             };
+            if (!message.deleted && message.text != "") {
+                bubble.use_markup = true;
+                bubble.label = MessageLinks.markup (message.text);
+                bubble.activate_link.connect ((uri) => {
+                    string? safe = MessageLinks.safe_link (uri);
+                    if (safe == null) { return true; }
+                    new Gtk.UriLauncher (safe).launch.begin (this, null);
+                    return true;
+                });
+            }
             bubble.add_css_class ("message-bubble");
             bubble.add_css_class (message.outgoing ? "outgoing" : "incoming");
             if (message.text != "" || message.deleted) { box.append (bubble); }
@@ -1695,23 +2110,28 @@ namespace SignalNative {
                 for (uint i = 0; i < message.attachments.get_length (); i++) {
                     if (message.attachments.get_element (i).get_node_type () != Json.NodeType.OBJECT) { continue; }
                     var attachment = message.attachments.get_object_element (i);
+                    if (is_viewable_image (JsonFields.text (attachment, "contentType"))) {
+                        show_inline_image (box, attachment);
+                        continue;
+                    }
                     var button = new Gtk.Button.with_label ("Save " + JsonFields.text (attachment, "filename", "attachment"));
                     button.clicked.connect (() => save_attachment.begin (attachment));
                     box.append (button);
                 }
             }
             var details = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
-            var time = new DateTime.from_unix_local (message.timestamp / 1000);
-            string status = message.outgoing ? (message.status == "read" ? "Read" : message.status == "delivered" ? "Delivered" : message.status == "partial" ? "Partially sent" : "Sent") : message.author;
-            var caption = new Gtk.Label (time.format ("%x %H:%M") + " · " + status + (message.modified > 0 ? " · Edited" : "")) {
+                        string status = message.outgoing ? (message.status == "read" ? "Read" : message.status == "delivered" ? "Delivered" : message.status == "partial" ? "Partially sent" : "Sent") : message.author;
+            var caption = new Gtk.Label (short_time (message.timestamp) + " · " + status + (message.modified > 0 ? " · Edited" : "")) {
                 wrap = true, xalign = 0.0f, max_width_chars = 52
             };
             caption.set_data<string> ("base-caption", caption.label);
             if (message.expiration_seconds > 0) { expiry_labels.insert (message, caption); }
-            caption.add_css_class ("dim-label");
+            caption.add_css_class ("sp-caption");
             details.append (caption);
             if (!message.deleted && !message.view_once) {
                 var actions = new Gtk.MenuButton () { icon_name = "view-more-symbolic", tooltip_text = "Message actions" };
+                actions.add_css_class ("sp-actions");
+                actions.add_css_class ("flat");
                 var popover = new Gtk.Popover ();
                 var buttons = new Gtk.Box (Gtk.Orientation.VERTICAL, 6) {
                     margin_start = 8, margin_end = 8, margin_top = 8, margin_bottom = 8
@@ -1749,7 +2169,8 @@ namespace SignalNative {
                 foreach (string author in message.reactions.get_members ()) {
                     reaction_text.append (JsonFields.text (message.reactions, author) + " ");
                 }
-                var label = new Gtk.Label (reaction_text.str) { tooltip_text = "Reactions", xalign = 0.0f, wrap = true };
+                var label = new Gtk.Label (reaction_text.str) { tooltip_text = "Reactions", xalign = 0.0f, wrap = true, halign = message.outgoing ? Gtk.Align.END : Gtk.Align.START };
+                label.add_css_class ("sp-reaction");
                 box.append (label);
             }
             message_history.append (box);
