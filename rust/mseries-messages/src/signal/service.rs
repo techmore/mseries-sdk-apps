@@ -203,10 +203,12 @@ pub fn shutdown() {
 
 /// True when this app started the daemon it is talking to.
 pub fn owns_daemon() -> bool {
-    DAEMON
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .is_some()
+    // Never blocks the caller (the UI thread) behind a daemon that is starting.
+    match DAEMON.try_lock() {
+        Ok(guard) => guard.is_some(),
+        Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner().is_some(),
+        Err(std::sync::TryLockError::WouldBlock) => true,
+    }
 }
 
 #[cfg(test)]
