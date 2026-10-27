@@ -1,0 +1,12 @@
+[Unit]
+Description=Log battery power, CPU load and top processes for the Battery app
+
+[Service]
+ExecStart=/usr/bin/python3 -I /usr/libexec/mseries/battery/mseries-battery-logger.py
+Restart=on-failure
+RestartSec=10
+Nice=15
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=default.target
