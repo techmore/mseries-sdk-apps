@@ -36,7 +36,7 @@ jobs:
             libgtk-4-dev libgranite-7-dev libjson-glib-dev libsqlite3-dev \
             libsecret-1-dev libssl-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             desktop-file-utils xvfb xauth xdotool dbus python3 python3-gi gir1.2-secret-1 \
-            gir1.2-glib-2.0 gnome-keyring gstreamer1.0-plugins-base
+            gir1.2-glib-2.0 gnome-keyring gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav libgtk-4-media-gstreamer
 
       - name: Build
         working-directory: mseries/signal-pantheon
