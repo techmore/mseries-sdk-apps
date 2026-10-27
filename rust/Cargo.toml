@@ -9,3 +9,12 @@ resolver = "2"
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+# Dev loop: keep file:line in backtraces but drop full variable debuginfo, which is most of the
+# linker input and of target/ (debug binary 169 MB -> 36 MB, target dir 2.1 GB -> 1.0 GB for
+# mseries-messages). Dependencies carry no debuginfo at all. Release is untouched (above).
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
