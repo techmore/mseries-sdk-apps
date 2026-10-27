@@ -1,0 +1,483 @@
+//! Read-only access to the Signal Pantheon client's conversations.
+//!
+//! Signal Pantheon keeps each conversation as one encrypted snapshot in
+//! `~/.local/share/signal-pantheon/message-history.db`. This module reads those
+//! snapshots (never writes) and presents them as Messages threads, so one
+//! conversation list can show iMessage/SMS and Signal side by side.
+//!
+//! Store format (see `rust/mseries-signal-import`, which can also write it):
+//! * the 32-byte key is base64 text in the login keyring
+//!   (`purpose=encrypted-message-history`);
+//! * `conversation_hash` = HMAC-SHA256(key, key string);
+//! * a row is AES-256-GCM with its own 12-byte nonce, no AAD, and a 16-byte
+//!   tag stored apart from the ciphertext;
+//! * a conversation is the snapshot row (`timestamp = 0`, `outgoing = 0`) under
+//!   `pantheon-v1:<account>:conversation:<id>`, and the list of ids is the
+//!   snapshot under `pantheon-v1:<account>:catalog`.
+
+use aes_gcm::aead::generic_array::GenericArray;
+use aes_gcm::aead::{AeadInPlace, KeyInit};
+use aes_gcm::{Aes256Gcm, Nonce};
+use base64::Engine;
+use hmac::{Hmac, Mac};
+use mseries_pantheon_kit::{Message, Thread};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
+use serde_json::Value;
+use sha2::Sha256;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::Arc;
+
+/// Prefix that marks a thread as coming from Signal.
+pub const THREAD_PREFIX: &str = "signal:";
+
+type HmacSha256 = Hmac<Sha256>;
+
+/// The 32-byte history key. Never printed or logged.
+pub struct HistoryKey([u8; 32]);
+
+impl HistoryKey {
+    /// The keyring stores the key as base64 text.
+    pub fn from_keyring_secret(secret: &[u8]) -> Result<Self, String> {
+        let text: Vec<u8> = secret
+            .iter()
+            .copied()
+            .filter(|byte| !byte.is_ascii_whitespace())
+            .collect();
+        let raw = base64::engine::general_purpose::STANDARD
+            .decode(text)
+            .map_err(|_| "the Signal history key is not valid base64".to_string())?;
+        Self::from_raw(&raw)
+    }
+
+    pub fn from_raw(raw: &[u8]) -> Result<Self, String> {
+        let key: [u8; 32] = raw
+            .try_into()
+            .map_err(|_| "the Signal history key has the wrong length".to_string())?;
+        Ok(Self(key))
+    }
+
+    fn hash(&self, key_string: &str) -> Vec<u8> {
+        let mut mac =
+            <HmacSha256 as Mac>::new_from_slice(&self.0).expect("HMAC accepts any key length");
+        mac.update(key_string.as_bytes());
+        mac.finalize().into_bytes().to_vec()
+    }
+
+    fn decrypt(&self, nonce: &[u8], ciphertext: &[u8], tag: &[u8]) -> Result<Vec<u8>, String> {
+        if nonce.len() != 12 || tag.len() != 16 {
+            return Err("a Signal history row has an unexpected shape".into());
+        }
+        let cipher = Aes256Gcm::new(GenericArray::from_slice(&self.0));
+        let mut buffer = ciphertext.to_vec();
+        cipher
+            .decrypt_in_place_detached(
+                Nonce::from_slice(nonce),
+                &[],
+                &mut buffer,
+                GenericArray::from_slice(tag),
+            )
+            .map_err(|_| "a Signal history row could not be authenticated".to_string())?;
+        Ok(buffer)
+    }
+}
+
+/// The login-keyring lookup, through `secret-tool`, so no secret touches disk.
+pub fn load_history_key() -> Result<Option<HistoryKey>, String> {
+    let output = Command::new("secret-tool")
+        .args(["lookup", "purpose", "encrypted-message-history"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .map_err(|error| format!("could not run secret-tool: {error}"))?;
+    if !output.status.success() || output.stdout.is_empty() {
+        return Ok(None);
+    }
+    HistoryKey::from_keyring_secret(&output.stdout).map(Some)
+}
+
+pub fn catalog_key(account: &str) -> String {
+    format!("pantheon-v1:{account}:catalog")
+}
+
+pub fn conversation_key(account: &str, id: &str) -> String {
+    format!("pantheon-v1:{account}:conversation:{id}")
+}
+
+/// The read-only encrypted store.
+pub struct SignalStore {
+    connection: Connection,
+    key: HistoryKey,
+}
+
+impl SignalStore {
+    pub fn open(path: &Path, key: HistoryKey) -> Result<Self, String> {
+        let connection = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|error| format!("could not open the Signal history: {error}"))?;
+        connection
+            .busy_timeout(std::time::Duration::from_secs(2))
+            .map_err(|error| error.to_string())?;
+        Ok(Self { connection, key })
+    }
+
+    /// The decrypted snapshot stored under a key string, if there is one.
+    pub fn read_snapshot(&self, key_string: &str) -> Result<Option<String>, String> {
+        let row: Option<(Vec<u8>, Vec<u8>, Vec<u8>)> = self
+            .connection
+            .query_row(
+                "SELECT nonce, ciphertext, tag FROM message_history \
+                 WHERE conversation_hash = ? AND timestamp = 0 AND outgoing = 0 \
+                 ORDER BY id DESC LIMIT 1",
+                [self.key.hash(key_string)],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()
+            .map_err(|error| format!("could not read the Signal history: {error}"))?;
+        match row {
+            None => Ok(None),
+            Some((nonce, ciphertext, tag)) => {
+                let plain = self.key.decrypt(&nonce, &ciphertext, &tag)?;
+                String::from_utf8(plain)
+                    .map(Some)
+                    .map_err(|_| "a Signal snapshot is not text".to_string())
+            }
+        }
+    }
+
+    /// Ids of the conversations the client has saved for an account.
+    pub fn conversation_ids(&self, account: &str) -> Result<Vec<String>, String> {
+        let Some(catalog) = self.read_snapshot(&catalog_key(account))? else {
+            return Ok(Vec::new());
+        };
+        let value: Value = serde_json::from_str(&catalog)
+            .map_err(|_| "the Signal conversation list is not valid".to_string())?;
+        Ok(value
+            .as_array()
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| id.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
+    pub fn conversation(&self, account: &str, id: &str) -> Result<Option<Thread>, String> {
+        let Some(snapshot) = self.read_snapshot(&conversation_key(account, id))? else {
+            return Ok(None);
+        };
+        thread_from_snapshot(account, &snapshot)
+    }
+}
+
+/// `2026-10-27T09:01:00Z` from Unix milliseconds, the form the timeline expects.
+fn iso8601(milliseconds: i64) -> String {
+    gtk::glib::DateTime::from_unix_utc(milliseconds.div_euclid(1000))
+        .ok()
+        .and_then(|moment| moment.format_iso8601().ok())
+        .map(|text| text.to_string())
+        .unwrap_or_default()
+}
+
+/// One saved conversation as a read-only Messages thread.
+pub fn thread_from_snapshot(account: &str, snapshot: &str) -> Result<Option<Thread>, String> {
+    let root: Value = serde_json::from_str(snapshot)
+        .map_err(|_| "a Signal conversation is not valid".to_string())?;
+    let Some(id) = root["id"].as_str().filter(|id| !id.is_empty()) else {
+        return Ok(None);
+    };
+    let name = root["name"]
+        .as_str()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(id);
+    let is_group = root["group"].as_bool().unwrap_or(false);
+    let unread = root["unread"].as_u64().unwrap_or(0) as usize;
+
+    let mut messages = Vec::new();
+    for record in root["messages"].as_array().into_iter().flatten() {
+        let outgoing = record["outgoing"].as_bool().unwrap_or(false);
+        let deleted = record["deleted"].as_bool().unwrap_or(false);
+        let view_once = record["viewOnce"].as_bool().unwrap_or(false);
+        let timestamp = record["timestamp"].as_i64().unwrap_or(0);
+        let attachments = record["attachments"]
+            .as_array()
+            .map(|list| list.len())
+            .unwrap_or(0);
+        let mut body = if deleted {
+            "This message was deleted".to_string()
+        } else if view_once {
+            "View-once media".to_string()
+        } else {
+            record["text"].as_str().unwrap_or("").to_string()
+        };
+        if body.is_empty() && attachments > 0 && !deleted {
+            body = if attachments == 1 {
+                "Attachment".to_string()
+            } else {
+                format!("{attachments} attachments")
+            };
+        }
+        let author = record["author"].as_str().unwrap_or("");
+        let status = record["status"].as_str().unwrap_or("sent");
+        messages.push(Message {
+            handle: format!("{id}:{timestamp}:{author}"),
+            body,
+            timestamp: iso8601(timestamp),
+            outgoing,
+            // A message is unread until the client marked it read here.
+            read: outgoing || record["localRead"].as_bool().unwrap_or(true) || status == "read",
+            sender: if is_group && !outgoing {
+                author.to_string()
+            } else {
+                String::new()
+            },
+            ..Message::default()
+        });
+    }
+    messages.sort_by(|left, right| left.timestamp.cmp(&right.timestamp));
+    let last_ts = messages
+        .last()
+        .map(|message| message.timestamp.clone())
+        .unwrap_or_default();
+    let mut thread = Thread {
+        key: format!("{THREAD_PREFIX}{account}:{id}"),
+        name: name.to_string(),
+        is_group,
+        recipients: Vec::new(),
+        // Sending arrives with the Signal send path; until then Signal threads are read-only.
+        reply_ready: false,
+        messages,
+        last_ts,
+        unread_count: unread,
+        local_only: true,
+        search_index: Arc::new(String::new()),
+        ..Thread::default()
+    };
+    thread.refresh_search_index();
+    Ok(Some(thread))
+}
+
+/// Where the client keeps its data.
+pub fn data_directory() -> PathBuf {
+    gtk::glib::user_data_dir().join("signal-pantheon")
+}
+
+/// The linked account's number from the client's `accounts.json`, if any.
+pub fn active_account(directory: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(directory.join("data").join("accounts.json")).ok()?;
+    let root: Value = serde_json::from_str(&text).ok()?;
+    root["accounts"]
+        .as_array()?
+        .iter()
+        .find_map(|account| account["number"].as_str().map(str::to_string))
+}
+
+/// Everything Signal contributes to the conversation list: all saved
+/// conversations of the linked account, or nothing when Signal Pantheon is not
+/// set up on this machine.
+pub fn load_threads() -> Result<Vec<Thread>, String> {
+    let directory = data_directory();
+    let database = directory.join("message-history.db");
+    if !database.exists() {
+        return Ok(Vec::new());
+    }
+    let Some(account) = active_account(&directory) else {
+        return Ok(Vec::new());
+    };
+    let Some(key) = load_history_key()? else {
+        return Ok(Vec::new());
+    };
+    let store = SignalStore::open(&database, key)?;
+    let mut threads = Vec::new();
+    for id in store.conversation_ids(&account)? {
+        if let Some(thread) = store.conversation(&account, &id)? {
+            threads.push(thread);
+        }
+    }
+    Ok(threads)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Independent vectors computed with Python's `hmac` and `cryptography`.
+    const KEY: [u8; 32] = [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+        25, 26, 27, 28, 29, 30, 31,
+    ];
+
+    fn hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    fn unhex(text: &str) -> Vec<u8> {
+        (0..text.len())
+            .step_by(2)
+            .map(|index| u8::from_str_radix(&text[index..index + 2], 16).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn hash_matches_an_independent_hmac() {
+        let key = HistoryKey::from_raw(&KEY).unwrap();
+        assert_eq!(
+            hex(&key.hash("pantheon-v1:+15550000001:catalog")),
+            "dc92c17cc98f44e5cb791afee73851033ab45f141ef123a1ceb380ae8f77c094"
+        );
+    }
+
+    #[test]
+    fn decrypts_an_independently_encrypted_row() {
+        let key = HistoryKey::from_raw(&KEY).unwrap();
+        let nonce: Vec<u8> = (100..112).collect();
+        let plain = key
+            .decrypt(
+                &nonce,
+                &unhex("1339f5574cdc63ae0e526fd8ea5748a0"),
+                &unhex("c03967b6e45742ce433662a7724a7d42"),
+            )
+            .unwrap();
+        assert_eq!(plain, br#"["+15550000002"]"#);
+    }
+
+    #[test]
+    fn a_tampered_row_is_refused() {
+        let key = HistoryKey::from_raw(&KEY).unwrap();
+        let nonce: Vec<u8> = (100..112).collect();
+        let mut ciphertext = unhex("1339f5574cdc63ae0e526fd8ea5748a0");
+        ciphertext[0] ^= 1;
+        assert!(
+            key.decrypt(
+                &nonce,
+                &ciphertext,
+                &unhex("c03967b6e45742ce433662a7724a7d42")
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn keyring_secret_must_be_a_32_byte_base64_key() {
+        let good = base64::engine::general_purpose::STANDARD.encode(KEY);
+        assert!(HistoryKey::from_keyring_secret(format!("{good}\n").as_bytes()).is_ok());
+        assert!(HistoryKey::from_keyring_secret(b"not base64 !!").is_err());
+        assert!(HistoryKey::from_keyring_secret(b"AAAA").is_err());
+    }
+
+    fn seal(key: &HistoryKey, nonce: [u8; 12], plain: &[u8]) -> (Vec<u8>, Vec<u8>) {
+        let cipher = Aes256Gcm::new(GenericArray::from_slice(&key.0));
+        let mut buffer = plain.to_vec();
+        let tag = cipher
+            .encrypt_in_place_detached(Nonce::from_slice(&nonce), &[], &mut buffer)
+            .unwrap();
+        (buffer, tag.to_vec())
+    }
+
+    #[test]
+    fn reads_a_conversation_from_an_encrypted_store() {
+        let directory = std::env::temp_dir().join(format!("signal-store-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("message-history.db");
+        let key = HistoryKey::from_raw(&KEY).unwrap();
+        let account = "+15550000001";
+        let conversation = r#"{"version":1,"id":"+15550000002","name":"Alice","group":false,
+            "unread":1,"messages":[
+              {"text":"later","author":"+15550000002","timestamp":1790000100000,"outgoing":false,"localRead":false,"status":"sent","attachments":[]},
+              {"text":"hello","author":"+15550000001","timestamp":1790000000000,"outgoing":true,"status":"delivered","attachments":[]},
+              {"text":"","author":"+15550000002","timestamp":1790000200000,"outgoing":false,"localRead":true,"attachments":[{"filename":"a.png"}]}
+            ]}"#;
+        {
+            let connection = Connection::open(&path).unwrap();
+            connection
+                .execute_batch(
+                    "CREATE TABLE message_history (id INTEGER PRIMARY KEY, \
+                     conversation_hash BLOB NOT NULL, timestamp INTEGER NOT NULL, \
+                     outgoing INTEGER NOT NULL, nonce BLOB NOT NULL, ciphertext BLOB NOT NULL, \
+                     tag BLOB NOT NULL)",
+                )
+                .unwrap();
+            for (index, (key_string, plain)) in [
+                (catalog_key(account), r#"["+15550000002"]"#.to_string()),
+                (
+                    conversation_key(account, "+15550000002"),
+                    conversation.to_string(),
+                ),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let nonce = [index as u8 + 1; 12];
+                let (ciphertext, tag) = seal(&key, nonce, plain.as_bytes());
+                connection
+                    .execute(
+                        "INSERT INTO message_history(conversation_hash, timestamp, outgoing, nonce, ciphertext, tag) VALUES (?,0,0,?,?,?)",
+                        rusqlite::params![key.hash(&key_string), nonce.to_vec(), ciphertext, tag],
+                    )
+                    .unwrap();
+            }
+        }
+        let store = SignalStore::open(&path, HistoryKey::from_raw(&KEY).unwrap()).unwrap();
+        assert_eq!(store.conversation_ids(account).unwrap(), ["+15550000002"]);
+        assert!(
+            store
+                .conversation(account, "+19999999999")
+                .unwrap()
+                .is_none()
+        );
+        let thread = store
+            .conversation(account, "+15550000002")
+            .unwrap()
+            .expect("saved conversation");
+        assert_eq!(thread.key, "signal:+15550000001:+15550000002");
+        assert_eq!(thread.name, "Alice");
+        assert!(!thread.reply_ready, "Signal threads are read-only for now");
+        assert_eq!(thread.unread_count, 1);
+        // Sorted by time, whatever order the snapshot used.
+        let bodies: Vec<_> = thread.messages.iter().map(|m| m.body.as_str()).collect();
+        assert_eq!(bodies, ["hello", "later", "Attachment"]);
+        assert!(thread.messages[0].outgoing);
+        assert!(!thread.messages[1].read);
+        assert!(thread.messages[2].read);
+        assert_eq!(thread.last_ts, thread.messages[2].timestamp);
+        std::fs::remove_dir_all(&directory).ok();
+    }
+
+    #[test]
+    fn deleted_and_view_once_messages_never_show_their_content() {
+        let snapshot = r#"{"id":"g1","name":"Team","group":true,"messages":[
+            {"text":"secret","author":"a","timestamp":1790000000000,"deleted":true},
+            {"text":"","author":"b","timestamp":1790000001000,"viewOnce":true,"attachments":[{"filename":"x"}]}]}"#;
+        let thread = thread_from_snapshot("+1", snapshot).unwrap().unwrap();
+        assert_eq!(thread.messages[0].body, "This message was deleted");
+        assert_eq!(thread.messages[1].body, "View-once media");
+        assert!(thread.is_group);
+        assert_eq!(thread.messages[1].sender, "b");
+    }
+
+    #[test]
+    fn malformed_snapshots_are_errors_not_panics() {
+        assert!(thread_from_snapshot("+1", "not json").is_err());
+        assert!(
+            thread_from_snapshot("+1", r#"{"name":"no id"}"#)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    /// Counts only, never content: proves the read path against this machine's real store.
+    #[test]
+    #[ignore = "reads the real Signal Pantheon store and login keyring"]
+    fn reads_the_local_signal_store() {
+        let threads = load_threads().expect("readable store");
+        let messages: usize = threads.iter().map(|thread| thread.messages.len()).sum();
+        eprintln!("signal threads: {}, messages: {messages}", threads.len());
+        assert!(
+            threads
+                .iter()
+                .all(|thread| thread.key.starts_with(THREAD_PREFIX))
+        );
+    }
+}

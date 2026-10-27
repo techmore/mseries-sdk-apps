@@ -16,6 +16,7 @@ mod messages;
 mod phone_pins;
 mod polling;
 mod system;
+pub mod timeline;
 pub mod updates;
 
 pub use blueferry::{
