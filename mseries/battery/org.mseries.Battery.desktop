@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Battery
+GenericName=Battery History
+Comment=Runtime, power use and battery health over time
+Exec=/usr/bin/python3 /usr/libexec/mseries/battery/mseries-battery-app.py
+Icon=org.mseries.Battery
+Terminal=false
+Type=Application
+Categories=GNOME;GTK;System;Monitor;
+Keywords=battery;power;runtime;watts;energy;health;
+StartupNotify=true

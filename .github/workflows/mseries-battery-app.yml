@@ -1,0 +1,50 @@
+name: Battery app
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - "mseries/battery/**"
+      - "mseries/install-battery.sh"
+      - "mseries/install-battery-eta.sh"
+      - ".github/workflows/mseries-battery-app.yml"
+  pull_request:
+    paths:
+      - "mseries/battery/**"
+      - "mseries/install-battery.sh"
+      - "mseries/install-battery-eta.sh"
+      - ".github/workflows/mseries-battery-app.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Battery core and UI tests (arm64)
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-gi python3-gi-cairo python3-cairo gir1.2-gtk-4.0 gir1.2-granite-7.0 xvfb xauth dbus-x11 desktop-file-utils
+
+      # Fake sysfs trees only; nothing reads real power-supply state.
+      - name: Unit tests
+        working-directory: mseries/battery
+        run: |
+          xvfb-run -a dbus-run-session -- python3 -I -m unittest discover -v -p 'test_*.py'
+
+      - name: Scripts and metadata
+        run: |
+          bash -n mseries/install-battery.sh
+          bash -n mseries/install-battery-eta.sh
+          python3 -I -m py_compile mseries/battery/*.py
+          desktop-file-validate mseries/battery/org.mseries.Battery.desktop
+          python3 -c 'import xml.etree.ElementTree as ET; ET.parse("mseries/battery/org.mseries.Battery.svg")'

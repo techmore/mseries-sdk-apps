@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Image Studio
+Comment=Create, review and compare images on your M-Series Mac
+Exec=mseries-image-studio
+Icon=org.elementary.mseries.ImageStudio
+Terminal=false
+Categories=Graphics;Photography;
+StartupNotify=true
+DBusActivatable=true
+StartupWMClass=org.elementary.mseries.ImageStudio
+Keywords=AI;Images;Diffusion;Models;Prompts;Pantheon;
