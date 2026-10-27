@@ -1,0 +1,2 @@
+option('granite_major', type: 'combo', choices: ['7', '9'], value: '7',
+  description: 'Granite major version; use 9 with the elementary OS 9 SDK')
