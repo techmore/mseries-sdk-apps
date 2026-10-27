@@ -9,6 +9,10 @@ namespace SignalNative {
         private Gtk.Label conversation_title;
         private Gtk.Label conversation_status;
         private Gtk.Box heading_avatar;
+        private Conversation? rendered_conversation = null;
+        private uint rendered_count = 0;
+        private int64 rendered_last_timestamp = 0;
+        private Gtk.Widget? pending_bubble = null;
         private Gtk.Button media_button;
         private Gtk.Window? media_window;
         private Gtk.Box message_history;
@@ -1691,7 +1695,8 @@ namespace SignalNative {
                 }
                 if (!allowed) { conversation_status.label = "Messaging is unavailable with this group's current membership, permissions or timer."; }
             }
-            bool enabled = allowed && service_ready && !send_in_progress;
+            bool enabled = allowed && service_ready;
+            bool can_send = enabled && !send_in_progress;
             new_conversation_button.sensitive = service_ready && store != null;
             voice_button.sensitive = current != null && service_ready && calls != null && calls.available && !calls.active;
             if (current != null && current.is_group) { voice_button.sensitive = voice_button.sensitive && group_backend; }
@@ -1700,8 +1705,8 @@ namespace SignalNative {
             video_button.label = current != null && current.is_group ? "Join group video call" : "Video call";
             voice_button.tooltip_text = calls != null && calls.error_message != "" ? calls.error_message : "Start or join a call";
             message_entry.sensitive = enabled;
-            send_button.sensitive = enabled;
-            attach_button.sensitive = enabled && editing_timestamp == 0;
+            send_button.sensitive = can_send;
+            attach_button.sensitive = can_send && editing_timestamp == 0;
             string path = current != null ? current.attachment_draft : "";
             attachment_label.label = path == "" ? "" : "Attachment: " + Path.get_basename (path);
             attachment_label.tooltip_text = path;
@@ -1709,10 +1714,11 @@ namespace SignalNative {
             view_once_toggle.active = current != null && current.view_once_draft;
             updating_composer = false;
             view_once_toggle.visible = path != "";
-            view_once_toggle.sensitive = enabled && view_once_backend;
+            view_once_toggle.sensitive = can_send && view_once_backend;
             clear_attachment_button.visible = path != "";
-            clear_attachment_button.sensitive = enabled;
-            send_button.label = editing_timestamp == 0 ? "Send" : "Save Edit";
+            clear_attachment_button.sensitive = can_send;
+            send_button.tooltip_text = editing_timestamp == 0 ? "Send" : "Save edit";
+            send_button.update_property (Gtk.AccessibleProperty.LABEL, editing_timestamp == 0 ? "Send" : "Save edit", -1);
         }
 
         private async void choose_attachment () {
@@ -1742,6 +1748,13 @@ namespace SignalNative {
             int64 edit = editing_timestamp;
             if (text == "" && attachment == "") { return; }
             send_in_progress = true;
+            if (edit == 0 && history_search.text == "") { show_pending (text, attachment != ""); }
+            if (edit == 0) {
+                // The text is on screen as "Sending…"; free the composer for the next message.
+                updating_composer = true;
+                message_entry.text = "";
+                updating_composer = false;
+            }
             update_composer ();
             try {
                 if (attachment != "") {
@@ -1799,19 +1812,30 @@ namespace SignalNative {
                 if (edit == 0) { c.draft = ""; c.attachment_draft = ""; c.view_once_draft = false; }
                 persist (c);
                 if (current == c) {
-                    updating_composer = true;
-                    message_entry.text = edit > 0 ? c.draft : "";
-                    updating_composer = false;
+                    if (edit > 0 || message_entry.text == "") {
+                        updating_composer = true;
+                        message_entry.text = edit > 0 ? c.draft : "";
+                        updating_composer = false;
+                    }
                     editing_timestamp = 0;
                     conversation_status.label = partial ? "Some recipients did not receive the message. Check before retrying." : "Accepted by Signal";
-                    render_history ();
+                    if (edit > 0) { render_history (); } else { show_new_messages (c, true); }
                 }
             } catch (Error error) {
                 if (view_once && attachment != "" && attachment != c.attachment_draft) {
                     var owned_attachment = new Json.Object (); owned_attachment.set_string_member ("localPath",attachment);
                     try { yield AttachmentFiles.expire_owned (backend.attachment_directory, Path.build_filename (Environment.get_user_data_dir (),"signal-pantheon","outgoing"),owned_attachment); } catch (Error ignored) {}
                 }
-                if (current == c) { conversation_status.label = "Send could not be confirmed: " + error.message; }
+                clear_pending ();
+                if (current == c) {
+                    // Put the text back so nothing typed is lost, unless something new is being written.
+                    if (edit == 0 && message_entry.text == "" && text != "") {
+                        updating_composer = true;
+                        message_entry.text = text;
+                        updating_composer = false;
+                    }
+                    conversation_status.label = "Send could not be confirmed: " + error.message;
+                }
             }
             send_in_progress = false;
             update_composer ();
@@ -1900,7 +1924,7 @@ namespace SignalNative {
             persist (c);
             add_conversation_row (c.name, c.id, c.is_group);
             update_unread (c);
-            if (current == c) { render_history (); if (is_active) { mark_read.begin (c); } }
+            if (current == c) { show_new_messages (c); if (is_active) { mark_read.begin (c); } }
             if (e.kind == "message" && !e.outgoing && notifications.active && (!is_active || current != c)) {
                 var notification = new Notification ("Signal Pantheon");
                 notification.set_body ("You have a new message");
@@ -2001,6 +2025,9 @@ namespace SignalNative {
                 append_record (c, message);
                 shown++;
             }
+            rendered_conversation = c;
+            rendered_count = c.messages.length;
+            rendered_last_timestamp = last_stamp;
             refresh_expiry_labels (expiration != null ? expiration.now_ms () : GLib.get_real_time () / 1000);
             refresh_row_summary (c);
             update_media_button ();
@@ -2066,6 +2093,76 @@ namespace SignalNative {
                 ((Gtk.Widget) dialog).add_controller (escape);
                 dialog.present ();
             } catch (Error error) { conversation_status.label = "Could not open view-once media: " + error.message; }
+        }
+
+        private bool near_bottom () {
+            var adjustment = history_scroll.vadjustment;
+            return adjustment.value + adjustment.page_size >= adjustment.upper - 120;
+        }
+
+        private void scroll_to_latest () {
+            Idle.add (() => {
+                var adjustment = history_scroll.vadjustment;
+                adjustment.value = adjustment.upper - adjustment.page_size;
+                return Source.REMOVE;
+            });
+        }
+
+        // One new message at the end: add it in place instead of rebuilding the whole
+        // history, so nothing flickers and the reading position never jumps. Anything
+        // else (edits, deletions, reactions, searches, older history) redraws fully.
+        private void show_new_messages (Conversation c, bool force_scroll = false) {
+            if (current != c) { return; }
+            bool incremental = rendered_conversation == c && history_search.text == "" &&
+                c.messages.length == rendered_count + 1 && rendered_count > 0;
+            if (incremental) {
+                var message = c.messages[c.messages.length - 1];
+                incremental = message.timestamp >= rendered_last_timestamp;
+            }
+            if (!incremental) {
+                render_history ();
+                return;
+            }
+            bool follow = force_scroll || near_bottom ();
+            var message = c.messages[c.messages.length - 1];
+            if (pending_bubble != null) { message_history.remove (pending_bubble); pending_bubble = null; }
+            if (message.timestamp - rendered_last_timestamp > 30 * 60 * 1000 ||
+                new DateTime.from_unix_local (message.timestamp / 1000).get_day_of_year () !=
+                new DateTime.from_unix_local (rendered_last_timestamp / 1000).get_day_of_year ()) {
+                var stamp = new Gtk.Label (heading_time (message.timestamp));
+                stamp.add_css_class ("sp-stamp");
+                message_history.append (stamp);
+            }
+            append_record (c, message);
+            rendered_count = c.messages.length;
+            rendered_last_timestamp = message.timestamp;
+            refresh_expiry_labels (expiration != null ? expiration.now_ms () : GLib.get_real_time () / 1000);
+            refresh_row_summary (c);
+            update_media_button ();
+            if (follow) { scroll_to_latest (); }
+        }
+
+        // Shown the instant Send is pressed; replaced by the real message once Signal accepts it.
+        private void show_pending (string text, bool has_attachment) {
+            if (pending_bubble != null) { message_history.remove (pending_bubble); pending_bubble = null; }
+            var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 6) { halign = Gtk.Align.END };
+            box.add_css_class ("sp-message");
+            var bubble = new Gtk.Label (text != "" ? text : "Attachment") {
+                wrap = true, xalign = 0.0f, max_width_chars = 58, wrap_mode = Pango.WrapMode.WORD_CHAR, opacity = 0.7
+            };
+            bubble.add_css_class ("message-bubble");
+            bubble.add_css_class ("outgoing");
+            box.append (bubble);
+            var caption = new Gtk.Label (has_attachment ? "Sending attachment…" : "Sending…") { xalign = 1.0f };
+            caption.add_css_class ("sp-caption");
+            box.append (caption);
+            pending_bubble = box;
+            message_history.append (box);
+            scroll_to_latest ();
+        }
+
+        private void clear_pending () {
+            if (pending_bubble != null) { message_history.remove (pending_bubble); pending_bubble = null; }
         }
 
         private string attachment_names (MessageRecord message) {
@@ -2271,6 +2368,7 @@ namespace SignalNative {
         }
 
         private void clear_history () {
+            pending_bubble = null;
             expiry_labels.remove_all ();
             Gtk.Widget? child = message_history.get_first_child ();
             while (child != null) {

@@ -15,7 +15,7 @@ public class Appearance : Object {
         provider.load_from_string ("""
             @define-color accent_bg_color @theme_selected_bg_color;
             @define-color accent_fg_color @theme_selected_fg_color;
-            .message-bubble { padding: 8px 13px; border-radius: 18px; }
+            .message-bubble { padding: 9px 14px; border-radius: 18px; font-size: 1.12em; }
             .message-bubble.incoming { background-color: alpha(@theme_fg_color, 0.10); border-bottom-left-radius: 5px; }
             .message-bubble.outgoing link, .message-bubble.outgoing link:visited { color: @accent_fg_color; text-decoration: underline; }
             .message-bubble.outgoing { background-color: @accent_bg_color; color: @accent_fg_color; border-bottom-right-radius: 5px; }
@@ -23,26 +23,26 @@ public class Appearance : Object {
             .sp-actions { opacity: 0; min-width: 22px; min-height: 22px; padding: 0; }
             .sp-avatar label { font-size: 1.05em; }
             .sp-avatar { border-radius: 99px; color: white; font-weight: 700; }
-            .sp-caption { font-size: .8em; opacity: .7; margin: 0 4px; }
+            .sp-caption { font-size: .92em; opacity: .75; margin: 0 4px; }
             .sp-composer { padding: 10px 16px 14px 16px; }
             .sp-empty { opacity: .8; }
-            .sp-field textview, .sp-field textview text { background: transparent; }
+            .sp-field textview, .sp-field textview text { background: transparent; font-size: 1.12em; }
             .sp-field { border-radius: 20px; border: 1px solid alpha(@theme_fg_color, .22); background: @theme_base_color; padding: 3px 5px 3px 4px; }
             .sp-field:focus-within { border-color: @accent_bg_color; box-shadow: 0 0 0 1px alpha(@accent_bg_color, .45); }
             .sp-heading { border-bottom: 1px solid alpha(@theme_fg_color, .10); }
             .sp-list row { border-radius: 10px; margin: 1px 8px; }
             .sp-message:hover .sp-actions, .sp-message:focus-within .sp-actions { opacity: 1; }
-            .sp-name { font-weight: 600; font-size: 1.08em; }
+            .sp-name { font-weight: 600; font-size: 1.15em; }
             .sp-photo { background: alpha(@theme_fg_color, .08); }
-            .sp-preview { font-size: .92em; opacity: .75; }
-            .sp-reaction { background: alpha(@theme_fg_color, .10); border-radius: 99px; padding: 1px 8px; margin: 2px 4px 0 4px; }
+            .sp-preview { font-size: 1.02em; opacity: .78; }
+            .sp-reaction { background: alpha(@theme_fg_color, .10); border-radius: 99px; padding: 1px 8px; margin: 2px 4px 0 4px; font-size: 1.05em; }
             .sp-row { padding: 6px 4px; }
             .sp-search { margin: 10px 12px 6px 12px; }
             .sp-search-messages { margin: 0 16px 8px 16px; }
             .sp-send { min-width: 30px; min-height: 30px; padding: 0; border-radius: 99px; }
-            .sp-stamp { font-size: .82em; opacity: .72; margin: 14px 0 6px 0; }
-            .sp-status { font-size: .86em; opacity: .8; padding: 9px 14px; border-top: 1px solid alpha(@theme_fg_color, .10); }
-            .sp-time { font-size: .82em; opacity: .7; }
+            .sp-stamp { font-size: .92em; opacity: .75; margin: 14px 0 6px 0; }
+            .sp-status { font-size: .95em; opacity: .85; padding: 9px 14px; border-top: 1px solid alpha(@theme_fg_color, .10); }
+            .sp-time { font-size: .92em; opacity: .75; }
             .sp-unread-dot { min-width: 9px; min-height: 9px; border-radius: 99px; background: @accent_bg_color; }
             .sp-unread-name { font-weight: 800; }
             .sp-tone-0 { background: #3689e6; } .sp-tone-1 { background: #28bca3; }
