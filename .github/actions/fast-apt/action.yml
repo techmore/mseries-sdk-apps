@@ -1,17 +1,18 @@
 name: Fast apt on arm64 runners
 description: >-
-  Point Ubuntu package sources at the official ports mirror and set apt retry/timeout
-  defaults. The default Azure mirror (azure.archive.ubuntu.com) took 15-34 minutes for
-  dependency installs on arm64 runners (runs 40418762416, 40418762747, 40482489505).
-  No-op on non-arm64 runners. Prints the resulting URIs so logs show it took effect.
+  Set apt retry/timeout defaults on every runner, and on arm64 point Ubuntu package
+  sources at the official ports mirror. The default Azure mirror (azure.archive.ubuntu.com)
+  took 15-34 minutes for dependency installs on arm64 runners (runs 40418762416,
+  40418762747, 40482489505) and stalls mid-download on amd64 too, so retries apply to
+  both. Prints the resulting URIs so logs show it took effect.
 runs:
   using: composite
   steps:
     - shell: bash
       run: |
+        printf 'Acquire::Retries "5";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' \
+          | sudo tee /etc/apt/apt.conf.d/80-retries >/dev/null
         [ "$(dpkg --print-architecture)" = arm64 ] || exit 0
-        printf 'Acquire::Retries "3";\nAcquire::http::Timeout "20";\nAcquire::https::Timeout "20";\n' \
-          | sudo tee /etc/apt/apt.conf.d/99ci-fast >/dev/null
         f=/etc/apt/sources.list.d/ubuntu.sources
         if [ -f "$f" ]; then
           # Replace the whole line: the runner may use azure.archive.ubuntu.com or mirror+file:.
