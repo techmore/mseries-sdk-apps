@@ -37,6 +37,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: ./.github/actions/fast-apt
+
       - name: Install build and test dependencies
         run: |
           sudo apt-get update

@@ -41,6 +41,8 @@ jobs:
           ref: 60fd7ef1abbd25947981f0cf27a521d82784a75f
           path: .pin-test-blueferry
 
+      - uses: ./.github/actions/fast-apt
+
       - name: Install build dependencies
         run: |
           sudo apt-get update

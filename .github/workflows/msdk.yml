@@ -41,6 +41,8 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/work/sdk-target
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/fast-apt
+
       - name: Provision native SDK test environment
         run: |
           # The Azure mirror took >25 minutes for two Rust archives in run
