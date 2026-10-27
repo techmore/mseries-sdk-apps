@@ -24,6 +24,9 @@ export XDG_CONFIG_HOME="$scratch/config" XDG_CACHE_HOME="$scratch/cache"
 export XDG_DATA_HOME="$scratch/data" XDG_RUNTIME_DIR="$scratch/runtime"
 export MSERIES_MESSAGES_ISOLATED_GUI=1 GSK_RENDERER=cairo GTK_A11Y=test
 export GIO_USE_VFS=local GDK_BACKEND=x11
+# Signal: a fake signal-cli daemon, and no real Signal Pantheon client to defer to.
+export SIGNAL_CLI_PATH="$here/tests/fake-signal-cli.py" FAKE_SIGNAL_LOG="$scratch/signal.log"
+export MSERIES_SIGNAL_CLIENT_NAME=no-such-signal-client
 unset WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS
 xvfb-run -a dbus-run-session --config-file="$scratch/dbus.conf" -- \
   cargo test --manifest-path "$here/../Cargo.toml" --locked -p mseries-messages \
