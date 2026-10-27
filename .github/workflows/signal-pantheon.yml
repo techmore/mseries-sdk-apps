@@ -35,7 +35,7 @@ jobs:
             build-essential meson ninja-build pkg-config valac \
             libgtk-4-dev libgranite-7-dev libjson-glib-dev libsqlite3-dev \
             libsecret-1-dev libssl-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-            desktop-file-utils xvfb xauth dbus python3 python3-gi gir1.2-secret-1 \
+            desktop-file-utils xvfb xauth xdotool dbus python3 python3-gi gir1.2-secret-1 \
             gir1.2-glib-2.0 gnome-keyring gstreamer1.0-plugins-base
 
       - name: Build
