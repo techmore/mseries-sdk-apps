@@ -63,7 +63,10 @@ jobs:
       - name: Style checks (bash -n, shellcheck)
         run: |
           sudo apt-get install -y --no-install-recommends shellcheck
-          bash mseries/validate.sh --only updates-app
+          bash -n mseries/updates-app/install.sh mseries/updates-app/test.sh
+          shellcheck -S warning mseries/updates-app/install.sh mseries/updates-app/test.sh
+          python3 -c "import xml.etree.ElementTree as ET; ET.parse('rust/mseries-updates/data/org.techmore.mseries.update.policy.in')"
+          grep -q ^Exec=mseries-updates rust/mseries-updates/data/org.techmore.mseries.Updates.desktop
 
       - name: Tests, headless render under Xvfb, staged install
         env:

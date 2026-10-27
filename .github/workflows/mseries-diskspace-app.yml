@@ -56,7 +56,12 @@ jobs:
           restore-keys: diskspace-app-${{ runner.arch }}-
 
       - name: Style checks (bash -n, shellcheck)
-        run: bash mseries/validate.sh --only diskspace-app
+        run: |
+          sudo apt-get install -y --no-install-recommends shellcheck
+          bash -n mseries/diskspace-app/install.sh mseries/diskspace-app/test.sh
+          shellcheck -S warning mseries/diskspace-app/install.sh mseries/diskspace-app/test.sh
+          grep -q ^Exec=mseries-diskspace$ rust/mseries-diskspace/data/org.techmore.mseries.DiskSpace.desktop
+          grep -q org.techmore.mseries.DiskSpace rust/mseries-diskspace/src/main.rs
 
       - name: Tests, scan vs du, headless render under Xvfb, staged install
         env:
