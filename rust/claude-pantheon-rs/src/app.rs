@@ -87,6 +87,8 @@ pub struct App {
     stack: gtk::Stack,
     chat: gtk::Box,
     chat_scroll: gtk::ScrolledWindow,
+    /// Reading position of the open thread when it is resubscribed (reconnect): thread id and scroll offset, `None` offset = was following the end.
+    scroll_restore: RefCell<Option<(String, Option<f64>)>>,
     title: gtk::Label,
     subtitle: gtk::Label,
     toast: granite::Toast,
@@ -473,6 +475,7 @@ impl App {
             stack,
             chat,
             chat_scroll,
+            scroll_restore: RefCell::new(None),
             title,
             subtitle,
             toast,
@@ -2562,6 +2565,12 @@ impl App {
         self.scroll_to_end();
     }
 
+    /// Back to a reading position after the column was rebuilt; clamped once the new content is laid out.
+    fn scroll_to_offset(&self, offset: f64) {
+        let adj = self.chat_scroll.vadjustment();
+        glib::idle_add_local_once(move || adj.set_value(offset.min(adj.upper() - adj.page_size()).max(0.0)));
+    }
+
     pub fn scroll_to_end(&self) {
         let adj = self.chat_scroll.vadjustment();
         glib::idle_add_local_once(move || adj.set_value(adj.upper() - adj.page_size()));
@@ -2599,6 +2608,12 @@ impl App {
             notify::withdraw(&application, &format!("turn:{}", thread.id));
             notify::withdraw(&application, &format!("ask:{}", thread.id));
         }
+        let restore = self.live.borrow().as_ref().filter(|l| l.thread_id == thread.id).map(|l| {
+            let adj = self.chat_scroll.vadjustment();
+            let near_end = adj.value() + adj.page_size() >= adj.upper() - 80.0;
+            (l.thread_id.clone(), (!near_end).then(|| adj.value()))
+        });
+        *self.scroll_restore.borrow_mut() = restore;
         self.leave_live();
         *self.current_session.borrow_mut() = None;
         *self.transcript.borrow_mut() = None;
@@ -2704,7 +2719,14 @@ impl App {
                 }
                 self.show_page("chat");
                 self.stop_btn.set_visible(running);
-                self.scroll_to_end();
+                let restore = self.scroll_restore.borrow_mut().take();
+                let same = restore.as_ref().and_then(|(id, off)| {
+                    (self.live.borrow().as_ref().map(|l| &l.thread_id) == Some(id)).then_some(*off)
+                });
+                match same.flatten() {
+                    Some(offset) => self.scroll_to_offset(offset),
+                    None => self.scroll_to_end(),
+                }
                 self.show_issue_comments();
             }
             "event" => {
