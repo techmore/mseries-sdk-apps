@@ -76,6 +76,15 @@ jobs:
       - name: Isolated Messages GTK recovery test
         run: bash rust/mseries-messages/test-gui.sh
 
+      - name: Render UI screenshots (Xvfb, light and dark)
+        run: bash rust/mseries-messages/screenshots.sh "$RUNNER_TEMP/messages-screenshots"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mseries-messages-screenshots-${{ github.run_id }}
+          path: ${{ runner.temp }}/messages-screenshots/*.png
+          if-no-files-found: error
+
       - name: Isolated Python and Rust favorites keyring round-trip
         env:
           PYTHONPATH: ${{ github.workspace }}/.pin-test-blueferry/src

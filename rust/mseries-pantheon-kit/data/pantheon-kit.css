@@ -123,3 +123,202 @@
 .messaging-channel-signal {
     background: mix(@theme_bg_color, #6b96ca, 0.15);
 }
+
+/* ---- Messages: elementary OS layout (sidebar, conversation list, thread) ---- */
+
+/* Split header: the list side keeps the sidebar background, the thread side the view. */
+.mseries-messages .pantheon-messages-sidebar searchentry {
+    margin: 0 9px 6px 9px;
+}
+
+.mseries-messages .pantheon-messages-sidebar scrolledwindow,
+.mseries-messages .pantheon-messages-sidebar list {
+    background: transparent;
+}
+
+.mseries-messages .pantheon-sidebar-status {
+    padding: 6px 12px 8px 12px;
+}
+
+/* Conversation rows: avatar, name and time, two lines of preview. */
+.mseries-messages list.navigation-sidebar > row.pantheon-conversation-row {
+    padding: 0;
+    margin: 1px 6px;
+    border-radius: 8px;
+}
+
+.mseries-messages .pantheon-conversation {
+    padding: 6px 6px 6px 9px;
+}
+
+.mseries-messages .pantheon-conversation .pantheon-row {
+    padding: 0;
+}
+
+.mseries-messages .pantheon-conversation-row.pantheon-unread .heading {
+    font-weight: 800;
+}
+
+.mseries-messages .pantheon-row-preview {
+    font-size: 0.92em;
+}
+
+/* Unread uses Blueberry 700 (white text 7:1), Blueberry 300 in dark style. */
+.mseries-messages .pantheon-unread-time {
+    color: #0d52bf;
+    font-weight: 700;
+}
+
+.pantheon-dark.mseries-messages .pantheon-unread-time {
+    color: #8cd5ff;
+}
+
+.mseries-messages .pantheon-unread-badge {
+    background: #0d52bf;
+    color: #ffffff;
+    border-radius: 999px;
+    min-width: 12px;
+    padding: 0 6px;
+    margin-top: 1px;
+    font-size: 0.78em;
+    font-weight: 700;
+}
+
+
+
+.mseries-messages .pantheon-channel-chip {
+    background: alpha(#7239b3, 0.16);
+    color: #7239b3;
+    border-radius: 999px;
+    padding: 0 6px;
+    margin-top: 1px;
+    font-size: 0.75em;
+    font-weight: 700;
+}
+
+.pantheon-dark.mseries-messages .pantheon-channel-chip {
+    background: alpha(#cd9ef7, 0.18);
+    color: #cd9ef7;
+}
+
+/* Avatars: initials on an elementary palette colour, as in Contacts and Mail. */
+.pantheon-avatar-initials {
+    color: #ffffff;
+    font-weight: 700;
+}
+.pantheon-avatar-strawberry { background: #c6262e; }
+.pantheon-avatar-orange { background: #cc3b02; }
+.pantheon-avatar-lime { background: #3a9104; }
+.pantheon-avatar-mint { background: #0e9a83; }
+.pantheon-avatar-blueberry { background: #0d52bf; }
+.pantheon-avatar-grape { background: #7239b3; }
+.pantheon-avatar-cocoa { background: #715344; }
+.pantheon-avatar-slate { background: #485a6c; }
+
+.pantheon-avatar-fallback {
+    background: alpha(currentColor, 0.1);
+    color: alpha(currentColor, 0.7);
+}
+
+/* Favourites strip: round avatars, no button chrome. */
+.mseries-messages .pantheon-messages-sidebar togglebutton.flat {
+    border-radius: 10px;
+}
+
+/* Grouped bubbles: corners facing the next message in a run tuck in, like iMessage. */
+.mseries-messages .pantheon-message-run-middle,
+.mseries-messages .pantheon-message-run-last {
+    margin-top: 2px;
+}
+
+:dir(ltr) .pantheon-message-outgoing.pantheon-message-run-first > .pantheon-bubble,
+:dir(rtl) .pantheon-message-incoming.pantheon-message-run-first > .pantheon-bubble {
+    border-bottom-right-radius: 5px;
+}
+:dir(ltr) .pantheon-message-outgoing.pantheon-message-run-middle > .pantheon-bubble,
+:dir(rtl) .pantheon-message-incoming.pantheon-message-run-middle > .pantheon-bubble {
+    border-top-right-radius: 5px;
+    border-bottom-right-radius: 5px;
+}
+:dir(ltr) .pantheon-message-outgoing.pantheon-message-run-last > .pantheon-bubble,
+:dir(rtl) .pantheon-message-incoming.pantheon-message-run-last > .pantheon-bubble {
+    border-top-right-radius: 5px;
+}
+:dir(ltr) .pantheon-message-incoming.pantheon-message-run-first > .pantheon-bubble,
+:dir(rtl) .pantheon-message-outgoing.pantheon-message-run-first > .pantheon-bubble {
+    border-bottom-left-radius: 5px;
+}
+:dir(ltr) .pantheon-message-incoming.pantheon-message-run-middle > .pantheon-bubble,
+:dir(rtl) .pantheon-message-outgoing.pantheon-message-run-middle > .pantheon-bubble {
+    border-top-left-radius: 5px;
+    border-bottom-left-radius: 5px;
+}
+:dir(ltr) .pantheon-message-incoming.pantheon-message-run-last > .pantheon-bubble,
+:dir(rtl) .pantheon-message-outgoing.pantheon-message-run-last > .pantheon-bubble {
+    border-top-left-radius: 5px;
+}
+
+.mseries-messages .pantheon-message-sender {
+    margin: 0 0.95em;
+}
+
+.mseries-messages .pantheon-message-stamp {
+    font-weight: 600;
+    margin-top: 1.1em;
+    margin-bottom: 0.5em;
+}
+
+.mseries-messages .pantheon-history > viewport > box > box > label.caption.dim-label {
+    margin: 0 0.95em;
+    font-size: 0.8em;
+}
+
+/* Floating "Latest Messages" pill over the timeline. */
+.mseries-messages .pantheon-latest {
+    margin-bottom: 12px;
+    border-radius: 999px;
+    padding: 4px 14px;
+}
+
+/* Composer: one rounded field with the emoji button inside, and a round send button. */
+.mseries-messages .pantheon-composer-field {
+    border-radius: 20px;
+    border: 1px solid alpha(currentColor, 0.15);
+    background: alpha(currentColor, 0.04);
+    padding: 2px 3px;
+}
+
+.mseries-messages .pantheon-composer-field:focus-within {
+    border-color: @accent_color;
+    box-shadow: 0 0 0 1px @accent_color;
+}
+
+.mseries-messages .pantheon-composer-field textview,
+.mseries-messages .pantheon-composer-field textview > text,
+.mseries-messages .pantheon-composer-field scrolledwindow {
+    background: transparent;
+    outline: none;
+    box-shadow: none;
+}
+
+.mseries-messages .pantheon-composer-field menubutton > button {
+    min-width: 32px;
+    min-height: 32px;
+    margin: 2px;
+}
+
+.mseries-messages button.pantheon-send {
+    min-width: 38px;
+    min-height: 38px;
+    padding: 0;
+    margin-bottom: 1px;
+}
+
+.mseries-messages .pantheon-menu-row {
+    padding: 4px 8px;
+}
+
+.pantheon-dark.mseries-messages .pantheon-unread-badge {
+    background: #8cd5ff;
+    color: #1a1a1a;
+}

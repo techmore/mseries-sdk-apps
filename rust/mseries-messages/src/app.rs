@@ -595,6 +595,7 @@ pub struct App {
     back_button: gtk::Button,
     order: RefCell<Vec<String>>,
     conversation_title: gtk::Label,
+    conversation_subtitle: gtk::Label,
     messages: gtk::Box,
     message_scroll: gtk::ScrolledWindow,
     latest_button: gtk::Button,
@@ -637,6 +638,76 @@ pub struct App {
     backend_available: Cell<bool>,
     refresh_gate: RefreshGate,
     media: RefCell<MediaState>,
+}
+
+/// Up to two initials from a contact name; empty for phone numbers and emails,
+/// which fall back to the generic avatar icon.
+fn avatar_initials(name: &str) -> String {
+    let name = name.trim();
+    if name.is_empty()
+        || name.contains('@')
+        || !name.chars().next().is_some_and(char::is_alphabetic)
+    {
+        return String::new();
+    }
+    name.split_whitespace()
+        .filter_map(|word| word.chars().find(|c| c.is_alphanumeric()))
+        .filter(|c| c.is_alphabetic())
+        .take(2)
+        .flat_map(char::to_uppercase)
+        .collect()
+}
+
+/// A stable elementary palette colour per contact, so a person keeps their colour.
+fn avatar_color_class(name: &str) -> &'static str {
+    const CLASSES: [&str; 8] = [
+        "pantheon-avatar-strawberry",
+        "pantheon-avatar-orange",
+        "pantheon-avatar-lime",
+        "pantheon-avatar-mint",
+        "pantheon-avatar-blueberry",
+        "pantheon-avatar-grape",
+        "pantheon-avatar-cocoa",
+        "pantheon-avatar-slate",
+    ];
+    let hash = name.bytes().fold(0u32, |hash, byte| {
+        hash.wrapping_mul(31).wrapping_add(u32::from(byte))
+    });
+    CLASSES[hash as usize % CLASSES.len()]
+}
+
+/// The line under the conversation title: which service, and with whom.
+fn conversation_subtitle(thread: &Thread) -> String {
+    let channel = if thread.key.starts_with(signal::THREAD_PREFIX) {
+        "Signal"
+    } else if thread.key.starts_with("new:") {
+        return String::new();
+    } else {
+        "iPhone Messages"
+    };
+    if thread.is_group {
+        let people = thread.recipients.len();
+        if people > 1 {
+            return format!("{channel} · {people} people");
+        }
+        return channel.to_string();
+    }
+    match thread.recipients.first() {
+        Some(address) if *address != thread.name => format!("{channel} · {address}"),
+        _ => channel.to_string(),
+    }
+}
+
+/// A short list timestamp: the time today, the weekday this week, else the date.
+fn format_list_timestamp(value: &str) -> String {
+    let full = format_message_timestamp(value);
+    if let Some(time) = full.strip_prefix("Today at ") {
+        return time.to_string();
+    }
+    if full.starts_with("Yesterday") {
+        return "Yesterday".to_string();
+    }
+    full.split(" at ").next().unwrap_or(&full).to_string()
 }
 
 impl App {
@@ -698,18 +769,25 @@ impl App {
             }
         };
 
-        let header = gtk::HeaderBar::new();
-        let title = gtk::Label::new(Some("Messages"));
-        title.add_css_class("title");
-        header.set_title_widget(Some(&title));
+        // elementary split header: the conversation list and the open conversation each
+        // get a flat header bar; close sits on the list side, maximize on the content side.
+        let header = gtk::HeaderBar::builder()
+            .decoration_layout("close:")
+            .build();
+        header.add_css_class("flat");
+        header.set_title_widget(Some(&gtk::Box::new(gtk::Orientation::Horizontal, 0)));
         let new_message = gtk::Button::from_icon_name("mail-message-new-symbolic");
-        new_message.set_tooltip_text(Some(&tr("New message")));
+        new_message.set_tooltip_markup(Some(&granite::markup_accel_tooltip(
+            &["<Control>n"],
+            Some(&tr("New message")),
+        )));
         mseries_pantheon_kit::set_accessible_label(&new_message, &tr("New message"));
-        header.pack_start(&new_message);
         let refresh = gtk::Button::from_icon_name("view-refresh-symbolic");
-        refresh.set_tooltip_text(Some(&tr("Refresh conversations")));
+        refresh.set_tooltip_markup(Some(&granite::markup_accel_tooltip(
+            &["F5"],
+            Some(&tr("Refresh conversations")),
+        )));
         mseries_pantheon_kit::set_accessible_label(&refresh, &tr("Refresh conversations"));
-        header.pack_start(&refresh);
         let shortcuts_button = gtk::Button::with_label(&tr("Keyboard Shortcuts"));
         shortcuts_button.add_css_class("flat");
         mseries_pantheon_kit::set_accessible_label(
@@ -825,18 +903,35 @@ impl App {
         signal_row.set_valign(gtk::Align::Center);
         signal_row.append(&signal_text);
         signal_row.append(&signal_switch);
+        for button in [
+            &pin_import_button,
+            &pin_review_button,
+            &setup_button,
+            &advanced_button,
+            &ai_preferences_button,
+            &shortcuts_button,
+        ] {
+            button.add_css_class("menuitem");
+            if let Some(label) = button.child().and_downcast::<gtk::Label>() {
+                label.set_xalign(0.0);
+            }
+        }
+        for row in [&refresh_row, &enter_send_row, &signal_row] {
+            row.add_css_class("pantheon-menu-row");
+        }
         let menu_actions = gtk::Box::new(gtk::Orientation::Vertical, 2);
         mseries_pantheon_kit::set_margins_text_units(&menu_actions, 0.35, 0.35, 0.35, 0.35);
+        menu_actions.append(&granite::HeaderLabel::new(&tr("iPhone")));
+        menu_actions.append(&setup_button);
         menu_actions.append(&pin_import_button);
         menu_actions.append(&pin_review_button);
-        menu_actions.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
-        menu_actions.append(&setup_button);
         menu_actions.append(&advanced_button);
-        menu_actions.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
-        menu_actions.append(&refresh_row);
+        menu_actions.append(&granite::HeaderLabel::new(&tr("Preferences")));
         menu_actions.append(&enter_send_row);
+        menu_actions.append(&refresh_row);
         menu_actions.append(&signal_row);
         menu_actions.append(&ai_preferences_button);
+        menu_actions.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         menu_actions.append(&shortcuts_button);
         let menu = gtk::Popover::new();
         menu.set_child(Some(&menu_actions));
@@ -847,6 +942,8 @@ impl App {
         menu_button.set_popover(Some(&menu));
         mseries_pantheon_kit::set_accessible_label(&menu_button, &tr("Menu"));
         header.pack_end(&menu_button);
+        header.pack_end(&new_message);
+        header.pack_end(&refresh);
 
         let status = gtk::Label::builder()
             .label(tr("Connecting to BlueFerry…"))
@@ -854,6 +951,8 @@ impl App {
             .wrap(true)
             .build();
         status.add_css_class("dim-label");
+        status.add_css_class("caption");
+        status.add_css_class("pantheon-sidebar-status");
         let feedback = gtk::Label::builder()
             .label("")
             .xalign(0.0)
@@ -913,19 +1012,26 @@ impl App {
             .vexpand(true)
             .build();
         let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        sidebar.add_css_class("sidebar");
+        sidebar.add_css_class("pantheon-messages-sidebar");
+        sidebar.append(&header);
         sidebar.append(&search);
         sidebar.append(&favorites_section);
         sidebar.append(&pin_note);
-        sidebar.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         sidebar.append(&list_scroll);
+        sidebar.append(&status);
 
         let conversation_title = gtk::Label::builder()
             .label(tr("Select a conversation"))
-            .xalign(0.0)
-            .hexpand(true)
             .ellipsize(gtk::pango::EllipsizeMode::End)
             .build();
-        conversation_title.add_css_class("title-2");
+        conversation_title.add_css_class("title");
+        let conversation_subtitle = gtk::Label::builder()
+            .ellipsize(gtk::pango::EllipsizeMode::End)
+            .visible(false)
+            .build();
+        conversation_subtitle.add_css_class("subtitle");
+        conversation_subtitle.add_css_class("dim-label");
         let star_button = gtk::ToggleButton::builder()
             .icon_name("non-starred-symbolic")
             .tooltip_text(tr("Favorite conversation"))
@@ -939,18 +1045,25 @@ impl App {
             &copy_addresses_button,
             &tr("Copy recipient addresses"),
         );
-        let conversation_header = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-        mseries_pantheon_kit::set_box_spacing_text_units(&conversation_header, 0.6);
-        mseries_pantheon_kit::set_margins_text_units(&conversation_header, 0.65, 0.75, 0.65, 1.0);
-        let back_button = gtk::Button::with_label(&tr("Back"));
+        let title_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        title_box.set_valign(gtk::Align::Center);
+        title_box.append(&conversation_title);
+        title_box.append(&conversation_subtitle);
+        let conversation_header = gtk::HeaderBar::builder()
+            .decoration_layout(":maximize")
+            .build();
+        conversation_header.add_css_class("flat");
+        conversation_header.set_title_widget(Some(&title_box));
+        let back_button = granite::BackButton::new(&tr("Conversations")).upcast::<gtk::Button>();
         back_button.set_visible(false);
         mseries_pantheon_kit::set_accessible_label(&back_button, &tr("Back to conversations"));
-        conversation_header.append(&back_button);
-        conversation_header.append(&conversation_title);
-        conversation_header.append(&copy_addresses_button);
-        conversation_header.append(&star_button);
+        conversation_header.pack_start(&back_button);
+        conversation_header.pack_end(&star_button);
+        conversation_header.pack_end(&copy_addresses_button);
 
         let messages = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        // A short conversation sits next to the composer, like any chat.
+        messages.set_valign(gtk::Align::End);
         mseries_pantheon_kit::set_margins_text_units(&messages, 1.0, 1.0, 1.0, 1.0);
         let message_scroll = gtk::ScrolledWindow::builder()
             .child(&messages)
@@ -961,30 +1074,62 @@ impl App {
 
         let latest_button = gtk::Button::with_label(&tr("Latest Messages"));
         latest_button.set_halign(gtk::Align::Center);
+        latest_button.set_valign(gtk::Align::End);
+        latest_button.add_css_class("osd");
+        latest_button.add_css_class("pantheon-latest");
         latest_button.set_visible(false);
         mseries_pantheon_kit::set_accessible_label(&latest_button, &tr("Jump to latest messages"));
 
         message_scroll.add_css_class("pantheon-history");
+        message_scroll.add_css_class("view");
+        let history_overlay = gtk::Overlay::new();
+        history_overlay.set_child(Some(&message_scroll));
+        history_overlay.add_overlay(&latest_button);
 
         let editor = gtk::TextView::builder()
             .wrap_mode(gtk::WrapMode::WordChar)
             .accepts_tab(false)
-            .left_margin(10)
-            .right_margin(10)
-            .top_margin(8)
-            .bottom_margin(8)
-            .height_request(72)
+            .left_margin(14)
+            .right_margin(6)
+            .top_margin(9)
+            .bottom_margin(9)
             .build();
+        editor.add_css_class("pantheon-composer-text");
         mseries_pantheon_kit::set_accessible_label(&editor, &tr("Message composer"));
         let editor_scroll = gtk::ScrolledWindow::builder()
             .child(&editor)
             .hexpand(true)
-            .min_content_height(64)
-            .max_content_height(150)
+            .propagate_natural_height(true)
+            .max_content_height(160)
             .hscrollbar_policy(gtk::PolicyType::Never)
             .build();
-        let send_button = gtk::Button::with_label(&tr("Send"));
+        let emoji_chooser = gtk::EmojiChooser::new();
+        let emoji_button = gtk::MenuButton::builder()
+            .icon_name("face-smile-symbolic")
+            .tooltip_text(tr("Insert emoji"))
+            .valign(gtk::Align::End)
+            .popover(&emoji_chooser)
+            .build();
+        emoji_button.add_css_class("flat");
+        emoji_button.add_css_class("circular");
+        mseries_pantheon_kit::set_accessible_label(&emoji_button, &tr("Insert emoji"));
+        {
+            let editor = editor.clone();
+            emoji_chooser.connect_emoji_picked(move |_, emoji| {
+                editor.buffer().insert_at_cursor(emoji);
+                editor.grab_focus();
+            });
+        }
+        let composer_field = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        composer_field.add_css_class("pantheon-composer-field");
+        composer_field.set_hexpand(true);
+        composer_field.append(&editor_scroll);
+        composer_field.append(&emoji_button);
+        let send_button = gtk::Button::from_icon_name("mail-send-symbolic");
         send_button.add_css_class("suggested-action");
+        send_button.add_css_class("circular");
+        send_button.add_css_class("pantheon-send");
+        send_button.set_valign(gtk::Align::End);
         send_button.set_sensitive(false);
         send_button.set_tooltip_text(Some(if enter_sends {
             "Send message (Enter; Ctrl+Enter also works)"
@@ -994,11 +1139,12 @@ impl App {
         mseries_pantheon_kit::set_accessible_label(&send_button, &tr("Send message"));
         let compose = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         mseries_pantheon_kit::set_box_spacing_text_units(&compose, 0.5);
-        mseries_pantheon_kit::set_margins_text_units(&compose, 0.65, 0.75, 0.65, 0.75);
-        compose.append(&editor_scroll);
+        mseries_pantheon_kit::set_margins_text_units(&compose, 0.6, 0.75, 0.6, 0.75);
+        compose.append(&composer_field);
         compose.append(&send_button);
 
         let ai_button = gtk::Button::with_label("Draft reply");
+        ai_button.add_css_class("flat");
         ai_button.set_sensitive(false);
         ai_button.set_tooltip_text(Some(
             "Draft a reply with the local Qwen model. Conversation text is not saved to the AI database.",
@@ -1059,14 +1205,10 @@ impl App {
         ai_preview_box.set_visible(false);
 
         let detail = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        detail.append(&status);
-        detail.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+        detail.add_css_class("view");
         detail.append(&conversation_header);
-        detail.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
-        detail.append(&message_scroll);
-        detail.append(&latest_button);
+        detail.append(&history_overlay);
         detail.append(&feedback);
-        detail.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         detail.append(&compose);
         detail.append(&ai_row);
         detail.append(&ai_preview_box);
@@ -1089,8 +1231,37 @@ impl App {
             .build();
         window.add_css_class("mseries-messages");
         window.set_default_size(1040, 730);
-        window.set_titlebar(Some(&header));
+        // Each pane draws its own header bar, so the window titlebar stays empty.
+        let no_titlebar = gtk::Grid::new();
+        no_titlebar.set_visible(false);
+        window.set_titlebar(Some(&no_titlebar));
         window.set_child(Some(&root));
+        // When compact navigation shows only one pane, that pane's header carries
+        // all the window controls.
+        {
+            let sync = {
+                let (list_header, content_header) = (header.clone(), conversation_header.clone());
+                let (sidebar, detail) = (sidebar.clone(), detail.clone());
+                move || {
+                    let both = sidebar.is_visible() && detail.is_visible();
+                    list_header.set_decoration_layout(Some(if both {
+                        "close:"
+                    } else {
+                        "close:maximize"
+                    }));
+                    content_header.set_decoration_layout(Some(if both {
+                        ":maximize"
+                    } else {
+                        "close:maximize"
+                    }));
+                }
+            };
+            let sync = Rc::new(sync);
+            for pane_child in [&sidebar, &detail] {
+                let sync = sync.clone();
+                pane_child.connect_visible_notify(move |_| sync());
+            }
+        }
 
         let app = Rc::new(Self {
             backend,
@@ -1134,6 +1305,7 @@ impl App {
             back_button,
             order: RefCell::new(Vec::new()),
             conversation_title,
+            conversation_subtitle,
             messages,
             message_scroll,
             latest_button,
@@ -2730,9 +2902,16 @@ impl App {
         let mut selected_index = None;
         for thread in &threads {
             let row = gtk::ListBoxRow::new();
-            let copy = gtk::Box::new(gtk::Orientation::Vertical, 3);
+            row.add_css_class("pantheon-conversation-row");
+            let unread = thread.unread();
+            if unread > 0 {
+                row.add_css_class("pantheon-unread");
+            }
+            let copy = gtk::Box::new(gtk::Orientation::Vertical, 2);
             copy.add_css_class("pantheon-row");
-            let heading = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            copy.set_hexpand(true);
+            copy.set_valign(gtk::Align::Center);
+            let heading = gtk::Box::new(gtk::Orientation::Horizontal, 6);
             let name = gtk::Label::builder()
                 .label(&thread.name)
                 .xalign(0.0)
@@ -2740,61 +2919,83 @@ impl App {
                 .ellipsize(gtk::pango::EllipsizeMode::End)
                 .build();
             name.add_css_class("heading");
-            if thread.unread() > 0 {
-                name.add_css_class("accent");
-            }
             heading.append(&name);
             if favorites.contains(&thread.key) {
-                heading.append(&gtk::Image::from_icon_name("starred-symbolic"));
+                let star = gtk::Image::from_icon_name("starred-symbolic");
+                star.add_css_class("dim-label");
+                star.set_tooltip_text(Some(&tr("Favorite")));
+                heading.append(&star);
             }
+            let time = gtk::Label::builder()
+                .label(format_list_timestamp(&thread.last_ts))
+                .xalign(1.0)
+                .build();
+            time.add_css_class("caption");
+            time.add_css_class("numeric");
+            time.add_css_class(if unread > 0 {
+                "pantheon-unread-time"
+            } else {
+                "dim-label"
+            });
+            heading.append(&time);
             copy.append(&heading);
+            let line = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            if thread.key.starts_with(signal::THREAD_PREFIX) {
+                // The channel chip: a Signal conversation says so, in the system's own style.
+                let chip = gtk::Label::new(Some("Signal"));
+                chip.add_css_class("caption");
+                chip.add_css_class("pantheon-channel-chip");
+                chip.set_valign(gtk::Align::Start);
+                mseries_pantheon_kit::set_accessible_label(&chip, &tr("Signal conversation"));
+                line.append(&chip);
+            }
             let preview = gtk::Label::builder()
                 .label(thread.preview().replace('\n', " "))
                 .xalign(0.0)
+                .yalign(0.0)
+                .hexpand(true)
+                .wrap(true)
+                .wrap_mode(gtk::pango::WrapMode::WordChar)
+                .lines(2)
                 .ellipsize(gtk::pango::EllipsizeMode::End)
+                .width_chars(1)
                 .max_width_chars(34)
                 .build();
-            preview.add_css_class("dim-label");
-            copy.append(&preview);
-            let timestamp = if thread.is_group {
-                "Group conversation".to_string()
-            } else {
-                format_message_timestamp(&thread.last_ts)
-            };
-            let meta = gtk::Label::builder()
-                .label(&timestamp)
-                .xalign(0.0)
-                .ellipsize(gtk::pango::EllipsizeMode::End)
-                .build();
-            meta.add_css_class("caption");
-            meta.add_css_class("dim-label");
-            if thread.key.starts_with(signal::THREAD_PREFIX) {
-                // The channel badge: a Signal conversation says so, in the system's own style.
-                let line = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-                let badge = gtk::Label::new(Some("Signal"));
-                badge.add_css_class("caption");
-                badge.add_css_class("accent");
-                mseries_pantheon_kit::set_accessible_label(&badge, &tr("Signal conversation"));
-                line.append(&badge);
-                meta.set_hexpand(true);
-                line.append(&meta);
-                copy.append(&line);
-            } else {
-                copy.append(&meta);
+            preview.add_css_class("pantheon-row-preview");
+            if unread == 0 {
+                preview.add_css_class("dim-label");
             }
+            line.append(&preview);
+            if unread > 0 {
+                let badge = gtk::Label::new(Some(&if unread > 99 {
+                    "99+".to_string()
+                } else {
+                    unread.to_string()
+                }));
+                badge.add_css_class("pantheon-unread-badge");
+                badge.add_css_class("numeric");
+                badge.set_valign(gtk::Align::Start);
+                mseries_pantheon_kit::set_accessible_label(&badge, &format!("{unread} unread"));
+                line.append(&badge);
+            }
+            copy.append(&line);
             let content = gtk::Box::new(gtk::Orientation::Horizontal, 10);
             content.set_valign(gtk::Align::Center);
+            content.add_css_class("pantheon-conversation");
             content.append(
-                &self.avatar_for_thread(thread, mseries_pantheon_kit::text_unit(&self.list, 2.8)),
+                &self.avatar_for_thread(thread, mseries_pantheon_kit::text_unit(&self.list, 3.0)),
             );
             content.append(&copy);
             row.set_child(Some(&content));
             let recipients = thread.recipients.join(", ");
-            let accessible_name = if recipients.is_empty() {
+            let mut accessible_name = if recipients.is_empty() {
                 format!("{} conversation", thread.name)
             } else {
                 format!("{} conversation with {}", thread.name, recipients)
             };
+            if unread > 0 {
+                accessible_name.push_str(&format!(", {unread} unread"));
+            }
             mseries_pantheon_kit::set_accessible_label(&row, &accessible_name);
             self.attach_thread_actions(&row, thread);
             if selected.as_deref() == Some(thread.key.as_str()) {
@@ -3397,15 +3598,38 @@ impl App {
             );
             gtk::Image::from_paintable(Some(&texture))
         } else {
+            let initials = if thread.is_group {
+                String::new()
+            } else {
+                avatar_initials(&thread.name)
+            };
+            if !initials.is_empty() {
+                let label = gtk::Label::new(Some(&initials));
+                label.set_size_request(size, size);
+                label.set_valign(gtk::Align::Center);
+                let attributes = gtk::pango::AttrList::new();
+                attributes.insert(gtk::pango::AttrSize::new_size_absolute(
+                    (f64::from(size) * 0.4 * f64::from(gtk::pango::SCALE)) as i32,
+                ));
+                label.set_attributes(Some(&attributes));
+                label.set_overflow(gtk::Overflow::Hidden);
+                label.add_css_class("pantheon-avatar");
+                label.add_css_class("pantheon-avatar-initials");
+                label.add_css_class(avatar_color_class(&thread.name));
+                label.set_accessible_role(gtk::AccessibleRole::Presentation);
+                return label.upcast();
+            }
             let icon = gtk::Image::from_icon_name(if thread.is_group {
                 "system-users-symbolic"
             } else {
                 "avatar-default-symbolic"
             });
-            icon.set_pixel_size(size);
+            icon.set_pixel_size(size / 2);
             icon.set_size_request(size, size);
+            icon.set_valign(gtk::Align::Center);
             icon.set_overflow(gtk::Overflow::Hidden);
             icon.add_css_class("pantheon-avatar");
+            icon.add_css_class("pantheon-avatar-fallback");
             return icon.upcast();
         };
         picture.set_size_request(size, size);
@@ -3640,6 +3864,10 @@ impl App {
         );
         if let Some(thread) = thread {
             self.conversation_title.set_text(&thread.name);
+            let subtitle = conversation_subtitle(&thread);
+            self.conversation_subtitle.set_visible(!subtitle.is_empty());
+            self.messages.set_valign(gtk::Align::End);
+            self.conversation_subtitle.set_text(&subtitle);
             let favorite = self
                 .pin_state
                 .borrow()
@@ -3929,6 +4157,8 @@ impl App {
         } else {
             let backend_available =
                 self.backend_available.get() || !self.signal_threads.borrow().is_empty();
+            self.conversation_subtitle.set_visible(false);
+            self.messages.set_valign(gtk::Align::Fill);
             self.conversation_title.set_text(if backend_available {
                 "Select a conversation"
             } else {
@@ -3948,6 +4178,8 @@ impl App {
                 "Set up your iPhone connection, open BlueFerry, or retry."
             });
             empty.set_icon(&gio::ThemedIcon::new("mail-message-new-symbolic"));
+            empty.set_vexpand(true);
+            empty.set_valign(gtk::Align::Center);
             if !backend_available {
                 let setup = empty.append_button(
                     &gio::ThemedIcon::new("phone-symbolic"),
@@ -5249,6 +5481,63 @@ fn normalize_recipient(input: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn avatar_initials_use_names_and_skip_addresses() {
+        assert_eq!(super::avatar_initials("Maya Chen"), "MC");
+        assert_eq!(super::avatar_initials("dad"), "D");
+        assert_eq!(super::avatar_initials("Alice (Signal)"), "AS");
+        assert_eq!(super::avatar_initials("Ana María López"), "AM");
+        assert_eq!(super::avatar_initials("+1 202 555 0123"), "");
+        assert_eq!(super::avatar_initials("someone@example.com"), "");
+        assert_eq!(super::avatar_initials("  "), "");
+    }
+
+    #[test]
+    fn avatar_colour_is_stable_per_name() {
+        assert_eq!(
+            super::avatar_color_class("Maya Chen"),
+            super::avatar_color_class("Maya Chen")
+        );
+        assert!(super::avatar_color_class("").starts_with("pantheon-avatar-"));
+    }
+
+    #[test]
+    fn conversation_subtitle_names_the_service() {
+        use super::Thread;
+        let direct = Thread {
+            key: "a".into(),
+            name: "Maya".into(),
+            recipients: vec!["+12025550123".into()],
+            ..Thread::default()
+        };
+        assert_eq!(
+            super::conversation_subtitle(&direct),
+            "iPhone Messages · +12025550123"
+        );
+        let signal = Thread {
+            key: format!("{}acct:peer", crate::signal::THREAD_PREFIX),
+            name: "+15550000002".into(),
+            recipients: vec!["+15550000002".into()],
+            ..Thread::default()
+        };
+        assert_eq!(super::conversation_subtitle(&signal), "Signal");
+        let group = Thread {
+            key: "g".into(),
+            is_group: true,
+            recipients: vec!["+1".into(), "+2".into(), "+3".into()],
+            ..Thread::default()
+        };
+        assert_eq!(
+            super::conversation_subtitle(&group),
+            "iPhone Messages · 3 people"
+        );
+        let draft = Thread {
+            key: "new:+1".into(),
+            ..Thread::default()
+        };
+        assert_eq!(super::conversation_subtitle(&draft), "");
+    }
+
+    #[test]
     #[ignore = "requires test-keyring.sh private encrypted keyring and Xvfb"]
     fn favorites_private_keyring_gui() {
         use super::*;
@@ -5732,11 +6021,17 @@ mod tests {
                 m("Yes! 12:30 at the usual place", true, 3),
                 m("Perfect, see you there", false, 5),
                 m("Running 5 min late, sorry!", false, 40),
+                m("Grabbing us a table by the window", false, 41),
+                m("Order me the usual if they ask 🙏", false, 41),
+                m("No rush! Just got here too", true, 42),
+                m("Got the window table 👍", true, 42),
             ],
             ..Thread::default()
         };
-        a.messages[3].read = false;
-        a.last_ts = "2026-10-27T09:40:00Z".into();
+        for message in &mut a.messages[3..6] {
+            message.read = false;
+        }
+        a.last_ts = "2026-10-27T09:42:00Z".into();
         let mut b = Thread {
             key: "b".into(),
             name: "Dad".into(),
@@ -5772,7 +6067,10 @@ mod tests {
             let node = snapshot.to_node().expect("render node");
             let renderer = app.window.native().unwrap().renderer().unwrap();
             let texture = renderer.render_texture(&node, None);
-            texture.save_to_png(format!("{dir}/{name}.png")).unwrap();
+            let prefix = std::env::var("MSERIES_SHOT_PREFIX").unwrap_or_default();
+            texture
+                .save_to_png(format!("{dir}/{prefix}{name}.png"))
+                .unwrap();
         };
         app.window.present();
         save("list");
