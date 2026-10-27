@@ -19,8 +19,8 @@ Logical pixels, shared by SDK apps and meant to be read by the compositor:
 
 | Token | Value | Used for |
 |---|---:|---|
-| `screen` | 14 | The built-in display's physical corner (the mask) |
-| `window` | 12 | Floating window outline and title band |
+| `screen` | 20 | The built-in display's physical corner (the mask) |
+| `window` | 20 | Floating window outline and title band |
 | `popover` | 10 | Menus, popovers |
 | `card` | 12 | Cards, editors, the Transcript bubbles' parent shapes |
 | `bubble` | 14 | Chat bubbles |
@@ -32,6 +32,11 @@ Logical pixels, shared by SDK apps and meant to be read by the compositor:
 `concentric_px(outer, inset)`, never below `min`), so inner and outer curves share a centre and the gap stays even. A window never
 has a larger radius than the display (`window <= screen`; tested). Maximized and fullscreen SDK windows have radius 0 in their own
 stylesheet because an app cannot know whether it is on the built-in display or a square external one; the compositor decides (below).
+
+> **2026-10-27:** `screen` and `window` are now 20, the value the owner had already set by hand for the display mask, the
+> window clip and the GTK theme on 2026-10-22 (the tokens said 14 and 12, so three different radii were in use). The
+> compositor draws the screen mask and clips windows from these same tokens; 20 is still a calibration starting point,
+> not a measured panel radius. Mirrors techmore/ElementaryOS_MSeries#641, where the compositor reads these tokens.
 
 ## 3. Compositor contract (not built in the Rust compositor)
 
