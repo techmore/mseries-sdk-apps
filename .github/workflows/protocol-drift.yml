@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
 
+# One run per ref at a time; a scheduled or manual run is never cancelled mid-check.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   compare:
     runs-on: ubuntu-latest

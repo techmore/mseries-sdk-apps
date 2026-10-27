@@ -29,6 +29,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/fast-apt
 
       - name: Install test dependencies
         run: |
