@@ -1,5 +1,5 @@
 # RPC tags of pingdotgg/t3code packages/contracts (WS_METHODS + ORCHESTRATION_V2_WS_METHODS)
-# from commit 002e941 (2026-10-21); regenerate with scripts/refresh-contracts.sh
+# from commit fc60956c30 (2026-10-26); regenerate with scripts/refresh-contracts.sh
 agentSessions.import
 agentSessions.scan
 assets.createUrl
@@ -22,6 +22,7 @@ filesystem.getMetadata
 git.preparePullRequestThread
 git.resolvePullRequest
 git.runStackedAction
+guestShare.create
 mcpApps.callTool
 mcpApps.readResource
 mcpApps.toolInfo
@@ -29,10 +30,13 @@ mcpApps.updateModelContext
 orchestration.dispatchCommand
 orchestration.getArchivedShellSnapshot
 orchestration.getFullThreadDiff
+orchestration.getOlderSettledThreads
+orchestration.getThreadFamily
 orchestration.getThreadProjection
 orchestration.getTurnDiff
 orchestration.getTurnItem
 orchestration.getWorkflowScript
+orchestration.getWorktreeThreadIds
 orchestration.launchThread
 orchestration.searchThread
 orchestration.searchThreadStream
@@ -90,6 +94,7 @@ pullRequests.comment
 pullRequests.detail
 pullRequests.diffFileContents
 pullRequests.filesViewed
+pullRequests.filterOptions
 pullRequests.generateReviewGuide
 pullRequests.invalidate
 pullRequests.labelCandidates
