@@ -12,7 +12,7 @@ Disable a built-in: `~/.config/claude-pantheon/plugins.json` → `{"disabled": [
 | `accounts` | Done: list and switch saved Codex accounts | `codexbar-accounts.py` (shared with the CodexBar indicator) |
 | `repos` | Done as an adapter: `plugin_repos.rs` registers `ReposPage` (src/repos.rs stays; the runner, webhooks and thread-to-issue map reach into it) so it has a menu/palette entry, can be disabled, and reports open issues. Wingpanel `repobar-wingpanel` stays separate | `repobar.py`, GitHub via `gh` |
 | `usage`, `changes`, `diagnostics` | Done as adapters (`plugin_pages.rs`): menu and palette entries, can be disabled | server RPCs |
-| `shiplog` | Blocked: only a spec-phase concept upstream (omarchy-shiplog, no implementation); define our own log format first | n/a |
+| `shiplog` | Done (v1): merged PRs of the pinned repos grouped by day, via `gh pr list`; nothing stored. Later: release tags and thread outcomes as extra sources | `gh` |
 
 `Plugin::open(app)` lets a built-in page keep its own navigation; plugins that return false get a stack page built from `build()`.
 Disabling a plugin removes its menu item and palette entry; the code behind the page stays compiled in.

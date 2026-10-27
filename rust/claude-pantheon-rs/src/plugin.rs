@@ -58,6 +58,7 @@ pub const BUILTIN: &[(&str, &str)] = &[
     ("changes", "Changes in This Thread"),
     ("diagnostics", "Diagnostics"),
     ("accounts", "Accounts"),
+    ("shiplog", "Shiplog"),
 ];
 
 /// Menu items `(title, detailed action)` for the enabled built-ins.
@@ -95,6 +96,7 @@ impl Registry {
 
     pub fn builtin(repos: Rc<ReposPage>) -> Registry {
         let mut plugins: Vec<Rc<dyn Plugin>> = vec![
+            Rc::new(crate::plugin_shiplog::Shiplog::new(repos.clone())),
             Rc::new(crate::plugin_repos::Repos::new(repos)),
             Rc::new(crate::plugin_accounts::Accounts::new()),
         ];

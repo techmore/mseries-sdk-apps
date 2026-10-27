@@ -23,6 +23,7 @@ pub mod plugin;
 pub mod plugin_accounts;
 pub mod plugin_pages;
 pub mod plugin_repos;
+pub mod plugin_shiplog;
 pub mod probe;
 pub mod quota;
 pub mod quota_view;
