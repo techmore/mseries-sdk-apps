@@ -5,6 +5,7 @@ The M-series app SDK (`rust/msdk`, `rust/msdk-gtk`) and the Rust apps built on i
 Extracted with history from [techmore/ElementaryOS_MSeries](https://github.com/techmore/ElementaryOS_MSeries) (`dev`). The OS image, kernel, compositor and Vala plugins stay there.
 
 - SDK and app-building docs: `mseries/SDK-*.md`, `mseries/APP-BUILDING-GUIDE.md`, `mseries/RUST-PANTHEON-SDK.md`
+- Apps outside the Rust workspace: `mseries/polybagger-print-manager` (PolyBagger T1000 label printing; printer-link notes in `docs/polybagger-t1000-printer-link-troubleshooting.md`)
 - Battery app and history logger: `mseries/battery` (docs `mseries/BATTERY-*.md`, `mseries/install-battery.sh`). The Wingpanel patches (`panel-power-battery-history.patch`, `panel-power-battery-eta.diff`) and `install-battery-eta.sh`'s helpers (`lib-backup.sh`, `lib-build.sh`, `patches/`) belong to the OS image repo, so that script only works from there.
 - Workspace: `rust/` (`cd rust && cargo test -p msdk`)
 - SDK tests and bench: `mseries/sdk-tests`, `mseries/sdk-bench`
