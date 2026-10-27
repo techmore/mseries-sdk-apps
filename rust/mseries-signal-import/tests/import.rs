@@ -175,12 +175,7 @@ fn build_pantheon(dir: &Path, existing: Option<(&str, Value)>) {
         json!({"accounts": [{"path": "248846", "environment": "LIVE", "number": ACCOUNT, "uuid": "33333333-3333-4333-8333-333333333333"}], "version": 2}).to_string(),
     )
     .unwrap();
-    let mut store = HistoryStore::open(
-        &dir.join("message-history.db"),
-        HistoryKey::from_raw(HISTORY_KEY.to_vec()).unwrap(),
-        true,
-    )
-    .unwrap();
+    let mut store = HistoryStore::open(&dir.join("message-history.db"), HistoryKey::from_raw(&HISTORY_KEY).unwrap(), true).unwrap();
     // The client always has a catalog once it has run.
     let mut items = vec![];
     let catalog: Vec<&str> = existing.iter().map(|(id, _)| *id).collect();
@@ -207,7 +202,7 @@ fn config(name: &str, signal: &Path, pantheon: &Path) -> Config {
 fn reopen(pantheon: &Path) -> HistoryStore {
     HistoryStore::open(
         &pantheon.join("message-history.db"),
-        HistoryKey::from_raw(HISTORY_KEY.to_vec()).unwrap(),
+        HistoryKey::from_raw(&HISTORY_KEY).unwrap(),
         false,
     )
     .unwrap()
@@ -241,9 +236,9 @@ fn existing_alice() -> Value {
 fn independent_vectors_match_the_clients_scheme() {
     // Produced with Python's `cryptography` (HMAC-SHA256 / AES-256-GCM / Chromium
     // v11), so these check the format, not just a round trip of this crate.
-    let key = HistoryKey::from_raw((0u8..32).collect()).unwrap();
+    let key = HistoryKey::from_raw(&(0u8..32).collect::<Vec<u8>>()).unwrap();
     assert_eq!(
-        chromium::encode_hex(&key.hash("pantheon-v1:+15550100:catalog").unwrap()),
+        chromium::encode_hex(&key.hash("pantheon-v1:+15550100:catalog")),
         "a1413a17be33a4368488afc153448cea1db20cf42792f2e0a623f666f9dc3ff0"
     );
     let nonce: [u8; 12] = std::array::from_fn(|i| 100 + i as u8);

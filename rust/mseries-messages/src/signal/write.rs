@@ -12,8 +12,6 @@
 
 use super::owner::{self, WriterLock};
 use super::{HistoryKey, SignalStore, conversation_key};
-use aes_gcm::aead::OsRng;
-use aes_gcm::aead::rand_core::RngCore;
 use rusqlite::{Connection, OpenFlags, TransactionBehavior, params};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -172,10 +170,13 @@ impl HistoryWriter {
     pub fn replace_snapshots(&mut self, items: &[(String, String)]) -> Result<(), String> {
         let mut prepared = Vec::new();
         for (key_string, snapshot) in items {
-            let mut nonce = [0_u8; 12];
-            OsRng.fill_bytes(&mut nonce);
-            let (ciphertext, tag) = self.key.encrypt_with_nonce(&nonce, snapshot.as_bytes())?;
-            prepared.push((self.key.hash(key_string), nonce.to_vec(), ciphertext, tag));
+            let sealed = self.key.encrypt(snapshot.as_bytes())?;
+            prepared.push((
+                self.key.hash(key_string),
+                sealed.nonce,
+                sealed.ciphertext,
+                sealed.tag,
+            ));
         }
         let transaction = self
             .connection
@@ -291,10 +292,7 @@ fn write_items(
     let mut writer = HistoryWriter::open(database, key)?;
     writer.backup_once(&data_directory.join("message-history.db.pre-messages-send"))?;
     // Read what is stored now (inside the lock), never what we cached earlier.
-    let reader = SignalStore::open(
-        database,
-        HistoryKey::from_raw(&writer.key.0).expect("key has the right length"),
-    )?;
+    let reader = SignalStore::open(database, writer.key.clone())?;
     let mut updates = Vec::new();
     let mut leftover = HashMap::new();
     for ((item_account, id), records) in items {
@@ -398,11 +396,11 @@ mod tests {
         // Same vector as signal.rs: computed with Python's `cryptography`.
         let key = HistoryKey::from_raw(&KEY).unwrap();
         let nonce: [u8; 12] = std::array::from_fn(|index| 100 + index as u8);
-        let (ciphertext, tag) = key
+        let sealed = key
             .encrypt_with_nonce(&nonce, br#"["+15550000002"]"#)
             .unwrap();
-        assert_eq!(ciphertext, unhex("1339f5574cdc63ae0e526fd8ea5748a0"));
-        assert_eq!(tag, unhex("c03967b6e45742ce433662a7724a7d42"));
+        assert_eq!(sealed.ciphertext, unhex("1339f5574cdc63ae0e526fd8ea5748a0"));
+        assert_eq!(sealed.tag, unhex("c03967b6e45742ce433662a7724a7d42"));
     }
 
     #[test]

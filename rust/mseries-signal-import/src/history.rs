@@ -14,80 +14,13 @@
 //!   `pantheon-v1:<account>:conversation:<id>`, and a catalog snapshot (a JSON
 //!   array of conversation ids) under `pantheon-v1:<account>:catalog`.
 
-use crate::secret::Secret;
-use openssl::{
-    base64,
-    hash::MessageDigest,
-    pkey::PKey,
-    rand::rand_bytes,
-    sign::Signer,
-    symm::{Cipher, decrypt_aead, encrypt_aead},
-};
+pub use mseries_signal_history::{HistoryKey, Sealed};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, params};
 use std::path::Path;
 
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS message_history (id INTEGER PRIMARY KEY, \
 conversation_hash BLOB NOT NULL, timestamp INTEGER NOT NULL, outgoing INTEGER NOT NULL, \
 nonce BLOB NOT NULL, ciphertext BLOB NOT NULL, tag BLOB NOT NULL)";
-
-pub struct HistoryKey(Secret);
-
-/// One encrypted row body: nonce, ciphertext and tag are stored apart.
-pub struct Sealed {
-    pub nonce: Vec<u8>,
-    pub ciphertext: Vec<u8>,
-    pub tag: Vec<u8>,
-}
-
-impl HistoryKey {
-    /// The keyring stores the key as base64 text.
-    pub fn from_keyring_secret(secret: &Secret) -> Result<Self, String> {
-        let text: Vec<u8> = secret.expose().iter().copied().filter(|b| !b.is_ascii_whitespace()).collect();
-        let raw = base64::decode_block(std::str::from_utf8(&text).map_err(|_| "history key is not text")?)
-            .map_err(|_| "history key is not valid base64".to_string())?;
-        Self::from_raw(raw)
-    }
-
-    pub fn from_raw(raw: Vec<u8>) -> Result<Self, String> {
-        if raw.len() != 32 {
-            return Err("the saved local history key is invalid".into());
-        }
-        Ok(HistoryKey(Secret::new(raw)))
-    }
-
-    /// `conversation_hash` for a key string.
-    pub fn hash(&self, key_string: &str) -> Result<Vec<u8>, String> {
-        let pkey = PKey::hmac(self.0.expose()).map_err(|e| e.to_string())?;
-        let mut signer = Signer::new(MessageDigest::sha256(), &pkey).map_err(|e| e.to_string())?;
-        signer.update(key_string.as_bytes()).map_err(|e| e.to_string())?;
-        signer.sign_to_vec().map_err(|e| e.to_string())
-    }
-
-    pub fn encrypt(&self, plaintext: &[u8]) -> Result<Sealed, String> {
-        let mut nonce = [0u8; 12];
-        rand_bytes(&mut nonce).map_err(|e| e.to_string())?;
-        self.encrypt_with_nonce(&nonce, plaintext)
-    }
-
-    pub fn encrypt_with_nonce(&self, nonce: &[u8; 12], plaintext: &[u8]) -> Result<Sealed, String> {
-        let mut tag = [0u8; 16];
-        let ciphertext =
-            encrypt_aead(Cipher::aes_256_gcm(), self.0.expose(), Some(nonce), &[], plaintext, &mut tag).map_err(|e| e.to_string())?;
-        Ok(Sealed {
-            nonce: nonce.to_vec(),
-            ciphertext,
-            tag: tag.to_vec(),
-        })
-    }
-
-    pub fn decrypt(&self, nonce: &[u8], ciphertext: &[u8], tag: &[u8]) -> Result<Vec<u8>, String> {
-        if nonce.len() != 12 || tag.len() != 16 {
-            return Err("a stored history row has an unexpected shape".into());
-        }
-        decrypt_aead(Cipher::aes_256_gcm(), self.0.expose(), Some(nonce), &[], ciphertext, tag)
-            .map_err(|_| "a local history message could not be authenticated".to_string())
-    }
-}
 
 pub struct HistoryStore {
     conn: Connection,
@@ -148,7 +81,7 @@ impl HistoryStore {
     }
 
     pub fn has_key_string(&self, key_string: &str) -> Result<bool, String> {
-        let hash = self.key.hash(key_string)?;
+        let hash = self.key.hash(key_string);
         self.conn
             .query_row(
                 "SELECT 1 FROM message_history WHERE conversation_hash=? LIMIT 1",
@@ -162,7 +95,7 @@ impl HistoryStore {
 
     /// The decrypted snapshot stored under a key string, if any.
     pub fn read_snapshot(&self, key_string: &str) -> Result<Option<String>, String> {
-        let hash = self.key.hash(key_string)?;
+        let hash = self.key.hash(key_string);
         let row: Option<(Vec<u8>, Vec<u8>, Vec<u8>)> = self
             .conn
             .query_row(
@@ -188,10 +121,7 @@ impl HistoryStore {
     pub fn replace_snapshots(&mut self, items: &[(String, String)]) -> Result<(), String> {
         let prepared: Vec<(Vec<u8>, Sealed)> = items
             .iter()
-            .map(|(key_string, snapshot)| {
-                let hash = self.key.hash(key_string)?;
-                Ok((hash, self.key.encrypt(snapshot.as_bytes())?))
-            })
+            .map(|(key_string, snapshot)| Ok((self.key.hash(key_string), self.key.encrypt(snapshot.as_bytes())?)))
             .collect::<Result<_, String>>()?;
         let tx = self
             .conn

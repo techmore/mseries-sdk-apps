@@ -1,0 +1,13 @@
+[package]
+name = "mseries-signal-history"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+description = "The Signal Pantheon client's message-history key: one byte-compatible, zeroising implementation for Messages and the Signal importer"
+
+[dependencies]
+aes-gcm = "0.10"
+base64 = "0.22"
+hmac = "0.12"
+sha2 = "0.10"

@@ -6,6 +6,8 @@ on:
     paths:
       - "rust/mseries-messages/**"
       - "rust/mseries-pantheon-kit/**"
+      - "rust/mseries-signal-history/**"
+      - "rust/mseries-signal-import/**"
       - "rust/Cargo.toml"
       - "rust/Cargo.lock"
       - "mseries/phone-setup/message_pins.py"
@@ -15,6 +17,8 @@ on:
     paths:
       - "rust/mseries-messages/**"
       - "rust/mseries-pantheon-kit/**"
+      - "rust/mseries-signal-history/**"
+      - "rust/mseries-signal-import/**"
       - "rust/Cargo.toml"
       - "rust/Cargo.lock"
       - "mseries/phone-setup/message_pins.py"
@@ -61,11 +65,14 @@ jobs:
 
       - name: Rust formatting and lint
         run: |
-          cargo fmt --manifest-path rust/Cargo.toml -p mseries-messages -p mseries-pantheon-kit --check
-          cargo clippy --manifest-path rust/Cargo.toml -p mseries-messages -p mseries-pantheon-kit --all-targets --locked -- -D warnings
+          cargo fmt --manifest-path rust/Cargo.toml -p mseries-messages -p mseries-pantheon-kit -p mseries-signal-history --check
+          cargo clippy --manifest-path rust/Cargo.toml -p mseries-messages -p mseries-pantheon-kit -p mseries-signal-history --all-targets --locked -- -D warnings
 
       - name: Rust Messages and shared SDK unit tests
-        run: cargo test --manifest-path rust/Cargo.toml -p mseries-messages -p mseries-pantheon-kit --locked
+        run: cargo test --manifest-path rust/Cargo.toml -p mseries-messages -p mseries-pantheon-kit -p mseries-signal-history --locked
+
+      - name: Signal importer tests (shares the history key crate)
+        run: cargo test --manifest-path rust/mseries-signal-import/Cargo.toml --locked
 
       - name: Validate translation template
         run: |

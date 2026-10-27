@@ -17,15 +17,10 @@
 //!   `pantheon-v1:<account>:conversation:<id>`, and the list of ids is the
 //!   snapshot under `pantheon-v1:<account>:catalog`.
 
-use aes_gcm::aead::generic_array::GenericArray;
-use aes_gcm::aead::{AeadInPlace, KeyInit};
-use aes_gcm::{Aes256Gcm, Nonce};
-use base64::Engine;
-use hmac::{Hmac, Mac};
 use mseries_pantheon_kit::{Message, Thread};
+pub use mseries_signal_history::HistoryKey;
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use serde_json::Value;
-use sha2::Sha256;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -39,77 +34,6 @@ pub mod write;
 
 /// Prefix that marks a thread as coming from Signal.
 pub const THREAD_PREFIX: &str = "signal:";
-
-type HmacSha256 = Hmac<Sha256>;
-
-/// The 32-byte history key. Never printed or logged.
-#[derive(Clone)]
-pub struct HistoryKey([u8; 32]);
-
-impl HistoryKey {
-    /// The keyring stores the key as base64 text.
-    pub fn from_keyring_secret(secret: &[u8]) -> Result<Self, String> {
-        let text: Vec<u8> = secret
-            .iter()
-            .copied()
-            .filter(|byte| !byte.is_ascii_whitespace())
-            .collect();
-        let raw = base64::engine::general_purpose::STANDARD
-            .decode(text)
-            .map_err(|_| "the Signal history key is not valid base64".to_string())?;
-        Self::from_raw(&raw)
-    }
-
-    pub fn from_raw(raw: &[u8]) -> Result<Self, String> {
-        let key: [u8; 32] = raw
-            .try_into()
-            .map_err(|_| "the Signal history key has the wrong length".to_string())?;
-        Ok(Self(key))
-    }
-
-    pub(crate) fn hash(&self, key_string: &str) -> Vec<u8> {
-        let mut mac =
-            <HmacSha256 as Mac>::new_from_slice(&self.0).expect("HMAC accepts any key length");
-        mac.update(key_string.as_bytes());
-        mac.finalize().into_bytes().to_vec()
-    }
-
-    /// AES-256-GCM with the given nonce and no AAD; the tag is returned apart.
-    pub(crate) fn encrypt_with_nonce(
-        &self,
-        nonce: &[u8; 12],
-        plain: &[u8],
-    ) -> Result<(Vec<u8>, Vec<u8>), String> {
-        let cipher = Aes256Gcm::new(GenericArray::from_slice(&self.0));
-        let mut buffer = plain.to_vec();
-        let tag = cipher
-            .encrypt_in_place_detached(Nonce::from_slice(nonce), &[], &mut buffer)
-            .map_err(|_| "could not encrypt a Signal history row".to_string())?;
-        Ok((buffer, tag.to_vec()))
-    }
-
-    pub(crate) fn decrypt(
-        &self,
-        nonce: &[u8],
-        ciphertext: &[u8],
-        tag: &[u8],
-    ) -> Result<Vec<u8>, String> {
-        if nonce.len() != 12 || tag.len() != 16 {
-            return Err("a Signal history row has an unexpected shape".into());
-        }
-        let cipher = Aes256Gcm::new(GenericArray::from_slice(&self.0));
-        let mut buffer = ciphertext.to_vec();
-        cipher
-            .decrypt_in_place_detached(
-                Nonce::from_slice(nonce),
-                &[],
-                &mut buffer,
-                GenericArray::from_slice(tag),
-            )
-            .map_err(|_| "a Signal history row could not be authenticated".to_string())?;
-        Ok(buffer)
-    }
-}
 
 /// How long the keyring may take. A locked or missing keyring service can leave
 /// `secret-tool` waiting indefinitely, and nothing that waits on it may hang.
@@ -514,21 +438,9 @@ mod tests {
         std::fs::remove_dir_all(&directory).ok();
     }
 
-    #[test]
-    fn keyring_secret_must_be_a_32_byte_base64_key() {
-        let good = base64::engine::general_purpose::STANDARD.encode(KEY);
-        assert!(HistoryKey::from_keyring_secret(format!("{good}\n").as_bytes()).is_ok());
-        assert!(HistoryKey::from_keyring_secret(b"not base64 !!").is_err());
-        assert!(HistoryKey::from_keyring_secret(b"AAAA").is_err());
-    }
-
     fn seal(key: &HistoryKey, nonce: [u8; 12], plain: &[u8]) -> (Vec<u8>, Vec<u8>) {
-        let cipher = Aes256Gcm::new(GenericArray::from_slice(&key.0));
-        let mut buffer = plain.to_vec();
-        let tag = cipher
-            .encrypt_in_place_detached(Nonce::from_slice(&nonce), &[], &mut buffer)
-            .unwrap();
-        (buffer, tag.to_vec())
+        let sealed = key.encrypt_with_nonce(&nonce, plain).unwrap();
+        (sealed.ciphertext, sealed.tag)
     }
 
     #[test]
