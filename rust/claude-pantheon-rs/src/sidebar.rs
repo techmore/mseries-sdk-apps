@@ -240,6 +240,86 @@ pub fn project_header(
     header
 }
 
+/// A row in the sidebar's top section: an icon and a view name (Usage, Repositories, Activity).
+pub fn nav_row(title: &str, icon: &str) -> gtk::ListBoxRow {
+    let line = gtk::Box::new(gtk::Orientation::Horizontal, 9);
+    line.add_css_class("sb-nav");
+    line.append(&gtk::Image::from_icon_name(icon));
+    let l = label(title, &[]);
+    l.set_hexpand(true);
+    line.append(&l);
+    let row = gtk::ListBoxRow::new();
+    row.set_child(Some(&line));
+    row.update_property(&[gtk::accessible::Property::Label(title)]);
+    row
+}
+
+/// GitHub's marks drawn in the state colour: a ring with a dot for an issue, two linked nodes for a
+/// pull request. Drawn rather than themed so they read the same in every icon theme.
+pub fn issue_mark(is_pr: bool, state: &str) -> gtk::DrawingArea {
+    let area = gtk::DrawingArea::builder().content_width(14).content_height(14).valign(gtk::Align::Center).build();
+    area.add_css_class("sb-issue-mark");
+    area.add_css_class(state);
+    area.set_draw_func(move |w, cr, width, height| {
+        let c = w.color();
+        cr.set_source_rgba(c.red() as f64, c.green() as f64, c.blue() as f64, c.alpha() as f64);
+        let (cx, cy) = (width as f64 / 2.0, height as f64 / 2.0);
+        cr.set_line_width(1.6);
+        if is_pr {
+            cr.arc(cx - 3.5, cy - 4.0, 1.8, 0.0, std::f64::consts::TAU);
+            let _ = cr.stroke();
+            cr.arc(cx - 3.5, cy + 4.0, 1.8, 0.0, std::f64::consts::TAU);
+            let _ = cr.stroke();
+            cr.arc(cx + 3.5, cy + 4.0, 1.8, 0.0, std::f64::consts::TAU);
+            let _ = cr.stroke();
+            cr.move_to(cx - 3.5, cy - 2.2);
+            cr.line_to(cx - 3.5, cy + 2.2);
+            cr.move_to(cx + 3.5, cy + 2.2);
+            cr.line_to(cx + 3.5, cy - 2.0);
+            cr.line_to(cx + 0.5, cy - 4.5);
+            let _ = cr.stroke();
+        } else {
+            cr.arc(cx, cy, 5.6, 0.0, std::f64::consts::TAU);
+            let _ = cr.stroke();
+            cr.arc(cx, cy, 1.6, 0.0, std::f64::consts::TAU);
+            let _ = cr.fill();
+        }
+    });
+    area
+}
+
+/// An issue or pull request inside a repo group: state mark, number and title. Not selectable; the
+/// threads that work on it follow, indented.
+pub fn issue_row(
+    link: &crate::thread_links::ThreadLink,
+    info: Option<&crate::thread_links::IssueInfo>,
+) -> gtk::ListBoxRow {
+    use crate::thread_links::LinkKind;
+    let is_pr = link.kind == LinkKind::PullRequest || info.is_some_and(|i| i.is_pr);
+    let state = info.map(|i| i.state.as_str()).unwrap_or("unknown");
+    let line = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    line.add_css_class("sb-issue");
+    line.append(&issue_mark(is_pr, state));
+    let number = label(&format!("#{}", link.number), &["sb-issue-number"]);
+    line.append(&number);
+    let kind = if is_pr { "Pull request" } else { "Issue" };
+    let title = label(info.map(|i| i.title.as_str()).unwrap_or(kind), &["sb-issue-title"]);
+    title.set_hexpand(true);
+    line.append(&title);
+    let row = gtk::ListBoxRow::builder().selectable(false).activatable(false).build();
+    row.set_child(Some(&line));
+    let state_text = info.map(|i| i.state_label()).unwrap_or("state not loaded");
+    let summary = format!(
+        "{kind} #{} in {}: {}, {state_text}",
+        link.number,
+        link.repo,
+        info.map(|i| i.title.as_str()).unwrap_or("")
+    );
+    row.set_tooltip_text(Some(&summary));
+    row.update_property(&[gtk::accessible::Property::Label(&summary)]);
+    row
+}
+
 /// The thread context menu: actions take the thread id as their target.
 pub fn thread_menu(thread_id: &str, pinned: bool) -> gio::Menu {
     let menu = gio::Menu::new();

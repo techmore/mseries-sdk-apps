@@ -65,3 +65,15 @@ jobs:
 
       - name: Isolated GTK render test
         run: bash rust/claude-pantheon-rs/tests/run-render-sandbox.sh
+
+      - name: T3 preview screenshots (light and dark)
+        run: |
+          CLAUDE_PANTHEON_SHOT_T3="$PWD/t3-shots" bash rust/claude-pantheon-rs/tests/run-render-sandbox.sh
+          CLAUDE_PANTHEON_DARK=1 CLAUDE_PANTHEON_SHOT_T3="$PWD/t3-shots" bash rust/claude-pantheon-rs/tests/run-render-sandbox.sh
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: t3-preview-screenshots
+          path: t3-shots/*.png
+          if-no-files-found: warn

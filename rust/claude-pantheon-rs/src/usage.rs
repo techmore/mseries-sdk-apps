@@ -5,6 +5,7 @@ use crate::app::App;
 use crate::chat::label;
 use crate::t3::Rpc;
 use crate::t3::model::{Provider, ServerConfig, UsageBucket, UsageSummary, UsageTotals};
+use granite::prelude::HeaderLabelExt;
 use gtk::{glib, pango, prelude::*};
 use serde_json::json;
 use std::cell::{Cell, RefCell};
@@ -106,7 +107,8 @@ pub fn fold(summary: &UsageSummary, last_days: &[String]) -> Vec<ProviderUsage> 
     out
 }
 
-fn sparkline(days: Vec<(String, u64)>) -> gtk::DrawingArea {
+fn sparkline(days: Vec<(String, u64)>, color: &str) -> gtk::DrawingArea {
+    let tint = gtk::gdk::RGBA::parse(color).ok();
     let area = gtk::DrawingArea::builder().content_width(140).content_height(28).hexpand(true).build();
     area.set_tooltip_text(Some("Tokens per day, last 7 days"));
     area.set_draw_func(move |w, cr, width, height| {
@@ -114,7 +116,7 @@ fn sparkline(days: Vec<(String, u64)>) -> gtk::DrawingArea {
         let n = days.len().max(1) as f64;
         let gap = 3.0;
         let bar = ((width as f64 - gap * (n - 1.0)) / n).max(2.0);
-        let color = w.color();
+        let color = tint.unwrap_or_else(|| w.color());
         for (i, (_, v)) in days.iter().enumerate() {
             let h = (*v as f64 / max * (height as f64 - 2.0)).max(if *v > 0 { 2.0 } else { 1.0 });
             let x = i as f64 * (bar + gap);
@@ -122,9 +124,15 @@ fn sparkline(days: Vec<(String, u64)>) -> gtk::DrawingArea {
                 color.red() as f64,
                 color.green() as f64,
                 color.blue() as f64,
-                if *v > 0 { 0.75 } else { 0.2 },
+                if *v > 0 { 0.8 } else { 0.18 },
             );
-            cr.rectangle(x, height as f64 - h, bar, h);
+            let (x, y, r) = (x, height as f64 - h, (bar / 2.0).min(3.0).min(h / 2.0));
+            cr.new_sub_path();
+            cr.arc(x + bar - r, y + r, r, -std::f64::consts::FRAC_PI_2, 0.0);
+            cr.line_to(x + bar, y + h);
+            cr.line_to(x, y + h);
+            cr.arc(x + r, y + r, r, std::f64::consts::PI, 3.0 * std::f64::consts::FRAC_PI_2);
+            cr.close_path();
             let _ = cr.fill();
         }
     });
@@ -159,6 +167,84 @@ fn stat(title: &str, value: &str) -> gtk::Box {
     b
 }
 
+/// "Resets in 2 h 10 min · 4:10 PM" for a future reset, "Reset time passed" for an old one.
+pub fn reset_text(resets_at: &str, now: i64) -> Option<String> {
+    let at = glib::DateTime::from_iso8601(resets_at, None).ok()?;
+    let delta = at.to_unix() - now;
+    if delta <= 0 {
+        return Some("Reset time has passed; waiting for a new reading".into());
+    }
+    let local = at.to_local().ok()?;
+    let today = glib::DateTime::from_unix_local(now).ok()?;
+    let clock = if local.day_of_year() == today.day_of_year() && local.year() == today.year() {
+        local.format("%-l:%M %p").ok()?.to_string()
+    } else if delta < 6 * 86_400 {
+        local.format("%a %-l:%M %p").ok()?.to_string()
+    } else {
+        local.format("%b %-d").ok()?.to_string()
+    };
+    let span = if delta < 3600 {
+        format!("{} min", (delta / 60).max(1))
+    } else if delta < 86_400 {
+        let (h, m) = (delta / 3600, delta % 3600 / 60);
+        if m == 0 { format!("{h} h") } else { format!("{h} h {m} min") }
+    } else {
+        let d = delta / 86_400;
+        if d == 1 { "1 day".into() } else { format!("{d} days") }
+    };
+    Some(format!("Resets in {span} · {}", clock.trim()))
+}
+
+/// A plan window's name as people say it: `5h` → "5-hour limit", `weekly` → "Weekly limit".
+pub fn window_title(raw: &str, minutes: Option<u64>) -> String {
+    let lower = raw.to_ascii_lowercase();
+    let by_minutes = match minutes {
+        Some(300) => Some("5-hour limit".to_string()),
+        Some(10_080) => Some("Weekly limit".to_string()),
+        Some(1_440) => Some("Daily limit".to_string()),
+        _ => None,
+    };
+    if let Some(t) =
+        by_minutes.filter(|_| raw.is_empty() || lower.contains('h') || lower.contains("week") || lower.contains("day"))
+    {
+        return t;
+    }
+    if raw.is_empty() {
+        return "Plan limit".into();
+    }
+    let mut c = raw.chars();
+    let first = c.next().map(|f| f.to_uppercase().collect::<String>()).unwrap_or_default();
+    format!("{first}{}", c.as_str())
+}
+
+/// A round provider mark in the provider's colour, with its initial.
+fn provider_mark(name: &str, color: &str) -> gtk::Label {
+    let mark = label(&name.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default(), &["usage-mark"]);
+    mark.set_xalign(0.5);
+    mark.set_valign(gtk::Align::Center);
+    let css = gtk::CssProvider::new();
+    css.load_from_string(&format!("label {{ background: {color}; color: white; }}"));
+    #[allow(deprecated)]
+    mark.style_context().add_provider(&css, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
+    mark
+}
+
+/// A small status chip: `Live`, `Last known`, `Not reported`.
+fn chip(text: &str, class: &str) -> gtk::Label {
+    let c = label(text, &["usage-chip", class]);
+    c.set_valign(gtk::Align::Center);
+    c
+}
+
+/// A section heading in Granite style with a secondary line.
+fn section(title: &str, secondary: &str) -> granite::HeaderLabel {
+    let h = granite::HeaderLabel::new(title);
+    if !secondary.is_empty() {
+        h.set_secondary_text(Some(secondary));
+    }
+    h
+}
+
 impl UsagePage {
     pub fn new() -> UsagePage {
         let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
@@ -172,7 +258,8 @@ impl UsagePage {
         status.set_margin_end(24);
         status.set_wrap(true);
         status.set_ellipsize(pango::EllipsizeMode::None);
-        let context = label("T3 server · not connected. Computer-local reports are separate below.", &["dim-label"]);
+        status.connect_label_notify(|l| l.set_visible(!l.label().is_empty()));
+        let context = label("Not connected to a T3 server", &["dim-label"]);
         context.set_wrap(true);
         context.set_wrap_mode(pango::WrapMode::WordChar);
         context.set_margin_start(24);
@@ -184,16 +271,18 @@ impl UsagePage {
         toolbar.set_margin_start(24);
         toolbar.set_margin_end(24);
         toolbar.set_margin_top(12);
-        let title = label("Usage", &["title-2"]);
-        title.set_hexpand(true);
-        toolbar.append(&title);
-        let refresh = gtk::Button::with_label("Refresh usage");
+        context.set_hexpand(true);
+        context.set_margin_start(0);
+        context.set_margin_top(0);
+        context.add_css_class("caption");
+        let refresh = gtk::Button::from_icon_name("view-refresh-symbolic");
+        refresh.add_css_class(granite::STYLE_CLASS_FLAT);
         refresh.set_action_name(Some("win.usage"));
         refresh.set_tooltip_text(Some("Refresh T3 server history, account plan windows and computer-local reports"));
         refresh.update_property(&[gtk::accessible::Property::Label("Refresh usage monitor")]);
         toolbar.append(&refresh);
+        toolbar.prepend(&context);
         body.append(&toolbar);
-        body.append(&context);
         body.append(&status);
         let windows = gtk::Box::new(gtk::Orientation::Vertical, 0);
         windows.set_margin_start(24);
@@ -304,8 +393,10 @@ impl UsagePage {
         self.received_at.set(None);
         self.last_providers.borrow_mut().clear();
         self.history_states.borrow_mut().clear();
-        self.context.set_text("T3 server · not connected. Computer-local reports are separate below.");
-        self.status.set_text("Connect to a T3 server for token history and server plan windows.");
+        self.context.set_text("Not connected to a T3 server");
+        self.status.set_text(
+            "Connect to a T3 server to see plan limits and token history. Reports from this computer are below.",
+        );
     }
 
     /// Account identities and plan windows only; this monitor makes no routing recommendation.
@@ -317,73 +408,117 @@ impl UsagePage {
         while let Some(c) = self.windows.first_child() {
             self.windows.remove(&c);
         }
-        let title = label("T3 server · account plan windows", &["title-4"]);
-        self.windows.append(&title);
-        let note = label(
-            "Percent of subscription plan used, not token totals or a best-account recommendation. Fresh observations are at most 15 minutes old.",
-            &["caption", "dim-label"],
-        );
-        note.set_wrap(true);
-        self.windows.append(&note);
+        let now = crate::look::now_unix();
+        let newest = rows.iter().filter_map(|r| r["observed_at"].as_i64()).max();
+        let secondary = match newest {
+            Some(t) => format!(
+                "Share of each subscription used, from the T3 server · checked {}",
+                crate::look::relative_time(t, now)
+            ),
+            None => "Share of each subscription used, from the T3 server".into(),
+        };
+        self.windows.append(&section("Plan Limits", &secondary));
         if rows.is_empty() {
-            self.windows.append(&label("No enabled accounts reported by this server.", &["dim-label"]));
+            let empty = label("This server reports no enabled provider accounts.", &["dim-label"]);
+            empty.set_margin_top(6);
+            self.windows.append(&empty);
+            return;
         }
+        let flow = gtk::FlowBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .homogeneous(false)
+            .column_spacing(12)
+            .row_spacing(12)
+            .min_children_per_line(1)
+            .max_children_per_line(3)
+            .build();
+        flow.set_margin_top(6);
         for row in rows {
-            let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
-            for class in ["card", "pantheon-surface", "usage-card"] {
+            let name = row["title"].as_str().unwrap_or("Account").to_string();
+            let instance = row["instance_id"].as_str().unwrap_or("");
+            let driver = row["driver"].as_str().unwrap_or("");
+            let state = row["state"].as_str().unwrap_or("unknown");
+            let card = gtk::Box::new(gtk::Orientation::Vertical, 10);
+            for class in ["card", "usage-card", "usage-plan"] {
                 card.add_css_class(class);
             }
-            let state = row["state"].as_str().unwrap_or("unknown");
-            let heading = format!(
-                "{} · {} · {state}",
-                row["title"].as_str().unwrap_or("Account"),
-                row["instance_id"].as_str().unwrap_or("Unknown account")
-            );
-            let name = label(&heading, &["usage-provider"]);
-            name.set_wrap(true);
-            name.set_wrap_mode(pango::WrapMode::WordChar);
-            card.append(&name);
-            let checked = row["checked_at"].as_str().filter(|s| !s.is_empty()).unwrap_or("not supplied");
-            let detail = label(
-                &format!("{} · server checked at {checked}", row["detail"].as_str().unwrap_or("")),
-                &["caption", "dim-label"],
-            );
-            detail.set_wrap(true);
-            detail.set_wrap_mode(pango::WrapMode::WordChar);
-            card.append(&detail);
-            for w in row["windows"].as_array().into_iter().flatten() {
-                let title = w["title"].as_str().filter(|s| !s.is_empty()).unwrap_or("Plan window");
-                let wstate = w["state"].as_str().unwrap_or("unknown");
-                let amount = w["used_percent"].as_f64();
-                let text = match amount {
-                    Some(pct) if wstate == "fresh" => format!("{title} · {pct:.0}% used"),
-                    Some(pct) => format!("{title} · last known {pct:.0}% used · {wstate}"),
-                    None => format!("{title} · quota unknown · {wstate}"),
+            card.set_width_request(260);
+            card.set_valign(gtk::Align::Start);
+            card.set_hexpand(true);
+            let head = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+            head.append(&provider_mark(&name, &crate::sidebar::accent_for(None, driver)));
+            let names = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            names.set_hexpand(true);
+            names.set_valign(gtk::Align::Center);
+            names.append(&label(&name, &["usage-provider"]));
+            if !instance.is_empty() && instance != driver && !name.eq_ignore_ascii_case(instance) {
+                names.append(&label(instance, &["caption", "dim-label"]));
+            }
+            head.append(&names);
+            let (chip_text, chip_class) = match state {
+                "fresh" => ("Live", "live"),
+                "stale" => ("Last known", "stale"),
+                "unavailable" => ("Not reported", "missing"),
+                _ => ("Unknown", "missing"),
+            };
+            head.append(&chip(chip_text, chip_class));
+            card.append(&head);
+            let windows = row["windows"].as_array().cloned().unwrap_or_default();
+            if windows.is_empty() {
+                let none = label("No plan limits reported for this account.", &["dim-label"]);
+                none.set_wrap(true);
+                card.append(&none);
+            }
+            for w in &windows {
+                let title = window_title(w["title"].as_str().unwrap_or(""), w["window_duration_mins"].as_u64());
+                let pct = w["used_percent"].as_f64();
+                let live = w["live"].as_bool() == Some(true);
+                let line = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+                let t = label(&title, &[]);
+                t.set_hexpand(true);
+                line.append(&t);
+                let amount = match pct {
+                    Some(p) => format!("{p:.0}% used"),
+                    None => "Unknown".into(),
                 };
-                let description = label(&text, &["caption"]);
-                description.set_wrap(true);
-                card.append(&description);
-                if w["live"].as_bool() == Some(true)
-                    && let Some(pct) = amount
-                {
-                    let gauge =
-                        gtk::LevelBar::builder().min_value(0.0).max_value(100.0).value(pct).hexpand(true).build();
-                    gauge.add_offset_value("low", 60.0);
+                line.append(&label(&amount, &["usage-num", if live { "usage-amount" } else { "dim-label" }]));
+                card.append(&line);
+                if let Some(p) = pct {
+                    let gauge = gtk::LevelBar::builder().min_value(0.0).max_value(100.0).value(p).hexpand(true).build();
+                    gauge.add_offset_value("low", 70.0);
                     gauge.add_offset_value("high", 90.0);
                     gauge.add_offset_value("full", 100.0);
                     gauge.add_css_class("usage-gauge");
-                    gauge.update_property(&[gtk::accessible::Property::Label(&format!("{heading}, {text}"))]);
+                    if !live {
+                        gauge.add_css_class("usage-gauge-stale");
+                    }
+                    gauge.update_property(&[gtk::accessible::Property::Label(&format!(
+                        "{name}, {title}: {amount}{}",
+                        if live { "" } else { ", last known" }
+                    ))]);
                     card.append(&gauge);
                 }
-                if let Some(reset) = w["resets_at"].as_str() {
-                    let reset = label(&format!("Reported reset: {reset}"), &["caption", "dim-label"]);
-                    reset.set_wrap(true);
-                    card.append(&reset);
+                if let Some(reset) = w["resets_at"].as_str().and_then(|r| reset_text(r, now)) {
+                    card.append(&label(&reset, &["caption", "dim-label"]));
                 }
             }
-            card.update_property(&[gtk::accessible::Property::Label(&heading)]);
-            self.windows.append(&card);
+            let note = match state {
+                "stale" => row["observed_at"]
+                    .as_i64()
+                    .map(|t| format!("Last checked {}; may be out of date.", crate::look::relative_time(t, now))),
+                "unavailable" => Some("The server could not read this account's limits.".to_string()),
+                "unknown" => Some("The server's reading is incomplete, so the amount is unknown.".to_string()),
+                _ => None,
+            };
+            if let Some(n) = note {
+                let n = label(&n, &["caption", "dim-label"]);
+                n.set_wrap(true);
+                card.append(&n);
+            }
+            card.update_property(&[gtk::accessible::Property::Label(&format!("{name}, {chip_text}"))]);
+            flow.insert(&card, -1);
         }
+        self.windows.append(&flow);
     }
 
     pub fn load(&self, app: Rc<App>, rpc: Rpc) {
@@ -402,8 +537,7 @@ impl UsagePage {
             .find(|e| Some(e.id.as_str()) == current.as_deref())
             .map(|e| e.name.as_str())
             .unwrap_or("Default environment");
-        self.context.set_text(&format!("T3 server · {environment} · {}. Plan windows and token history are server-side; computer-local reports are separate below.",
-            app.current_server()));
+        self.context.set_text(&format!("T3 server: {environment} · {}", app.current_server()));
         for label in self.history_states.borrow().iter() {
             label.set_text("Last-known historical scan · refreshing; freshness not yet confirmed");
         }
@@ -463,164 +597,152 @@ impl UsagePage {
         let historical: BTreeMap<&str, &serde_json::Value> =
             history_rows.iter().filter_map(|row| row["provider"].as_str().map(|provider| (provider, row))).collect();
         self.received_at.set(Some(received));
-        self.status.set_text(&format!(
-            "T3 server token history · {} to {} · server scan reported at {} · received {} · {} buckets · scan {} ms. Historical provider totals, not account quotas; per-provider freshness below.",
-            summary.since_day, summary.until_day,
-            if summary.read_at.is_empty() { "not supplied" } else { &summary.read_at },
-            glib::DateTime::from_unix_local(received).ok().and_then(|d| d.format("%Y-%m-%d %H:%M %Z").ok())
-                .map(|s| s.to_string()).unwrap_or_else(|| received.to_string()),
-            summary.buckets.len(), summary.scan_duration_ms
+        self.status.set_text("");
+        let range = if summary.since_day.is_empty() {
+            "Reported range".to_string()
+        } else {
+            format!("{} to {}", summary.since_day, summary.until_day)
+        };
+        self.content.append(&section(
+            "Tokens",
+            &format!("{range} · all accounts on this server · costs are API-price estimates, not your bill"),
         ));
-        let title = label("T3 server · token history", &["title-4"]);
-        self.content.append(&title);
-        let explanation = label(
-            "Provider totals combine historical model/day records across server accounts. Reasoning tokens are already included in output. Costs are API-equivalent estimates, not your subscription bill.",
-            &["caption", "dim-label"],
-        );
-        explanation.set_wrap(true);
-        self.content.append(&explanation);
         if providers.is_empty() {
-            self.content.append(&label(
-                "No token buckets reported for this range. Missing or failed sources do not imply zero usage.",
+            let empty = label(
+                "No token history for this range. A source that could not be read is not counted as zero.",
                 &["dim-label"],
-            ));
-        }
-
-        // A flow box wraps the totals rather than imposing a wide minimum window.
-        let strip = gtk::FlowBox::builder()
-            .selection_mode(gtk::SelectionMode::None)
-            .homogeneous(false)
-            .column_spacing(24)
-            .row_spacing(12)
-            .max_children_per_line(5)
-            .build();
-        strip.add_css_class("card");
-        strip.add_css_class("pantheon-surface");
-        strip.add_css_class("usage-card");
-        if !providers.is_empty() {
-            strip.insert(&stat("tokens in reported range", &tokens_text(total_tokens.total())), -1);
-            strip.insert(&stat("output (includes reasoning)", &tokens_text(total_tokens.output)), -1);
-            strip.insert(&stat("cache reads", &tokens_text(total_tokens.cached_input)), -1);
-            strip.insert(
-                &stat("API-equivalent cost", &if all_priced { usd(total_cost) } else { "Unknown / incomplete".into() }),
-                -1,
             );
-            strip.insert(
-                &stat(
-                    "estimated cache savings",
-                    &if all_priced { usd(total_savings) } else { "Unknown / incomplete".into() },
-                ),
-                -1,
-            );
-        }
-        self.content.append(&strip);
-
-        for p in &providers {
-            let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
-            card.add_css_class("card");
-            card.add_css_class("pantheon-surface");
-            card.add_css_class("usage-card");
-            let head = gtk::Box::new(gtk::Orientation::Vertical, 6);
-            let mark = label(
-                &p.kind.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default(),
-                &["usage-mark"],
-            );
-            head.append(&mark);
-            let history = historical.get(p.kind.as_str()).copied();
-            let state = history.and_then(|r| r["state"].as_str()).unwrap_or("unknown");
-            let name = label(&format!("{} · provider aggregate", provider_title(&p.kind)), &["title-4"]);
-            name.set_wrap(true);
-            head.append(&name);
-            let freshness = label(&format!("{state} historical scan · not live quota"), &["caption", "dim-label"]);
-            freshness.set_wrap(true);
-            head.append(&freshness);
-            self.history_states.borrow_mut().push(freshness);
-            let sessions =
-                label(&format!("{} reported sessions · last 7 days below", p.sessions), &["caption", "dim-label"]);
-            sessions.set_wrap(true);
-            sessions.set_hexpand(true);
-            head.append(&sessions);
-            card.append(&head);
-            let chart = sparkline(p.days.clone());
-            chart.update_property(&[gtk::accessible::Property::Label(&format!(
-                "{} historical tokens, last seven days: {}",
-                provider_title(&p.kind),
-                p.days.iter().map(|(day, n)| format!("{day}: {n}")).collect::<Vec<_>>().join(", ")
-            ))]);
-            card.append(&chart);
-
-            // Token-first bar row: uncached input, cache writes, cache reads, output.
-            let row = gtk::Box::new(gtk::Orientation::Vertical, 6);
-            let tokens = label(&format!("{} tokens", tokens_text(p.totals.total())), &["usage-tokens"]);
-            row.append(&tokens);
-            let bar = bar_row(&[
-                (p.totals.uncached_input as f64, "input"),
-                (p.totals.cache_creation as f64, "cache write"),
-                (p.totals.cached_input as f64, "cache read"),
-                (p.totals.output as f64, "output"),
-            ]);
-            bar.update_property(&[gtk::accessible::Property::Label(
-                "Historical token proportions: input, cache writes, cache reads and output; not plan usage",
-            )]);
-            bar.set_valign(gtk::Align::Center);
-            row.append(&bar);
-            let priced = history.is_some_and(|r| r["api_equivalent_cost_usd"].is_number());
-            let cost = label(
-                &if priced {
-                    format!("{} API-equivalent · estimated cache savings {}", usd(p.cost), usd(p.savings))
-                } else {
-                    "API-equivalent cost / cache savings unknown or incomplete".into()
-                },
-                &["usage-cost"],
-            );
-            cost.set_wrap(true);
-            row.append(&cost);
-            card.append(&row);
-            let legend = label(
-                &format!(
-                    "input {} · cache write {} · cache read {} · output {} ({} reasoning)",
-                    tokens_text(p.totals.uncached_input),
-                    tokens_text(p.totals.cache_creation),
-                    tokens_text(p.totals.cached_input),
-                    tokens_text(p.totals.output),
-                    tokens_text(p.totals.reasoning)
-                ),
-                &["caption", "dim-label"],
-            );
-            legend.set_wrap(true);
-            card.append(&legend);
-
-            // Model breakdown.
-            let grid = gtk::Grid::builder().column_spacing(16).row_spacing(2).build();
-            grid.add_css_class("usage-models");
-            for (c, h) in ["model", "input", "output", "cost"].iter().enumerate() {
-                let l = label(h, &["caption", "dim-label"]);
-                if c > 0 {
-                    l.set_xalign(1.0);
-                }
-                grid.attach(&l, c as i32, 0, 1, 1);
+            empty.set_wrap(true);
+            self.content.append(&empty);
+        } else {
+            let strip = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+            strip.set_homogeneous(true);
+            for class in ["card", "usage-card", "usage-totals"] {
+                strip.add_css_class(class);
             }
-            let mut models: Vec<(&String, &(UsageTotals, f64))> = p.models.iter().collect();
-            models.sort_by(|a, b| b.1.1.partial_cmp(&a.1.1).unwrap_or(std::cmp::Ordering::Equal));
-            for (r, (model, (t, cost))) in models.iter().enumerate().take(8) {
-                let name = label(model, &["usage-model"]);
-                name.set_hexpand(true);
-                name.set_wrap(true);
-                name.set_wrap_mode(pango::WrapMode::WordChar);
-                name.set_max_width_chars(24);
-                grid.attach(&name, 0, r as i32 + 1, 1, 1);
-                for (c, text) in
-                    [tokens_text(t.input()), tokens_text(t.output), if priced { usd(*cost) } else { "Unknown".into() }]
-                        .iter()
-                        .enumerate()
-                {
-                    let l = label(text, &["usage-num"]);
-                    l.set_xalign(1.0);
-                    grid.attach(&l, c as i32 + 1, r as i32 + 1, 1, 1);
-                }
+            strip.append(&stat("Tokens", &tokens_text(total_tokens.total())));
+            strip.append(&stat("Output", &tokens_text(total_tokens.output)));
+            strip.append(&stat("API value", &if all_priced { usd(total_cost) } else { "Unknown".into() }));
+            strip.append(&stat("Saved by cache", &if all_priced { usd(total_savings) } else { "Unknown".into() }));
+            self.content.append(&strip);
+
+            let list = gtk::ListBox::builder().selection_mode(gtk::SelectionMode::None).build();
+            for class in ["card", "usage-list"] {
+                list.add_css_class(class);
             }
-            card.append(&grid);
-            self.content.append(&card);
+            for p in &providers {
+                let title = provider_title(&p.kind).to_string();
+                let history = historical.get(p.kind.as_str()).copied();
+                let priced = history.is_some_and(|r| r["api_equivalent_cost_usd"].is_number());
+                let state = history.and_then(|r| r["state"].as_str()).unwrap_or("unknown");
+                let body = gtk::Box::new(gtk::Orientation::Vertical, 6);
+                body.add_css_class("usage-row");
+                let line = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+                line.append(&provider_mark(&title, &crate::sidebar::accent_for(None, &p.kind)));
+                let names = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                names.set_valign(gtk::Align::Center);
+                names.append(&label(&title, &["usage-provider"]));
+                let freshness = label(
+                    &format!(
+                        "{} sessions{}",
+                        p.sessions,
+                        if state == "fresh" || state == "ok" { String::new() } else { format!(" · {state} scan") }
+                    ),
+                    &["caption", "dim-label"],
+                );
+                names.append(&freshness);
+                self.history_states.borrow_mut().push(freshness);
+                names.set_width_request(130);
+                line.append(&names);
+                let chart = sparkline(p.days.clone(), &crate::sidebar::accent_for(None, &p.kind));
+                chart.set_size_request(-1, 28);
+                chart.set_valign(gtk::Align::Center);
+                chart.update_property(&[gtk::accessible::Property::Label(&format!(
+                    "{title} tokens per day, last seven days: {}",
+                    p.days.iter().map(|(day, n)| format!("{day}: {}", tokens_text(*n))).collect::<Vec<_>>().join(", ")
+                ))]);
+                line.append(&chart);
+                let numbers = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                numbers.set_valign(gtk::Align::Center);
+                let tokens = label(&format!("{} tokens", tokens_text(p.totals.total())), &["usage-tokens"]);
+                tokens.set_xalign(1.0);
+                numbers.append(&tokens);
+                let cost = label(
+                    &if priced { format!("≈ {}", usd(p.cost)) } else { "cost unknown".into() },
+                    &["caption", "dim-label"],
+                );
+                cost.set_xalign(1.0);
+                numbers.append(&cost);
+                line.append(&numbers);
+                body.append(&line);
+
+                // Details on demand: the token mix and the models behind it.
+                let details = gtk::Box::new(gtk::Orientation::Vertical, 6);
+                let bar = bar_row(&[
+                    (p.totals.uncached_input as f64, "input"),
+                    (p.totals.cache_creation as f64, "cache write"),
+                    (p.totals.cached_input as f64, "cache read"),
+                    (p.totals.output as f64, "output"),
+                ]);
+                bar.update_property(&[gtk::accessible::Property::Label(
+                    "Token mix: input, cache writes, cache reads, output",
+                )]);
+                details.append(&bar);
+                let legend = label(
+                    &format!(
+                        "Input {} · cache write {} · cache read {} · output {} (reasoning {})",
+                        tokens_text(p.totals.uncached_input),
+                        tokens_text(p.totals.cache_creation),
+                        tokens_text(p.totals.cached_input),
+                        tokens_text(p.totals.output),
+                        tokens_text(p.totals.reasoning)
+                    ),
+                    &["caption", "dim-label"],
+                );
+                legend.set_wrap(true);
+                details.append(&legend);
+                let grid = gtk::Grid::builder().column_spacing(16).row_spacing(2).build();
+                grid.add_css_class("usage-models");
+                for (c, h) in ["Model", "Input", "Output", "Cost"].iter().enumerate() {
+                    let l = label(h, &["caption", "dim-label"]);
+                    if c > 0 {
+                        l.set_xalign(1.0);
+                    }
+                    grid.attach(&l, c as i32, 0, 1, 1);
+                }
+                let mut models: Vec<(&String, &(UsageTotals, f64))> = p.models.iter().collect();
+                models.sort_by(|a, b| b.1.1.partial_cmp(&a.1.1).unwrap_or(std::cmp::Ordering::Equal));
+                for (r, (model, (t, cost))) in models.iter().enumerate().take(8) {
+                    let name = label(model, &[]);
+                    name.set_hexpand(true);
+                    name.set_ellipsize(pango::EllipsizeMode::Middle);
+                    grid.attach(&name, 0, r as i32 + 1, 1, 1);
+                    for (c, text) in [
+                        tokens_text(t.input()),
+                        tokens_text(t.output),
+                        if priced { usd(*cost) } else { "Unknown".into() },
+                    ]
+                    .iter()
+                    .enumerate()
+                    {
+                        let l = label(text, &["usage-num"]);
+                        l.set_xalign(1.0);
+                        grid.attach(&l, c as i32 + 1, r as i32 + 1, 1, 1);
+                    }
+                }
+                details.append(&grid);
+                let expander = gtk::Expander::builder().label("Models and token mix").child(&details).build();
+                expander.add_css_class("caption");
+                body.append(&expander);
+                let row = gtk::ListBoxRow::builder().activatable(false).child(&body).build();
+                row.update_property(&[gtk::accessible::Property::Label(&format!(
+                    "{title}: {} tokens{}",
+                    tokens_text(p.totals.total()),
+                    if priced { format!(", about {}", usd(p.cost)) } else { String::new() }
+                ))]);
+                list.append(&row);
+            }
+            self.content.append(&list);
         }
 
         // Sources that could not be read.
@@ -640,7 +762,7 @@ impl UsagePage {
         if !problems.is_empty() {
             let mut seen = std::collections::BTreeSet::new();
             let text = problems.into_iter().filter(|p| seen.insert(p.clone())).collect::<Vec<_>>().join("\n");
-            let l = label(&text, &["caption", "dim-label"]);
+            let l = label(&format!("Not counted:\n{text}"), &["caption", "dim-label"]);
             l.set_wrap(true);
             l.set_ellipsize(pango::EllipsizeMode::None);
             self.content.append(&l);

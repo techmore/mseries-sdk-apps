@@ -10,6 +10,7 @@ use crate::t3::attach;
 use crate::t3::model::Project;
 use crate::t3::model::{Provider, ServerConfig, Shell, ThreadShell, ThreadView, TurnItem};
 use crate::t3::{self, Rpc, auth, ws::WsError};
+use crate::thread_links;
 use crate::transcript::{self, Transcript};
 use crate::workflow::{self, Issue, PinnedRepo};
 use crate::{
@@ -21,7 +22,7 @@ use granite::prelude::{PlaceholderExt, ToastExt};
 use gtk::{gdk, gio, glib, pango, prelude::*};
 use serde_json::{Value, json};
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::Instant;
 
@@ -58,7 +59,16 @@ const RUNTIME_MODES: [(&str, &str); 4] = [
 enum Row {
     Thread(usize),
     Session(usize),
+    /// A view in the sidebar's top section (Usage, Repositories, Activity).
+    Page(&'static str),
 }
+
+/// The sidebar's top section: (stack page, label, icon).
+const NAV_PAGES: &[(&str, &str, &str)] = &[
+    ("usage", "Usage", "power-profile-balanced-symbolic"),
+    ("repository-overview", "Repositories", "folder-remote-symbolic"),
+    ("activity", "Activity", "document-open-recent-symbolic"),
+];
 
 /// Server state while connected.
 pub struct Conn {
@@ -113,6 +123,22 @@ pub struct App {
     title: gtk::Label,
     subtitle: gtk::Label,
     toast: granite::Toast,
+    // the open thread's issue or pull request, under the header
+    issue_bar: gtk::Revealer,
+    issue_state: gtk::Label,
+    issue_number: gtk::Label,
+    issue_title: gtk::Label,
+    issue_repo: gtk::Label,
+    issue_open: gtk::Button,
+    issue_link: RefCell<Option<thread_links::ThreadLink>>,
+    issue_url: RefCell<String>,
+    issues: RefCell<thread_links::IssueCache>,
+    issue_fetching: RefCell<HashSet<String>>,
+    repo_of_root: RefCell<HashMap<String, Option<String>>>,
+    /// Fixture shell and thread items shown without a server (render checks and screenshots).
+    preview: RefCell<Option<(Shell, HashMap<String, ThreadView>)>>,
+    /// Sidebar group keys in their shown order (for drag reordering).
+    group_keys: RefCell<Vec<String>>,
     // composer
     composer: gtk::Box,
     provider_dd: gtk::DropDown,
@@ -251,7 +277,7 @@ impl App {
 
         // ---- main header ---------------------------------------------------------------------
         let main_header = header_bar();
-        let title = label("Claude", &["title"]);
+        let title = label("T3", &["title"]);
         let subtitle = label("", &["subtitle", "dim-label"]);
         subtitle.set_visible(false);
         let titles = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -276,35 +302,52 @@ impl App {
             None,
             &section(&[
                 ("New Thread", "win.new-thread"),
-                ("Command Palette", "win.palette"),
                 ("Search Threads", "win.search"),
+                ("Command Palette", "win.palette"),
             ]),
         );
+        menu_model.append_section(
+            None,
+            &section(&[
+                ("Usage", "win.usage"),
+                ("Repositories", "win.repository-overview"),
+                ("Activity", "win.activity"),
+                ("Issue Runner", "win.repos"),
+                ("Remote Machines", "win.fleet"),
+            ]),
+        );
+        let thread_menu = gio::Menu::new();
+        for (label_text, action) in [
+            ("Terminal", "win.terminal"),
+            ("Attach a Screenshot", "win.snapshot"),
+            ("Hand Off to Repo", "win.handoff"),
+            ("Open Offline Twin", "win.offline"),
+            ("Close Thread", "win.close-thread"),
+        ] {
+            thread_menu.append(Some(label_text), Some(action));
+        }
+        menu_model.append_submenu(Some("Thread"), &thread_menu);
         let plugin_items = crate::plugin::menu_items();
         if !plugin_items.is_empty() {
             let m = gio::Menu::new();
             for (title, action) in &plugin_items {
                 m.append(Some(title), Some(action));
             }
-            menu_model.append_section(None, &m);
+            menu_model.append_submenu(Some("Plugins"), &m);
         }
         menu_model.append_section(
             None,
             &section(&[
-                ("Import Sessions from Claude Code and Codex", "win.import"),
-                ("Hand Off to Repo", "win.handoff"),
-                ("Open Offline Twin", "win.offline"),
-                ("Close Thread", "win.close-thread"),
-                ("Terminal", "win.terminal"),
-                ("AI Providers", "win.providers"),
-                ("SnapShot (attach a screenshot)", "win.snapshot"),
+                ("Import Sessions…", "win.import"),
+                ("AI Providers…", "win.providers"),
+                ("Preferences…", "win.settings"),
             ]),
         );
-        menu_model.append_section(
-            None,
-            &section(&[("Settings", "win.settings"), ("Reconnect", "win.reconnect"), ("Forget Pairing", "win.forget")]),
-        );
-        menu_model.append_section(None, &section(&[("About Claude", "win.about"), ("Quit", "win.quit")]));
+        let connection = gio::Menu::new();
+        connection.append(Some("Reconnect"), Some("win.reconnect"));
+        connection.append(Some("Forget Pairing"), Some("win.forget"));
+        menu_model.append_submenu(Some("Server"), &connection);
+        menu_model.append_section(None, &section(&[("About T3", "win.about")]));
         let menu =
             gtk::MenuButton::builder().icon_name("open-menu-symbolic").menu_model(&menu_model).primary(true).build();
         menu.set_tooltip_text(Some("Menu"));
@@ -371,15 +414,60 @@ impl App {
             .transition_type(gtk::RevealerTransitionType::SlideUp)
             .reveal_child(false)
             .build();
+        // The open thread's issue or pull request: state, number, title, repo and a GitHub link.
+        let issue_state = label("Open", &["issue-state"]);
+        issue_state.set_valign(gtk::Align::Center);
+        let issue_number = label("", &["issue-number", "dim-label"]);
+        let issue_title = label("", &["issue-title"]);
+        issue_title.set_hexpand(true);
+        let issue_repo = label("", &["caption", "dim-label"]);
+        let issue_text = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let issue_line = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        issue_line.append(&issue_number);
+        issue_line.append(&issue_title);
+        issue_text.append(&issue_line);
+        issue_text.append(&issue_repo);
+        issue_text.set_hexpand(true);
+        let issue_open_child = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        issue_open_child.append(&label("View on GitHub", &[]));
+        issue_open_child.append(&gtk::Image::from_icon_name("adw-external-link-symbolic"));
+        let issue_open = gtk::Button::builder().child(&issue_open_child).build();
+        issue_open.add_css_class(granite::STYLE_CLASS_FLAT);
+        issue_open.set_valign(gtk::Align::Center);
+        issue_open.set_tooltip_text(Some("Open on GitHub"));
+        mseries_pantheon_kit::set_accessible_label(&issue_open, "Open on GitHub");
+        let issue_box = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        issue_box.add_css_class("issue-bar");
+        issue_box.append(&issue_state);
+        issue_box.append(&issue_text);
+        issue_box.append(&issue_open);
+        let issue_bar = gtk::Revealer::builder()
+            .child(&issue_box)
+            .transition_type(gtk::RevealerTransitionType::SlideDown)
+            .reveal_child(false)
+            .build();
         let chat_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        chat_page.append(&issue_bar);
         chat_page.append(&chat_scroll);
         chat_page.append(&terminal_revealer);
         chat_page.append(&composer);
 
         // ---- other pages ---------------------------------------------------------------------
-        let empty = granite::Placeholder::new("Claude for elementary OS");
-        empty.set_description("Pick a thread on the left, or start a new one.");
-        empty.set_icon(&gio::ThemedIcon::new("mail-read-symbolic"));
+        let empty = granite::Placeholder::new("No Thread Open");
+        empty.set_description("Pick a thread in the sidebar, or start a new one with Ctrl+N.");
+        empty.set_icon(&gio::ThemedIcon::new("io.github.techmore.ClaudePantheonRs"));
+        let empty_new = empty.append_button(
+            &gio::ThemedIcon::new("list-add-symbolic"),
+            "New Thread",
+            "Ask Claude, Codex or another provider in a project",
+        );
+        empty_new.set_action_name(Some("win.new-thread"));
+        let empty_usage = empty.append_button(
+            &gio::ThemedIcon::new("power-profile-balanced-symbolic"),
+            "Usage",
+            "Plan limits, resets and tokens per provider",
+        );
+        empty_usage.set_action_name(Some("win.usage"));
         let busy = skeleton::chat(4);
         busy.set_valign(gtk::Align::Start);
 
@@ -461,7 +549,7 @@ impl App {
 
         let window = gtk::ApplicationWindow::builder()
             .application(application)
-            .title("Claude")
+            .title("T3")
             .default_width(1180)
             .default_height(760)
             .icon_name("io.github.techmore.ClaudePantheonRs")
@@ -507,6 +595,19 @@ impl App {
             title,
             subtitle,
             toast,
+            issue_bar,
+            issue_state,
+            issue_number,
+            issue_title,
+            issue_repo,
+            issue_open,
+            issue_link: RefCell::new(None),
+            issue_url: RefCell::new(String::new()),
+            issues: RefCell::new(thread_links::IssueCache::load()),
+            issue_fetching: RefCell::new(HashSet::new()),
+            repo_of_root: RefCell::new(HashMap::new()),
+            preview: RefCell::new(None),
+            group_keys: RefCell::new(Vec::new()),
             composer,
             provider_dd,
             model_dd,
@@ -629,8 +730,9 @@ impl App {
             let Some(row) = row else { return };
             let picked = a.rows.borrow().get(row.index() as usize).copied().flatten();
             match picked {
+                Some(Row::Page(name)) => a.show_nav_page(name),
                 Some(Row::Thread(i)) => {
-                    let thread = a.conn.borrow().as_ref().and_then(|c| c.shell.threads.get(i).cloned());
+                    let thread = a.with_shell(|s| s.threads.get(i).cloned()).flatten();
                     if let Some(t) = thread {
                         a.open_thread(t);
                     }
@@ -642,6 +744,13 @@ impl App {
                     }
                 }
                 None => {}
+            }
+        });
+        let a = self.clone();
+        self.issue_open.connect_clicked(move |_| {
+            let url = a.issue_url.borrow().clone();
+            if url.starts_with("https://") {
+                gtk::UriLauncher::new(&url).launch(Some(&a.window), gio::Cancellable::NONE, |_| {});
             }
         });
         let a = self.clone();
@@ -825,7 +934,7 @@ impl App {
             ("Reconnect", "reconnect"),
             ("Close thread", "close-thread"),
             ("AI Providers", "providers"),
-            ("About Claude", "about"),
+            ("About T3", "about"),
         ] {
             out.push(Entry { title: title.into(), kind: "Action".into(), action: Action::WindowAction(action.into()) });
         }
@@ -937,8 +1046,8 @@ impl App {
         *self.current_session.borrow_mut() = None;
         *self.transcript.borrow_mut() = None;
         self.list.unselect_all();
-        self.title.set_text("Claude");
-        self.window.set_title(Some("Claude"));
+        self.title.set_text("T3");
+        self.window.set_title(Some("T3"));
         self.subtitle.set_visible(false);
         self.show_page("empty");
     }
@@ -1077,7 +1186,7 @@ impl App {
         let dialog = gtk::AboutDialog::builder()
             .transient_for(&self.window)
             .modal(true)
-            .program_name("Claude")
+            .program_name("T3")
             .logo_icon_name("io.github.techmore.ClaudePantheonRs")
             .version(env!("CARGO_PKG_VERSION"))
             .comments(format!(
@@ -2031,7 +2140,7 @@ impl App {
                         let open = self.live.borrow().as_ref().is_some_and(|l| l.thread_id == t.id);
                         if open {
                             self.title.set_text(&t.title);
-                            self.window.set_title(Some(&format!("{} - Claude", t.title)));
+                            self.window.set_title(Some(&format!("{} - T3", t.title)));
                         }
                         if v.get("location").and_then(Value::as_str) == Some("archive") {
                             c.shell.remove_thread(&t.id);
@@ -2168,69 +2277,111 @@ impl App {
         let cfg = self.sidebar_cfg.borrow().clone();
         let searching = !needle.is_empty();
 
-        // Server threads grouped by project: the owner's order first, then newest project first;
-        // pinned threads lead each section.
-        if let Some(c) = self.conn.borrow().as_ref() {
-            let mut groups: Vec<(String, String, Vec<usize>)> = Vec::new();
-            let mut order: Vec<usize> = (0..c.shell.threads.len()).collect();
+        // The top section: views that are not threads.
+        if !searching {
+            let selected_page = self.page();
+            for (name, title, icon) in NAV_PAGES {
+                let row = sidebar::nav_row(title, icon);
+                self.list.append(&row);
+                if selected_thread.is_none() && selected_session.is_none() && selected_page == *name {
+                    select_at = Some(rows.len());
+                }
+                rows.push(Some(Row::Page(name)));
+            }
+        }
+
+        // Server threads grouped by GitHub repo (several checkouts of one repo share a group), then by
+        // the issue or pull request they work on. The owner's order first, then newest first; pinned
+        // threads lead each group.
+        let shell = self
+            .conn
+            .borrow()
+            .as_ref()
+            .map(|c| c.shell.clone())
+            .or_else(|| self.preview.borrow().as_ref().map(|(s, _)| s.clone()));
+        if let Some(shell) = shell.as_ref() {
+            let mut order: Vec<usize> = (0..shell.threads.len()).collect();
             order.sort_by(|&a, &b| {
-                let (ta, tb) = (&c.shell.threads[a], &c.shell.threads[b]);
+                let (ta, tb) = (&shell.threads[a], &shell.threads[b]);
                 sidebar::is_pinned(tb).cmp(&sidebar::is_pinned(ta)).then_with(|| tb.updated_at.cmp(&ta.updated_at))
             });
-            for i in order {
-                let t = &c.shell.threads[i];
+            let project_info = |pid: &str| {
+                let p = shell.projects.iter().find(|p| p.id == pid);
+                let title = p.map(|p| p.title.clone()).unwrap_or_else(|| "Project".into());
+                let root = p.map(|p| p.workspace_root.clone()).unwrap_or_default();
+                let repo = self.repo_for_root(&root);
+                (title, tilde(&root), repo)
+            };
+            let issues = self.issues.borrow();
+            order.retain(|&i| {
+                let t = &shell.threads[i];
                 if t.archived_at.is_some() {
-                    continue;
+                    return false;
                 }
-                let name = c
-                    .shell
-                    .projects
-                    .iter()
-                    .find(|p| p.id == t.project_id)
-                    .map(|p| p.title.clone())
-                    .unwrap_or_else(|| "Project".into());
-                if !matches(&t.title, &name) {
-                    continue;
-                }
-                match groups.iter_mut().find(|(id, _, _)| *id == t.project_id) {
-                    Some((_, _, v)) => v.push(i),
-                    None => groups.push((t.project_id.clone(), name, vec![i])),
-                }
-            }
-            let ordered = cfg.order_projects(groups.iter().map(|(id, _, _)| id.clone()).collect());
-            groups.sort_by_key(|(id, _, _)| ordered.iter().position(|o| o == id).unwrap_or(usize::MAX));
+                let (name, _, repo) = project_info(&t.project_id);
+                let issue = thread_links::link_for(t, repo.as_deref())
+                    .and_then(|l| issues.issues.get(&l.key()).map(|i| i.title.clone()))
+                    .unwrap_or_default();
+                matches(&t.title, &format!("{name} {} {issue}", repo.unwrap_or_default()))
+            });
+            let mut groups = thread_links::group(&shell.threads, &order, project_info);
+            let ordered = cfg.order_projects(groups.iter().map(|g| g.key.clone()).collect());
+            groups.sort_by_key(|g| ordered.iter().position(|o| *o == g.key).unwrap_or(usize::MAX));
+            *self.group_keys.borrow_mut() = groups.iter().map(|g| g.key.clone()).collect();
             let providers = self.providers.borrow();
-            for (pid, name, members) in &groups {
-                let root = c.shell.projects.iter().find(|p| p.id == *pid).map(|p| tilde(&p.workspace_root));
-                let collapsed = cfg.collapsed.contains(pid) && !searching;
+            let thread_row = |i: usize, nested: bool, rows: &mut Vec<Option<Row>>, select_at: &mut Option<usize>| {
+                let t = &shell.threads[i];
+                let provider = providers.iter().find(|p| p.instance_id == t.provider_instance_id);
+                let driver = provider.map(|p| p.driver.clone()).unwrap_or_else(|| t.provider_instance_id.clone());
+                let accent = sidebar::accent_for(provider, &driver);
+                let clean = crate::transcript::title_from_prompt(&t.title);
+                let title = clean.as_deref().unwrap_or("Untitled thread");
+                let row = sidebar::thread_row(t, title, &accent, now);
+                if nested {
+                    row.add_css_class("sb-nested");
+                }
+                sidebar::attach_menu(&row, sidebar::thread_menu(&t.id, sidebar::is_pinned(t)));
+                self.list.append(&row);
+                if selected_thread.as_deref() == Some(t.id.as_str()) {
+                    *select_at = Some(rows.len());
+                }
+                rows.push(Some(Row::Thread(i)));
+            };
+            let mut wanted: Vec<thread_links::ThreadLink> = Vec::new();
+            for g in &groups {
+                let collapsed = cfg.collapsed.contains(&g.key) && !searching;
                 let app = self.clone();
-                let toggle_id = pid.clone();
-                let header = sidebar::project_header(name, root.as_deref(), collapsed, members.len(), move || {
+                let toggle_id = g.key.clone();
+                let header = sidebar::project_header(&g.title, Some(&g.tooltip), collapsed, g.len(), move || {
                     app.toggle_section(&toggle_id);
                 });
                 let app = self.clone();
-                sidebar::make_header_draggable(&header, pid, move |moved, before| app.reorder_project(&moved, &before));
+                sidebar::make_header_draggable(&header, &g.key, move |moved, before| {
+                    app.reorder_project(&moved, &before)
+                });
                 self.list.append(&header);
                 rows.push(None);
                 if collapsed {
                     continue;
                 }
-                for &i in members {
-                    let t = &c.shell.threads[i];
-                    let provider = providers.iter().find(|p| p.instance_id == t.provider_instance_id);
-                    let driver = provider.map(|p| p.driver.clone()).unwrap_or_else(|| t.provider_instance_id.clone());
-                    let accent = sidebar::accent_for(provider, &driver);
-                    let clean = crate::transcript::title_from_prompt(&t.title);
-                    let title = clean.as_deref().unwrap_or("Untitled thread");
-                    let row = sidebar::thread_row(t, title, &accent, now);
-                    sidebar::attach_menu(&row, sidebar::thread_menu(&t.id, sidebar::is_pinned(t)));
-                    self.list.append(&row);
-                    if selected_thread.as_deref() == Some(t.id.as_str()) {
-                        select_at = Some(rows.len());
+                for (link, members) in &g.issues {
+                    let info = issues.issues.get(&link.key());
+                    if info.is_none() {
+                        wanted.push(link.clone());
                     }
-                    rows.push(Some(Row::Thread(i)));
+                    self.list.append(&sidebar::issue_row(link, info));
+                    rows.push(None);
+                    for &i in members {
+                        thread_row(i, true, &mut rows, &mut select_at);
+                    }
+                }
+                for &i in &g.loose {
+                    thread_row(i, false, &mut rows, &mut select_at);
                 }
             }
+            drop(issues);
+            drop(providers);
+            self.fetch_issues(wanted);
         }
 
         // Offline transcripts: everything Claude Code wrote, grouped by project folder.
@@ -2311,6 +2462,188 @@ impl App {
         }
     }
 
+    /// The connected server's shell, or the preview fixture when there is no server.
+    fn with_shell<R>(&self, f: impl FnOnce(&Shell) -> R) -> Option<R> {
+        if let Some(c) = self.conn.borrow().as_ref() {
+            return Some(f(&c.shell));
+        }
+        self.preview.borrow().as_ref().map(|(s, _)| f(s))
+    }
+
+    /// The GitHub repo of a workspace folder, read once per folder.
+    fn repo_for_root(&self, root: &str) -> Option<String> {
+        if root.is_empty() {
+            return None;
+        }
+        if let Some(hit) = self.repo_of_root.borrow().get(root) {
+            return hit.clone();
+        }
+        let repo = thread_links::repo_of_root(root);
+        self.repo_of_root.borrow_mut().insert(root.to_string(), repo.clone());
+        repo
+    }
+
+    /// Records a workspace folder's repo without reading it (fixtures, remote servers).
+    pub fn set_repo_for_root(&self, root: &str, repo: Option<&str>) {
+        self.repo_of_root.borrow_mut().insert(root.to_string(), repo.map(str::to_string));
+    }
+
+    /// Reads issue titles and states the sidebar does not know yet, one at a time, then redraws.
+    fn fetch_issues(self: &Rc<Self>, links: Vec<thread_links::ThreadLink>) {
+        if self.preview.borrow().is_some() || std::env::var_os("CLAUDE_PANTHEON_RENDER_TEST_SANDBOX").is_some() {
+            return;
+        }
+        let links: Vec<_> = {
+            let mut busy = self.issue_fetching.borrow_mut();
+            links.into_iter().filter(|l| busy.insert(l.key())).take(40).collect()
+        };
+        if links.is_empty() {
+            return;
+        }
+        let app = self.clone();
+        glib::spawn_future_local(async move {
+            let mut changed = false;
+            for link in links {
+                if let Ok(info) = thread_links::fetch(&link, now_unix()).await {
+                    app.issues.borrow_mut().issues.insert(link.key(), info);
+                    changed = true;
+                }
+            }
+            if changed {
+                app.issues.borrow().save();
+                app.schedule_rebuild();
+                let open = app.issue_link.borrow().clone();
+                if let Some(link) = open {
+                    app.fill_issue_bar(&link);
+                }
+            }
+        });
+    }
+
+    /// Shows the open thread's repo and issue under the header, refreshing stale details.
+    fn show_issue_bar(self: &Rc<Self>, thread: &ThreadShell) {
+        let root = self
+            .with_shell(|s| s.projects.iter().find(|p| p.id == thread.project_id).map(|p| p.workspace_root.clone()))
+            .flatten()
+            .unwrap_or_default();
+        let repo = self.repo_for_root(&root);
+        let link = thread_links::link_for(thread, repo.as_deref());
+        *self.issue_link.borrow_mut() = link.clone();
+        let Some(link) = link else {
+            self.issue_bar.set_reveal_child(false);
+            return;
+        };
+        self.fill_issue_bar(&link);
+        self.issue_bar.set_reveal_child(true);
+        let stale = self
+            .issues
+            .borrow()
+            .issues
+            .get(&link.key())
+            .is_none_or(|i| now_unix() - i.fetched_at > thread_links::ISSUE_TTL);
+        if stale {
+            self.issue_fetching.borrow_mut().remove(&link.key());
+            self.fetch_issues(vec![link]);
+        }
+    }
+
+    fn fill_issue_bar(&self, link: &thread_links::ThreadLink) {
+        let issues = self.issues.borrow();
+        let info = issues.issues.get(&link.key());
+        let kind = if link.kind == thread_links::LinkKind::PullRequest || info.is_some_and(|i| i.is_pr) {
+            "Pull request"
+        } else {
+            "Issue"
+        };
+        self.issue_number.set_text(&format!("#{}", link.number));
+        self.issue_title.set_text(info.map(|i| i.title.as_str()).unwrap_or(kind));
+        self.issue_repo.set_text(&format!("{kind} in {}", link.repo));
+        for c in ["open", "closed", "merged", "unknown"] {
+            self.issue_state.remove_css_class(c);
+        }
+        match info {
+            Some(i) => {
+                self.issue_state.set_text(i.state_label());
+                self.issue_state.add_css_class(&i.state);
+            }
+            None => {
+                self.issue_state.set_text(kind);
+                self.issue_state.add_css_class("unknown");
+            }
+        }
+        let url = info.map(|i| i.url.clone()).filter(|u| !u.is_empty()).unwrap_or_else(|| link.web_url());
+        self.issue_open.set_tooltip_text(Some(&format!("Open {kind} #{} on GitHub", link.number)));
+        *self.issue_url.borrow_mut() = url;
+        self.issue_open
+            .update_property(&[gtk::accessible::Property::Label(&format!("Open {kind} #{} on GitHub", link.number))]);
+    }
+
+    /// A sidebar view in the top section.
+    fn show_nav_page(self: &Rc<Self>, name: &str) {
+        match name {
+            "usage" => self.show_usage(),
+            "repository-overview" => self.show_repository_overview(),
+            "activity" => self.show_activity(),
+            _ => {}
+        }
+    }
+
+    /// Shows a fixture shell (threads, projects, thread items, issue details) without a server, for
+    /// render checks and screenshots. Never used while connected.
+    pub fn load_preview(
+        self: &Rc<Self>,
+        shell: Shell,
+        views: HashMap<String, ThreadView>,
+        providers: Vec<Provider>,
+        issues: HashMap<String, thread_links::IssueInfo>,
+    ) {
+        *self.preview.borrow_mut() = Some((shell, views));
+        *self.providers.borrow_mut() = providers;
+        self.fill_providers();
+        self.issues.borrow_mut().issues.extend(issues);
+        self.rebuild_list();
+    }
+
+    /// A preview thread's fixture items, drawn like a live thread (no server, no subscription).
+    fn open_preview_view(self: &Rc<Self>, thread: &ThreadShell) {
+        let view = self.preview.borrow().as_ref().and_then(|(_, v)| v.get(&thread.id).cloned());
+        let Some(view) = view else { return };
+        let title = crate::transcript::title_from_prompt(&thread.title).unwrap_or_else(|| thread.title.clone());
+        self.title.set_text(&title);
+        self.window.set_title(Some(&format!("{title} - T3")));
+        self.subtitle.set_text(&self.thread_subtitle(thread));
+        self.subtitle.set_visible(true);
+        *self.live.borrow_mut() = Some(Live {
+            thread_id: thread.id.clone(),
+            project_id: thread.project_id.clone(),
+            sub_id: String::new(),
+            view,
+            widgets: HashMap::new(),
+            running: false,
+            history_cursor: None,
+            history_loading: false,
+            history_error: None,
+            history_button: None,
+        });
+        self.select_provider(&thread.provider_instance_id, thread.model_selection.get("model").and_then(Value::as_str));
+        self.composer.set_visible(true);
+        self.render_live();
+        self.show_page("chat");
+    }
+
+    /// Opens a preview thread by id (render checks).
+    pub fn open_preview_thread(self: &Rc<Self>, id: &str) -> bool {
+        let thread = self.with_shell(|s| s.threads.iter().find(|t| t.id == id).cloned()).flatten();
+        match thread {
+            Some(t) => {
+                self.select_id(id);
+                self.open_thread(t);
+                true
+            }
+            None => false,
+        }
+    }
+
     fn toggle_section(self: &Rc<Self>, key: &str) {
         {
             let mut cfg = self.sidebar_cfg.borrow_mut();
@@ -2324,12 +2657,7 @@ impl App {
 
     fn reorder_project(self: &Rc<Self>, moved: &str, before: &str) {
         {
-            let current: Vec<String> = self
-                .conn
-                .borrow()
-                .as_ref()
-                .map(|c| c.shell.projects.iter().map(|p| p.id.clone()).collect())
-                .unwrap_or_default();
+            let current = self.group_keys.borrow().clone();
             let mut cfg = self.sidebar_cfg.borrow_mut();
             let ordered = cfg.order_projects(current);
             cfg.move_project(ordered, moved, Some(before));
@@ -2440,11 +2768,12 @@ impl App {
         let at = {
             let rows = self.rows.borrow();
             let sessions = self.sessions.borrow();
-            let conn = self.conn.borrow();
             rows.iter().position(|r| match r {
                 Some(Row::Session(i)) => sessions.get(*i).is_some_and(|s| s.id == id),
-                Some(Row::Thread(i)) => conn.as_ref().and_then(|c| c.shell.threads.get(*i)).is_some_and(|t| t.id == id),
-                None => false,
+                Some(Row::Thread(i)) => {
+                    self.with_shell(|s| s.threads.get(*i).is_some_and(|t| t.id == id)).unwrap_or(false)
+                }
+                _ => false,
             })
         };
         match at.and_then(|i| self.list.row_at_index(i as i32)) {
@@ -2562,6 +2891,8 @@ impl App {
         *self.draft.borrow_mut() = None;
         self.workspace_dd.set_visible(false);
         self.stop_btn.set_visible(false);
+        self.issue_bar.set_reveal_child(false);
+        *self.issue_link.borrow_mut() = None;
     }
 
     pub fn open_session(self: &Rc<Self>, session: Session) {
@@ -2570,7 +2901,7 @@ impl App {
         self.generation.set(generation);
         *self.current_session.borrow_mut() = Some(session.clone());
         self.title.set_text(&session.title);
-        self.window.set_title(Some(&format!("{} - Claude", session.title)));
+        self.window.set_title(Some(&format!("{} - T3", session.title)));
         self.subtitle.set_text(&format!("Offline transcript · {}", tilde(&session.cwd)));
         self.subtitle.set_visible(true);
         self.loading.set(true);
@@ -2703,15 +3034,19 @@ impl App {
         self.leave_live();
         *self.current_session.borrow_mut() = None;
         *self.transcript.borrow_mut() = None;
+        self.show_issue_bar(&thread);
         let rpc = match self.conn.borrow().as_ref() {
             Some(c) => c.rpc.clone(),
-            None => return,
+            None => {
+                self.open_preview_view(&thread);
+                return;
+            }
         };
         let generation = self.generation.get() + 1;
         self.generation.set(generation);
         let title = if thread.title.trim().is_empty() { "Untitled thread".to_string() } else { thread.title.clone() };
         self.title.set_text(&title);
-        self.window.set_title(Some(&format!("{title} - Claude")));
+        self.window.set_title(Some(&format!("{title} - T3")));
         self.subtitle.set_visible(true);
         self.subtitle.set_text(&self.thread_subtitle(&thread));
         self.show_page("busy");
@@ -2766,6 +3101,7 @@ impl App {
         });
     }
 
+    /// Where the thread works and who answers: `owner/repo · branch · Codex gpt-5`.
     fn thread_subtitle(&self, thread: &ThreadShell) -> String {
         let providers = self.providers.borrow();
         let provider = providers
@@ -2774,18 +3110,18 @@ impl App {
             .map(Provider::name)
             .unwrap_or_else(|| thread.provider_instance_id.clone());
         let model = thread.model_selection.get("model").and_then(Value::as_str).unwrap_or("");
-        let mode = RUNTIME_MODES
-            .iter()
-            .find(|(k, _)| *k == thread.runtime_mode)
-            .map(|(_, l)| *l)
-            .unwrap_or(&thread.runtime_mode);
-        let project = self
-            .conn
-            .borrow()
-            .as_ref()
-            .and_then(|c| c.shell.projects.iter().find(|p| p.id == thread.project_id).map(|p| tilde(&p.workspace_root)))
+        let root = self
+            .with_shell(|s| s.projects.iter().find(|p| p.id == thread.project_id).map(|p| p.workspace_root.clone()))
+            .flatten()
             .unwrap_or_default();
-        format!("{provider} · {model} · {mode} · {project}")
+        let place = self.repo_for_root(&root).unwrap_or_else(|| tilde(&root));
+        let mut parts = vec![place];
+        if let Some(branch) = thread_links::branch(thread) {
+            parts.push(branch.to_string());
+        }
+        parts.push(format!("{provider} {model}").trim().to_string());
+        parts.retain(|p| !p.is_empty());
+        parts.join(" · ")
     }
 
     fn thread_event(self: &Rc<Self>, v: &Value) {
@@ -3258,7 +3594,7 @@ impl App {
         hint.set_vexpand(true);
         self.chat.append(&hint);
         self.title.set_text("New thread");
-        self.window.set_title(Some("New thread - Claude"));
+        self.window.set_title(Some("New thread - T3"));
         self.subtitle.set_text(&tilde(&project.workspace_root));
         self.subtitle.set_visible(true);
         self.composer.set_visible(true);
@@ -3477,8 +3813,8 @@ impl App {
         self.leave_live();
         self.list.unselect_all();
         self.title.set_text("Usage");
-        self.window.set_title(Some("Usage - Claude"));
-        self.subtitle.set_text("Server token history and separate local subscription reports");
+        self.window.set_title(Some("Usage - T3"));
+        self.subtitle.set_text("Plan limits, resets and tokens per provider");
         self.subtitle.set_visible(true);
         self.show_page("usage");
         self.usage_page.load_local();
@@ -3525,7 +3861,7 @@ impl App {
         self.leave_live();
         self.list.unselect_all();
         self.title.set_text("Activity");
-        self.window.set_title(Some("Activity - Claude"));
+        self.window.set_title(Some("Activity - T3"));
         self.subtitle.set_text("Today's activity in pinned repositories on this computer");
         self.subtitle.set_visible(true);
         self.show_page("activity");
@@ -3540,7 +3876,7 @@ impl App {
         self.leave_live();
         self.list.unselect_all();
         self.title.set_text("Repository Overview");
-        self.window.set_title(Some("Repository Overview - Claude"));
+        self.window.set_title(Some("Repository Overview - T3"));
         self.subtitle.set_text("Read-only RepoBar GitHub status · separate account from T3");
         self.subtitle.set_visible(true);
         self.show_page("repository-overview");
@@ -3559,7 +3895,7 @@ impl App {
         self.leave_live();
         self.list.unselect_all();
         self.title.set_text(p.title());
-        self.window.set_title(Some(&format!("{} - Claude", p.title())));
+        self.window.set_title(Some(&format!("{} - T3", p.title())));
         self.subtitle.set_text(p.subtitle());
         self.subtitle.set_visible(true);
         let name = format!("plugin:{id}");
@@ -3574,7 +3910,7 @@ impl App {
         self.leave_live();
         self.list.unselect_all();
         self.title.set_text("Repos");
-        self.window.set_title(Some("Repos - Claude"));
+        self.window.set_title(Some("Repos - T3"));
         self.subtitle.set_text("Pinned GitHub repos, their issue backlog, and the runner");
         self.subtitle.set_visible(true);
         self.show_page("repos");
@@ -3891,7 +4227,7 @@ impl App {
         self.leave_live();
         self.list.unselect_all();
         self.title.set_text("Diagnostics");
-        self.window.set_title(Some("Diagnostics - Claude"));
+        self.window.set_title(Some("Diagnostics - T3"));
         self.subtitle.set_text("The server's resource telemetry: it samples only while this page is open");
         self.subtitle.set_visible(true);
         self.show_page("diagnostics");

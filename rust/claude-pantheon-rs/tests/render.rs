@@ -201,6 +201,13 @@ fn main() {
     let app = App::build(&application, Instant::now(), false);
     assert!(pump_until("the index and the connection attempt", 60, || !app.is_busy()));
     pump(200);
+    if let Some(out) = env("CLAUDE_PANTHEON_SHOT_T3") {
+        assert!(!live_render, "the T3 preview uses only the isolated offline home and a fixture");
+        t3_preview_probe(&app, &out);
+        app.window().close();
+        pump(100);
+        return;
+    }
     if let Some(out) = env("CLAUDE_PANTHEON_FEATURE_PROBE") {
         assert!(!live_render, "feature probes use only the isolated offline home");
         subscription_probe(&app, &out);
@@ -636,7 +643,7 @@ fn subscription_probe(app: &std::rc::Rc<App>, out: &Path) {
     let text = shown(app);
     assert!(text.iter().any(|s| s.contains("Weekly · account A · 100%")));
     assert!(text.iter().any(|s| s.contains("paired T3 server · display only")));
-    assert!(text.iter().any(|s| s.contains("Connect to a T3 server for token history")));
+    assert!(text.iter().any(|s| s.contains("Connect to a T3 server to see plan limits")));
     for width in [820, 1180] {
         app.window().set_default_size(width, 900);
         pump(150);
@@ -876,4 +883,110 @@ fn fleet_adapter_probe(app: &std::rc::Rc<App>, out: &Path) {
     println!(
         "PASS real Fleet list/add/remove/snapshot adapter through fake SSH and OMP; no contact on open; exact interactive terminal route"
     );
+}
+
+/// Replaces `@<seconds>` with an ISO time relative to now and `@day-<n>` with that day's date.
+fn fixture_times(v: &mut serde_json::Value, now: i64) {
+    match v {
+        serde_json::Value::String(s) if s.starts_with('@') => {
+            if let Some(n) = s.strip_prefix("@day-").and_then(|n| n.parse::<i64>().ok()) {
+                let d = glib::DateTime::from_unix_local(now - n * 86_400).unwrap();
+                *s = d.format("%Y-%m-%d").unwrap().to_string();
+            } else if let Ok(delta) = s[1..].parse::<i64>() {
+                *s = glib::DateTime::from_unix_utc(now + delta).unwrap().format_iso8601().unwrap().to_string();
+            }
+        }
+        serde_json::Value::Array(a) => a.iter_mut().for_each(|x| fixture_times(x, now)),
+        serde_json::Value::Object(o) => o.values_mut().for_each(|x| fixture_times(x, now)),
+        _ => {}
+    }
+}
+
+/// The one-window T3 experience from a fixture: threads grouped by repo then issue, a thread with its
+/// issue under the header, and the Usage page. Writes t3-*.png into `out`.
+fn t3_preview_probe(app: &std::rc::Rc<App>, out: &Path) {
+    use claude_pantheon_rs::t3::model::{Project, Provider, Shell, ThreadShell, ThreadView, TurnItem, UsageSummary};
+    use claude_pantheon_rs::thread_links::IssueInfo;
+    use std::collections::HashMap;
+    std::fs::create_dir_all(out).unwrap();
+    let now = claude_pantheon_rs::look::now_unix();
+    let mut fx: serde_json::Value = serde_json::from_str(include_str!("fixtures/t3-preview.json")).unwrap();
+    fixture_times(&mut fx, now);
+    for (root, repo) in fx["repos"].as_object().unwrap() {
+        app.set_repo_for_root(root, repo.as_str());
+    }
+    let shell = Shell {
+        projects: serde_json::from_value::<Vec<Project>>(fx["shell"]["projects"].clone()).unwrap(),
+        threads: serde_json::from_value::<Vec<ThreadShell>>(fx["shell"]["threads"].clone()).unwrap(),
+    };
+    let views: HashMap<String, ThreadView> = fx["views"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .map(|(id, v)| {
+            let items = serde_json::from_value::<Vec<TurnItem>>(v["items"].clone()).unwrap();
+            (id.clone(), ThreadView { items, ..Default::default() })
+        })
+        .collect();
+    let providers: Vec<Provider> = serde_json::from_value(fx["providers"].clone()).unwrap();
+    let mut issues: HashMap<String, IssueInfo> = serde_json::from_value(fx["issues"].clone()).unwrap();
+    issues.values_mut().for_each(|i| i.fetched_at = now);
+    let summary: UsageSummary = serde_json::from_value(fx["usage"].clone()).unwrap();
+    app.load_preview(shell, views, providers.clone(), issues);
+    pump(300);
+    let dark = std::env::var_os("CLAUDE_PANTHEON_DARK").is_some();
+    let suffix = if dark { "-dark" } else { "" };
+    app.window().set_default_size(1280, 820);
+    pump(300);
+
+    // Sidebar: views first, then repos, issues and threads.
+    let text = shown(app);
+    for expected in [
+        "Usage",
+        "Repositories",
+        "Activity",
+        "techmore/mseries-sdk-apps",
+        "#5",
+        "T3 token monitoring + RepoBar GitHub overview",
+        "techmore/ElementaryOS_MSeries",
+        "#642",
+        "notes",
+    ] {
+        assert!(text.iter().any(|s| s == expected), "sidebar shows {expected:?}: {text:?}");
+    }
+    // Two checkouts of one repo share a group.
+    assert_eq!(text.iter().filter(|s| *s == "techmore/mseries-sdk-apps").count(), 1, "one group per repo");
+    save_png(app.window(), &out.join(format!("t3-main{suffix}.png")));
+
+    // A thread shows its issue under the header.
+    assert!(app.open_preview_thread("t-usage"), "the preview thread opens");
+    pump(500);
+    let text = shown(app);
+    assert!(text.iter().any(|s| s == "Open"), "issue state shows: {text:?}");
+    assert!(text.iter().any(|s| s == "Issue in techmore/mseries-sdk-apps"), "issue repo shows");
+    assert!(
+        text.iter().any(|s| s.starts_with("techmore/mseries-sdk-apps · claude/5-t3-native")),
+        "subtitle shows repo and branch"
+    );
+    save_png(app.window(), &out.join(format!("t3-thread{suffix}.png")));
+
+    // Usage: plan limit cards with level bars and resets, token rows.
+    app.show_usage();
+    pump(200);
+    app.usage_page().render_windows(&providers);
+    let last7: Vec<String> = (0..7)
+        .rev()
+        .map(|n| glib::DateTime::from_unix_local(now - n * 86_400).unwrap().format("%Y-%m-%d").unwrap().to_string())
+        .collect();
+    app.usage_page().render(&summary, &last7);
+    pump(400);
+    let text = shown(app);
+    for expected in
+        ["Plan Limits", "5-hour limit", "Weekly limit", "42% used", "Live", "Last known", "Not reported", "Tokens"]
+    {
+        assert!(text.iter().any(|s| s == expected), "usage shows {expected:?}: {text:?}");
+    }
+    assert!(text.iter().any(|s| s.starts_with("Resets in ")), "reset times show");
+    save_png(app.window(), &out.join(format!("t3-usage{suffix}.png")));
+    println!("PASS: T3 preview screenshots in {}", out.display());
 }
