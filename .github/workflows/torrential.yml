@@ -5,10 +5,14 @@ on:
     branches: [dev, main]
     paths:
       - "rust/torrential/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
       - ".github/workflows/torrential.yml"
   pull_request:
     paths:
       - "rust/torrential/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
       - ".github/workflows/torrential.yml"
 
 permissions:
@@ -40,14 +44,12 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            rust/torrential/target
-          key: torrential-${{ runner.arch }}-${{ hashFiles('rust/torrential/Cargo.lock') }}
+            rust/target
+          key: torrential-${{ runner.arch }}-${{ hashFiles('rust/Cargo.lock') }}
           restore-keys: torrential-${{ runner.arch }}-
 
       - name: Build
-        working-directory: rust/torrential
-        run: cargo build --locked
+        run: cargo build --manifest-path rust/Cargo.toml -p torrential-relm4 --locked
 
       - name: Unit tests
-        working-directory: rust/torrential
-        run: cargo test --locked
+        run: cargo test --manifest-path rust/Cargo.toml -p torrential-relm4 --locked

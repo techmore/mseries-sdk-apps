@@ -3,13 +3,8 @@ name = "torrential-relm4"
 version = "0.1.0"
 edition = "2021"
 
-# Deliberately NOT a member of the ../ workspace: Relm4, tokio and the
-# Transmission client would join every other app's dependency graph and
-# lockfile, and slow their builds. Torrential keeps its own Cargo.lock.
-[workspace]
-
 [dependencies]
-granite = { package = "granite-rs", version = "3.3.0", features = ["v7_5", "relm4"] }
+granite = { package = "granite-rs", version = "3.3", features = ["v7_8", "gtk_v4_20", "relm4"] }
 i18n-embed = { version = "0.15.2", features = ["fluent-system", "desktop-requester"] }
 i18n-embed-fl = "0.9.2"
 lazy_static = "1.5.0"
@@ -22,7 +17,7 @@ relm4-macros = "0.11"
 rust-embed = { version = "8", features = ["debug-embed"] }
 tokio = { version = "1.38", features = ["time"] }
 tracker = "0.2"
-transmission-client = "0.1.5"
+transmission-client = "=0.1.5"
 
 [build-dependencies]
 glib-build-tools = "0.22.0"
