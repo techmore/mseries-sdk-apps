@@ -1,5 +1,6 @@
 use crate::media::{self, LinkPreview, PreviewKind};
 use crate::preferences;
+use crate::signal;
 use crate::strings::tr;
 use granite::prelude::PlaceholderExt;
 use gtk::{gio, glib, prelude::*};
@@ -7,6 +8,7 @@ use mseries_ai::{
     AiPreferences, AiStore, ChatMessage as AiChatMessage, ChatRole as AiChatRole,
     LocalModelSettings,
 };
+use mseries_pantheon_kit::timeline;
 use mseries_pantheon_kit::{
     BlueFerryMessagesClient as Backend, BlueFerryStatus, ContactMatch, DockBadge, ImportedPinState,
     Message, MessagePosition, PhonePinStore, PinSnapshot, Polling, RecentMessage, ResumeWatcher,
@@ -163,6 +165,27 @@ fn switch_phone_state(
     *current = next_profile
         .and_then(|profile| parked.remove(profile))
         .unwrap_or_default();
+}
+
+/// The widgets appended to `container` after `start` (or all of them when `start` is `None`).
+fn widgets_after(container: &gtk::Box, start: Option<gtk::Widget>) -> Vec<gtk::Widget> {
+    let mut widgets = Vec::new();
+    let mut cursor = match start {
+        Some(widget) => widget.next_sibling(),
+        None => container.first_child(),
+    };
+    while let Some(widget) = cursor {
+        cursor = widget.next_sibling();
+        widgets.push(widget);
+    }
+    widgets
+}
+
+/// One rendered row of the timeline: the widgets it owns and the signature of
+/// everything that shaped them, so an unchanged row is never rebuilt.
+struct RenderedRow {
+    signature: u64,
+    widgets: Vec<gtk::Widget>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -574,6 +597,12 @@ pub struct App {
     message_scroll: gtk::ScrolledWindow,
     latest_button: gtk::Button,
     rendered_history: RefCell<Option<(u64, String, usize)>>,
+    rendered_rows: RefCell<Vec<RenderedRow>>,
+    /// Signal conversations read from the Signal Pantheon store, merged into the list.
+    signal_threads: RefCell<Vec<Thread>>,
+    signal_enabled: Cell<bool>,
+    signal_loading: Cell<bool>,
+    signal_loaded_at: Cell<Option<std::time::Instant>>,
     history_render_generation: Cell<u64>,
     editor: gtk::TextView,
     send_button: gtk::Button,
@@ -756,6 +785,36 @@ impl App {
         enter_send_row.set_valign(gtk::Align::Center);
         enter_send_row.append(&enter_send_text);
         enter_send_row.append(&enter_send_switch);
+        let signal_switch = gtk::Switch::builder()
+            .active(preferences::load_show_signal())
+            .valign(gtk::Align::Center)
+            .build();
+        mseries_pantheon_kit::set_accessible_label(
+            &signal_switch,
+            &tr("Show Signal conversations"),
+        );
+        let signal_label = gtk::Label::builder()
+            .label(tr("Show Signal"))
+            .xalign(0.0)
+            .build();
+        let signal_description = gtk::Label::builder()
+            .label(tr(
+                "Read-only for now: lists conversations saved by Signal Pantheon",
+            ))
+            .xalign(0.0)
+            .wrap(true)
+            .max_width_chars(34)
+            .build();
+        signal_label.add_css_class("heading");
+        signal_description.add_css_class("dim-label");
+        signal_description.add_css_class("caption");
+        let signal_text = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        signal_text.append(&signal_label);
+        signal_text.append(&signal_description);
+        let signal_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        signal_row.set_valign(gtk::Align::Center);
+        signal_row.append(&signal_text);
+        signal_row.append(&signal_switch);
         let menu_actions = gtk::Box::new(gtk::Orientation::Vertical, 2);
         mseries_pantheon_kit::set_margins_text_units(&menu_actions, 0.35, 0.35, 0.35, 0.35);
         menu_actions.append(&pin_import_button);
@@ -766,6 +825,7 @@ impl App {
         menu_actions.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         menu_actions.append(&refresh_row);
         menu_actions.append(&enter_send_row);
+        menu_actions.append(&signal_row);
         menu_actions.append(&ai_preferences_button);
         menu_actions.append(&shortcuts_button);
         let menu = gtk::Popover::new();
@@ -1068,6 +1128,11 @@ impl App {
             message_scroll,
             latest_button,
             rendered_history: RefCell::new(None),
+            rendered_rows: RefCell::new(Vec::new()),
+            signal_threads: RefCell::new(Vec::new()),
+            signal_enabled: Cell::new(preferences::load_show_signal()),
+            signal_loading: Cell::new(false),
+            signal_loaded_at: Cell::new(None),
             history_render_generation: Cell::new(0),
             editor,
             send_button,
@@ -1099,6 +1164,7 @@ impl App {
             &menu,
             &shortcuts_button,
             &enter_send_switch,
+            &signal_switch,
         );
         app.connect_helper_buttons(
             &menu,
@@ -1121,7 +1187,24 @@ impl App {
         menu: &gtk::Popover,
         shortcuts: &gtk::Button,
         enter_send_switch: &gtk::Switch,
+        signal_switch: &gtk::Switch,
     ) {
+        let weak = Rc::downgrade(self);
+        signal_switch.connect_state_set(move |_, active| {
+            if let Some(app) = weak.upgrade() {
+                app.signal_enabled.set(active);
+                if let Err(error) = preferences::save_show_signal(active) {
+                    app.feedback.set_text(&format!(
+                        "Could not save the Show Signal preference. It applies for this session only. {error}"
+                    ));
+                    app.feedback.add_css_class("warning");
+                }
+                app.signal_loaded_at.set(None);
+                app.apply_signal_threads();
+                app.refresh_signal();
+            }
+            glib::Propagation::Proceed
+        });
         let weak = Rc::downgrade(self);
         self.latest_button.connect_clicked(move |_| {
             if let Some(app) = weak.upgrade() {
@@ -2126,6 +2209,89 @@ impl App {
         *self.history_subscription.borrow_mut() = Some(id);
     }
 
+    /// Reads Signal conversations off the main thread (the keyring lookup and
+    /// decryption are slow) and merges them into the list when they arrive.
+    /// Looks at most every few seconds, however often the list refreshes.
+    fn refresh_signal(self: &Rc<Self>) {
+        if !self.signal_enabled.get() || self.signal_loading.get() {
+            return;
+        }
+        if self
+            .signal_loaded_at
+            .get()
+            .is_some_and(|at| at.elapsed() < Duration::from_secs(8))
+        {
+            return;
+        }
+        self.signal_loading.set(true);
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let result = gio::spawn_blocking(signal::load_threads).await;
+            let Some(app) = weak.upgrade() else { return };
+            app.signal_loading.set(false);
+            app.signal_loaded_at.set(Some(std::time::Instant::now()));
+            match result {
+                Ok(Ok(threads)) => {
+                    *app.signal_threads.borrow_mut() = threads;
+                    app.apply_signal_threads();
+                }
+                Ok(Err(error)) => {
+                    // A missing key or unreadable store only hides Signal; iMessage keeps working.
+                    app.signal_threads.borrow_mut().clear();
+                    app.apply_signal_threads();
+                    app.feedback.set_tooltip_text(Some(&format!(
+                        "Signal conversations unavailable: {error}"
+                    )));
+                }
+                Err(_) => {}
+            }
+        });
+    }
+
+    /// Puts the cached Signal threads into the list (replacing any older copy).
+    fn apply_signal_threads(self: &Rc<Self>) {
+        let (changed, selected_signal_thread) = {
+            let mut state = self.state.borrow_mut();
+            let before = state.threads.len();
+            state
+                .threads
+                .retain(|thread| !thread.key.starts_with(signal::THREAD_PREFIX));
+            let removed = before != state.threads.len();
+            let added = if self.signal_enabled.get() {
+                let threads = self.signal_threads.borrow().clone();
+                let any = !threads.is_empty();
+                state.threads.extend(threads);
+                any
+            } else {
+                false
+            };
+            (
+                removed || added,
+                state
+                    .selected
+                    .as_deref()
+                    .filter(|key| key.starts_with(signal::THREAD_PREFIX))
+                    .map(str::to_string)
+                    .map(|key| {
+                        state
+                            .threads
+                            .iter()
+                            .find(|thread| thread.key == key)
+                            .cloned()
+                    }),
+            )
+        };
+        if !changed {
+            return;
+        }
+        self.rebuild_sidebar();
+        // A Signal conversation is open: redraw it (only changed rows are rebuilt),
+        // or clear it if the thread went away (Show Signal turned off).
+        if let Some(thread) = selected_signal_thread {
+            self.render_conversation(thread);
+        }
+    }
+
     fn refresh(self: &Rc<Self>) {
         self.refresh_with_recent(false);
     }
@@ -2139,6 +2305,7 @@ impl App {
             self.recent_inbox_force_generation
                 .set(self.recent_inbox_force_generation.get().saturating_add(1));
         }
+        self.refresh_signal();
         if !self.refresh_gate.request() {
             return;
         }
@@ -2246,7 +2413,9 @@ impl App {
                         let local_threads = state
                             .threads
                             .iter()
-                            .filter(|thread| thread.local_only)
+                            .filter(|thread| {
+                                thread.local_only && !thread.key.starts_with(signal::THREAD_PREFIX)
+                            })
                             .cloned()
                             .collect::<Vec<_>>();
                         let mut keep_local = Vec::new();
@@ -2329,6 +2498,9 @@ impl App {
                         } else {
                             server_threads
                         };
+                        if app.signal_enabled.get() {
+                            state.threads.extend(app.signal_threads.borrow().iter().cloned());
+                        }
                         app.read_markers.borrow_mut().retain(|key, _| {
                             state.threads.iter().any(|thread| &thread.key == key)
                         });
@@ -2440,7 +2612,20 @@ impl App {
                 .build();
             meta.add_css_class("caption");
             meta.add_css_class("dim-label");
-            copy.append(&meta);
+            if thread.key.starts_with(signal::THREAD_PREFIX) {
+                // The channel badge: a Signal conversation says so, in the system's own style.
+                let line = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+                let badge = gtk::Label::new(Some("Signal"));
+                badge.add_css_class("caption");
+                badge.add_css_class("accent");
+                mseries_pantheon_kit::set_accessible_label(&badge, &tr("Signal conversation"));
+                line.append(&badge);
+                meta.set_hexpand(true);
+                line.append(&meta);
+                copy.append(&line);
+            } else {
+                copy.append(&meta);
+            }
             let content = gtk::Box::new(gtk::Orientation::Horizontal, 10);
             content.set_valign(gtk::Align::Center);
             content.append(
@@ -3261,8 +3446,14 @@ impl App {
         self.rendered_history.replace(next);
         self.history_render_generation
             .set(self.history_render_generation.get().wrapping_add(1));
-        while let Some(child) = self.messages.first_child() {
-            self.messages.remove(&child);
+        // Within one conversation only the rows after the first change are
+        // rebuilt; anything else starts from an empty timeline.
+        let keep_rows = !switching && thread.is_some();
+        if !keep_rows {
+            while let Some(child) = self.messages.first_child() {
+                self.messages.remove(&child);
+            }
+            self.rendered_rows.borrow_mut().clear();
         }
         self.copy_addresses_button.set_sensitive(
             thread
@@ -3310,11 +3501,6 @@ impl App {
                 .filter(|entry| entry.key == thread.key)
                 .cloned()
                 .collect::<Vec<_>>();
-            if thread.messages.is_empty() && pending_entries.is_empty() {
-                let empty = gtk::Label::new(Some("No messages in this conversation yet."));
-                empty.add_css_class("dim-label");
-                self.messages.append(&empty);
-            }
             let outbox_messages = pending_entries
                 .iter()
                 .map(|entry| Message {
@@ -3330,11 +3516,46 @@ impl App {
             let mut outbox_statuses = vec![None; thread.messages.len()];
             outbox_statuses.extend(pending_entries.iter().map(|entry| Some(entry.status)));
             let message_layout = layout_messages(visible_messages.iter().copied(), thread.is_group);
-            for ((message, layout), outbox_status) in visible_messages
+            let rows = visible_messages
                 .into_iter()
                 .zip(message_layout)
                 .zip(outbox_statuses)
-            {
+                .map(|((message, layout), status)| (message, layout, status))
+                .collect::<Vec<_>>();
+            let mut signatures = rows
+                .iter()
+                .map(|row| timeline::signature(&(row, thread.is_group)))
+                .collect::<Vec<_>>();
+            let empty_timeline = rows.is_empty();
+            if empty_timeline {
+                signatures.push(timeline::signature(&"empty timeline"));
+            }
+            let plan = {
+                let previous = self.rendered_rows.borrow();
+                let old = previous.iter().map(|row| row.signature).collect::<Vec<_>>();
+                timeline::diff(&old, &signatures)
+            };
+            let mut kept_rows = self.rendered_rows.take();
+            for row in kept_rows.drain(plan.keep..) {
+                for widget in row.widgets {
+                    self.messages.remove(&widget);
+                }
+            }
+            if empty_timeline && plan.build > 0 {
+                let first = self.messages.last_child();
+                let empty = gtk::Label::new(Some("No messages in this conversation yet."));
+                empty.add_css_class("dim-label");
+                self.messages.append(&empty);
+                kept_rows.push(RenderedRow {
+                    signature: signatures[0],
+                    widgets: widgets_after(&self.messages, first),
+                });
+            }
+            for (index, (message, layout, outbox_status)) in rows.into_iter().enumerate() {
+                if index < plan.keep {
+                    continue;
+                }
+                let row_start = self.messages.last_child();
                 if let Some(heading) = layout.date_heading.as_deref() {
                     let stamp = gtk::Label::builder()
                         .label(heading)
@@ -3478,7 +3699,12 @@ impl App {
                     self.messages.append(&card.root);
                     self.request_media_preview(url, card, message.outgoing);
                 }
+                kept_rows.push(RenderedRow {
+                    signature: signatures[index],
+                    widgets: widgets_after(&self.messages, row_start),
+                });
             }
+            self.rendered_rows.replace(kept_rows);
             let permitted =
                 thread.reply_ready && !thread.participants_required && !thread.roster_changed;
             self.update_send_shortcut();
@@ -3564,14 +3790,13 @@ impl App {
             self.messages.append(&empty);
         }
         if self.rendered_history.borrow().is_some() {
-            self.position_messages(
-                if switching || near_bottom {
-                    None
-                } else {
-                    Some(previous_position)
-                },
-                show_latest,
-            );
+            if switching || near_bottom {
+                self.position_messages(None, show_latest);
+            } else {
+                // The rows above the reader were not touched, so the position
+                // is already right. Moving it would only make the view hop.
+                self.latest_button.set_visible(show_latest);
+            }
         } else {
             self.latest_button.set_visible(false);
         }
@@ -4788,6 +5013,149 @@ mod tests {
         bus.unregister_object(registration).unwrap();
     }
 
+    /// Signal conversations join the list read-only, carry a badge, and leave when switched off.
+    fn assert_signal_threads_merge(app: &std::rc::Rc<super::App>) {
+        use gtk::prelude::*;
+        let snapshot = r#"{"id":"+15550000002","name":"Alice (Signal)","group":false,"unread":2,
+            "messages":[{"text":"hi from signal","author":"+15550000002","timestamp":1790000000000,
+            "outgoing":false,"localRead":false}]}"#;
+        let thread = crate::signal::thread_from_snapshot("+15550000001", snapshot)
+            .unwrap()
+            .unwrap();
+        let key = thread.key.clone();
+        *app.signal_threads.borrow_mut() = vec![thread];
+        app.signal_enabled.set(true);
+        app.apply_signal_threads();
+        {
+            let state = app.state.borrow();
+            let merged = state.threads.iter().find(|thread| thread.key == key);
+            let merged = merged.expect("Signal thread is in the list");
+            assert!(!merged.reply_ready, "read-only until the send path exists");
+            assert!(merged.local_only, "never marked read through BlueFerry");
+        }
+        // Applying twice must not duplicate it.
+        app.apply_signal_threads();
+        assert_eq!(
+            app.state
+                .borrow()
+                .threads
+                .iter()
+                .filter(|thread| thread.key == key)
+                .count(),
+            1
+        );
+        let mut badges = 0;
+        let mut row = app.list.first_child();
+        while let Some(widget) = row {
+            fn find_badge(widget: &gtk::Widget, count: &mut u32) {
+                if let Some(label) = widget.downcast_ref::<gtk::Label>()
+                    && label.text() == "Signal"
+                {
+                    *count += 1;
+                }
+                let mut child = widget.first_child();
+                while let Some(inner) = child {
+                    find_badge(&inner, count);
+                    child = inner.next_sibling();
+                }
+            }
+            find_badge(&widget, &mut badges);
+            row = widget.next_sibling();
+        }
+        assert_eq!(badges, 1, "one Signal badge in the sidebar");
+
+        app.signal_enabled.set(false);
+        app.apply_signal_threads();
+        assert!(
+            app.state
+                .borrow()
+                .threads
+                .iter()
+                .all(|thread| thread.key != key),
+            "switching Show Signal off removes Signal threads"
+        );
+        app.signal_threads.borrow_mut().clear();
+    }
+
+    /// Runs inside the offline GUI test: GTK may only be initialised on one thread.
+    fn assert_timeline_updates_in_place(app: &std::rc::Rc<super::App>) {
+        use gtk::prelude::*;
+        let message = |body: &str, outgoing: bool, minute: u32| Message {
+            handle: format!("h{minute}"),
+            body: body.into(),
+            timestamp: format!("2026-10-27T09:{minute:02}:00Z"),
+            outgoing,
+            read: true,
+            ..Message::default()
+        };
+        let mut thread = Thread {
+            key: "timeline-thread".into(),
+            name: "Timeline".into(),
+            messages: vec![
+                message("first", false, 1),
+                message("second", true, 2),
+                message("third", false, 3),
+            ],
+            ..Thread::default()
+        };
+        app.render_conversation(Some(thread.clone()));
+        let rows = |app: &std::rc::Rc<super::App>| {
+            app.rendered_rows
+                .borrow()
+                .iter()
+                .map(|row| row.widgets.clone())
+                .collect::<Vec<_>>()
+        };
+        let before = rows(app);
+        assert!(before.len() >= 3, "one row per message");
+        let first_widget = before[0][0].clone();
+        let child_count = |app: &std::rc::Rc<super::App>| {
+            let mut count = 0;
+            let mut cursor = app.messages.first_child();
+            while let Some(widget) = cursor {
+                count += 1;
+                cursor = widget.next_sibling();
+            }
+            count
+        };
+
+        // An unchanged render touches nothing.
+        let unchanged_children = child_count(app);
+        app.render_conversation(Some(thread.clone()));
+        assert_eq!(child_count(app), unchanged_children);
+        assert_eq!(rows(app)[0][0], first_widget);
+
+        // A newer message keeps every earlier bubble object in place.
+        thread.messages.push(message("fourth", true, 4));
+        app.render_conversation(Some(thread.clone()));
+        let after = rows(app);
+        assert_eq!(after.len(), before.len() + 1);
+        assert_eq!(
+            after[0][0], first_widget,
+            "first bubble must not be rebuilt"
+        );
+        assert_eq!(
+            after[1], before[1],
+            "an unchanged middle row must be reused"
+        );
+        assert!(child_count(app) > unchanged_children);
+
+        // Another conversation starts from an empty timeline.
+        let other = Thread {
+            key: "other-thread".into(),
+            name: "Other".into(),
+            messages: vec![message("hello", false, 5)],
+            ..Thread::default()
+        };
+        app.render_conversation(Some(other));
+        assert!(rows(app).iter().flatten().all(|w| *w != first_widget));
+        assert!(first_widget.parent().is_none());
+
+        // No thread clears the timeline.
+        app.render_conversation(None);
+        assert!(app.rendered_rows.borrow().is_empty());
+    }
+
     #[test]
     #[ignore = "requires an isolated Xvfb display, D-Bus session and config directories"]
     fn offline_gui_disables_sending_and_preserves_drafts_on_back() {
@@ -4849,6 +5217,8 @@ mod tests {
         );
         assert!(!app.send_button.is_sensitive());
         assert!(!app.editor.is_sensitive());
+        assert_timeline_updates_in_place(&app);
+        assert_signal_threads_merge(&app);
         app.state
             .borrow_mut()
             .drafts

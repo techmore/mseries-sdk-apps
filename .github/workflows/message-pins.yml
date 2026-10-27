@@ -1,0 +1,77 @@
+name: Apple Messages pin reader
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev, main]
+    paths:
+      - mseries/phone-setup/**
+      - mseries/messages-mcp/**
+      - .github/workflows/message-pins.yml
+  pull_request:
+    paths:
+      - mseries/phone-setup/**
+      - mseries/install-phone-setup.sh
+      - mseries/messages-mcp/**
+      - .github/workflows/message-pins.yml
+# New commits replace only checks for this workflow and PR. Publishing is not preempted.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  linux-import:
+    name: Native pin import and private keyring (Linux)
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: erikwb/blueferry
+          ref: 60fd7ef1abbd25947981f0cf27a521d82784a75f
+          path: .pin-test-blueferry
+      - uses: ./.github/actions/fast-apt
+
+      - name: Install native fixture dependencies
+        run: sudo apt-get update && sudo apt-get install -y python3-gi python3-dbus python3-pil gir1.2-gtk-4.0 libgranite-7-dev gir1.2-secret-1 gnome-keyring dbus-x11 xvfb xauth
+      - name: Check matching, drafts, failed writes and isolated Secret Service
+        env:
+          PYTHONPATH: ${{ github.workspace }}/.pin-test-blueferry/src
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+          GTK_A11Y: none
+          GIO_USE_VFS: local
+        run: |
+          python3 mseries/phone-setup/test_message_pins.py
+          python3 mseries/phone-setup/test_messages.py
+          python3 mseries/phone-setup/test_message_media.py
+          python3 mseries/messages-mcp/test_messages_mcp.py
+          bash mseries/phone-setup/test-pin-keyring.sh
+          dbus-run-session --config-file=mseries/phone-setup/test-bus.conf -- xvfb-run -a python3 mseries/phone-setup/test_messages_gui.py
+  macos-reader:
+    name: Apple pin reader (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26, macos-26-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Exercise Objective-C return signatures and ordered configuration
+        run: |
+          bash -n mseries/phone-setup/macos-visit/Export-Message-Pins.command
+          osascript -l JavaScript mseries/phone-setup/macos-visit/Export-Message-Pins.js --self-test
+      - name: Probe private interface without an Apple account
+        run: |
+          csrutil status
+          osascript -l JavaScript mseries/phone-setup/macos-visit/Export-Message-Pins.js --probe > "$RUNNER_TEMP/pin-reader-probe.json"
+          python3 - "$RUNNER_TEMP/pin-reader-probe.json" <<'PY'
+          import json, sys
+          result = json.load(open(sys.argv[1]))
+          assert result['status'] in ('ready', 'unavailable')
+          assert result['content_printed'] is False
+          if result['status'] == 'unavailable':
+              assert result['diagnostics'].get('cache') in ('not-found', 'not-initialized', 'access-denied'), result
+          print(result)
+          PY
