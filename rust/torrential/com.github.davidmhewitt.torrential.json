@@ -1,0 +1,101 @@
+{
+    "id": "com.github.davidmhewitt.torrential",
+    "runtime": "io.elementary.Platform",
+    "runtime-version": "8.2",
+    "sdk": "io.elementary.Sdk",
+    "sdk-extensions": [
+        "org.freedesktop.Sdk.Extension.rust-stable"
+    ],
+    "command": "torrential-relm4",
+    "finish-args": [
+        "--share=ipc",
+        "--socket=fallback-x11",
+        "--device=dri",
+        "--socket=wayland",
+        "--share=network",
+        "--filesystem=xdg-download"
+    ],
+    "build-options": {
+        "append-path": "/usr/lib/sdk/rust-stable/bin"
+    },
+    "cleanup": [
+        "/include",
+        "/lib/pkgconfig",
+        "/man",
+        "/share/doc",
+        "/share/gtk-doc",
+        "/share/man",
+        "/share/pkgconfig",
+        "*.la",
+        "*.a"
+    ],
+    "modules": [
+        {
+            "name": "libevent",
+            "cleanup": [
+                "/include",
+                "/bin"
+            ],
+            "sources": [
+                {
+                    "x-checker-data": {
+                        "type": "anitya",
+                        "project-id": 1606,
+                        "url-template": "https://github.com/libevent/libevent/releases/download/release-$version-stable/libevent-$version-stable.tar.gz"
+                    },
+                    "type": "archive",
+                    "url": "https://github.com/libevent/libevent/releases/download/release-2.1.12-stable/libevent-2.1.12-stable.tar.gz",
+                    "sha256": "92e6de1be9ec176428fd2367677e61ceffc2ee1cb119035037a27d346b0403bb"
+                }
+            ]
+        },
+        {
+            "name": "transmission",
+            "buildsystem": "cmake-ninja",
+            "config-opts": [
+                "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
+                "-DENABLE_CLI=OFF",
+                "-DENABLE_TESTS=OFF",
+                "-DENABLE_MAC=OFF",
+                "-DENABLE_DAEMON=ON",
+                "-DENABLE_GTK=OFF"
+            ],
+            "cleanup": [
+                "/bin/transmission-create",
+                "/bin/transmission-edit",
+                "/bin/transmission-show"
+            ],
+            "sources": [
+                {
+                    "x-checker-data": {
+                        "is-main-source": true,
+                        "type": "json",
+                        "url": "https://api.github.com/repos/transmission/transmission/releases/latest",
+                        "tag-query": ".tag_name",
+                        "version-query": ".name",
+                        "timestamp-query": ".published_at"
+                    },
+                    "type": "git",
+                    "url": "https://github.com/transmission/transmission.git",
+                    "tag": "4.1.1",
+                    "commit": "56442e2929cf4e9e20c8604a229e99fbb352190c"
+                }
+            ]
+        },
+        {
+            "name": "app",
+            "builddir": true,
+            "buildsystem": "meson",
+            "config-opts": [
+                "-Doffline=true"
+            ],
+            "sources": [
+                {
+                    "type": "dir",
+                    "path": "."
+                },
+                "cargo-sources.json"
+            ]
+        }
+    ]
+}
