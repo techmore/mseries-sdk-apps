@@ -397,6 +397,21 @@ pub struct ThreadView {
 }
 
 impl ThreadView {
+    /// Adds one history page ahead of the current items; rows already shown (same item id) are skipped,
+    /// so a live update is never replaced by an older copy. Returns how many items were added.
+    pub fn prepend_history(&mut self, mut older: Vec<crate::t3::history::ProjectedTurnItem>) -> usize {
+        older.sort_by_key(|row| row.position);
+        let mut seen: std::collections::HashSet<String> = self.items.iter().map(|i| i.id.clone()).collect();
+        let mut page: Vec<TurnItem> =
+            older.into_iter().map(|row| row.item).filter(|i| seen.insert(i.id.clone())).collect();
+        let count = page.len();
+        if count > 0 {
+            page.append(&mut self.items);
+            self.items = page;
+        }
+        count
+    }
+
     pub fn from_projection(p: &Value) -> ThreadView {
         let mut view = ThreadView::default();
         let visible = p.get("visibleTurnItems").and_then(Value::as_array);
@@ -519,6 +534,31 @@ pub struct UsageSummary {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn history_pages_prepend_in_order_without_replacing_live_items() {
+        use crate::t3::history::ProjectedTurnItem;
+        let row = |position: u64, id: &str, text: &str| ProjectedTurnItem {
+            position,
+            source_thread_id: String::new(),
+            source_item_id: String::new(),
+            item: TurnItem { id: id.into(), text: text.into(), ..Default::default() },
+        };
+        let mut view = ThreadView::default();
+        view.items.push(TurnItem { id: "tail".into(), text: "live".into(), ..Default::default() });
+        let added = view.prepend_history(vec![
+            row(3, "o3", "third"),
+            row(1, "o1", "first"),
+            row(2, "o2", "second"),
+            row(2, "o2", "dup"),
+            row(9, "tail", "stale"),
+        ]);
+        assert_eq!(added, 3);
+        let ids: Vec<_> = view.items.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(ids, ["o1", "o2", "o3", "tail"]);
+        assert_eq!(view.items[3].text, "live");
+        assert_eq!(view.prepend_history(vec![row(0, "o1", "again")]), 0);
+    }
+
     use super::*;
 
     #[test]

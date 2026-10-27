@@ -88,6 +88,11 @@ pub fn form(fields: &[(&str, &str)]) -> String {
     fields.iter().map(|(k, v)| format!("{}={}", encode(k), encode(v))).collect::<Vec<_>>().join("&")
 }
 
+/// One URL path segment (spaces as %20, slash escaped).
+pub fn path_segment(s: &str) -> String {
+    encode(s).replace('+', "%20")
+}
+
 fn encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {

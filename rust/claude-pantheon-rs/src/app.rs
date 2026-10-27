@@ -62,6 +62,11 @@ struct Live {
     /// Item id → widget currently in the chat column.
     widgets: HashMap<String, gtk::Widget>,
     running: bool,
+    /// Opaque cursor of the next older history page (from the snapshot), if the server has more.
+    history_cursor: Option<String>,
+    history_loading: bool,
+    history_error: Option<String>,
+    history_button: Option<gtk::Button>,
 }
 
 /// A new thread being composed before its first message.
@@ -535,6 +540,19 @@ impl App {
             sidebar_cfg: RefCell::new(sidebar::SidebarConfig::load()),
             settings: Rc::new(RefCell::new(settings::Settings::load())),
             started,
+        });
+
+        let weak_app = Rc::downgrade(&app);
+        let last_value = Cell::new(0.0_f64);
+        app.chat_scroll.vadjustment().connect_value_changed(move |adj| {
+            // Only a scroll up into the top edge pages in history, not the initial layout at offset 0.
+            let scrolled_up = adj.value() < last_value.replace(adj.value());
+            if scrolled_up
+                && adj.value() <= 48.0
+                && let Some(app) = weak_app.upgrade()
+            {
+                app.load_earlier_history();
+            }
         });
 
         // First frame: report start-up time when asked, and quit when benchmarking.
@@ -2653,6 +2671,10 @@ impl App {
             view: ThreadView::default(),
             widgets: HashMap::new(),
             running: thread.is_running(),
+            history_cursor: None,
+            history_loading: false,
+            history_error: None,
+            history_button: None,
         });
         self.stop_btn.set_visible(thread.is_running());
         let app = self.clone();
@@ -2704,12 +2726,18 @@ impl App {
             "snapshot" => {
                 let view = ThreadView::from_projection(&v["projection"]);
                 let running = view.active_run_id.is_some();
+                let more = v.get("hasMoreHistory").and_then(Value::as_bool).unwrap_or(false);
+                let cursor = v.get("historyCursor").and_then(Value::as_str).map(str::to_string);
+                let paged = more && cursor.is_some();
                 if let Some(live) = self.live.borrow_mut().as_mut() {
                     live.view = view;
                     live.running = running;
+                    live.history_cursor = cursor.filter(|_| more);
+                    live.history_loading = false;
+                    live.history_error = None;
                 }
                 self.render_live();
-                if v.get("hasMoreHistory").and_then(Value::as_bool).unwrap_or(false) {
+                if more && !paged {
                     let note = label(
                         "Earlier history stays on the server; this is the latest window.",
                         &["caption", "dim-label"],
@@ -2839,6 +2867,12 @@ impl App {
         let mut live = self.live.borrow_mut();
         let Some(live) = live.as_mut() else { return };
         live.widgets.clear();
+        live.history_button = None;
+        if live.history_cursor.is_some() {
+            let button = self.history_button();
+            self.chat.append(&button);
+            live.history_button = Some(button);
+        }
         let items = live.view.items.clone();
         let from = items.len().saturating_sub(TAIL_TURNS);
         if from > 0 {
@@ -2852,6 +2886,91 @@ impl App {
                 live.widgets.insert(item.id.clone(), w);
             }
         }
+    }
+
+    fn history_button(self: &Rc<Self>) -> gtk::Button {
+        let button = gtk::Button::with_label("Load earlier messages");
+        button.add_css_class("flat");
+        button.set_halign(gtk::Align::Center);
+        let weak = Rc::downgrade(self);
+        button.connect_clicked(move |_| {
+            if let Some(app) = weak.upgrade() {
+                app.load_earlier_history();
+            }
+        });
+        button
+    }
+
+    fn sync_history_button(&self, live: &mut Live) {
+        if live.history_cursor.is_none() && !live.history_loading {
+            if let Some(b) = live.history_button.take() {
+                self.chat.remove(&b);
+            }
+        } else if let Some(b) = &live.history_button {
+            b.set_label(if live.history_loading {
+                "Loading earlier messages…"
+            } else if live.history_error.is_some() {
+                "Retry loading earlier messages"
+            } else {
+                "Load earlier messages"
+            });
+            b.set_sensitive(!live.history_loading);
+            b.set_tooltip_text(live.history_error.as_deref());
+        }
+    }
+
+    /// Fetches the next older page and inserts only its rows above the existing ones; the reading
+    /// position moves down by the height added, so nothing jumps.
+    fn load_earlier_history(self: &Rc<Self>) {
+        let (thread_id, cursor) = {
+            let mut state = self.live.borrow_mut();
+            let Some(live) = state.as_mut() else { return };
+            let Some(cursor) = live.history_cursor.clone() else { return };
+            if live.history_loading {
+                return;
+            }
+            live.history_loading = true;
+            live.history_error = None;
+            self.sync_history_button(live);
+            (live.thread_id.clone(), cursor)
+        };
+        let Some(cred) = self.conn.borrow().as_ref().map(|c| c.cred.clone()) else { return };
+        let generation = self.generation.get();
+        let app = self.clone();
+        glib::spawn_future_local(async move {
+            let result = t3::history::fetch_page(&cred, &thread_id, &cursor).await;
+            if app.generation.get() != generation {
+                return;
+            }
+            let mut state = app.live.borrow_mut();
+            let Some(live) = state.as_mut().filter(|l| l.thread_id == thread_id) else { return };
+            live.history_loading = false;
+            match result {
+                Ok(page) => {
+                    let adj = app.chat_scroll.vadjustment();
+                    let (old_value, old_upper) = (adj.value(), adj.upper());
+                    let added = live.view.prepend_history(page.items);
+                    let next = page.next_cursor.filter(|n| page.has_more_history && *n != cursor);
+                    live.history_cursor = next;
+                    live.history_error = None;
+                    let decide = app.decide_callback();
+                    let mut anchor = live.history_button.as_ref().map(|b| b.clone().upcast::<gtk::Widget>());
+                    for item in live.view.items.iter().take(added) {
+                        if let Some(w) = chat::item_widget(item, Some(decide.clone())) {
+                            app.chat.insert_child_after(&w, anchor.as_ref());
+                            anchor = Some(w.clone());
+                            live.widgets.insert(item.id.clone(), w);
+                        }
+                    }
+                    app.sync_history_button(live);
+                    glib::idle_add_local_once(move || adj.set_value(old_value + (adj.upper() - old_upper)));
+                }
+                Err(e) => {
+                    live.history_error = Some(e);
+                    app.sync_history_button(live);
+                }
+            }
+        });
     }
 
     /// Replaces or appends the widget of one item; the rest of the column stays put.
