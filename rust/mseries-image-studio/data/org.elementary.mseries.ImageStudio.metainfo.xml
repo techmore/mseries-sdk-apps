@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.elementary.mseries.ImageStudio</id>
+  <name>Image Studio</name>
+  <summary>Native image creation for M-Series</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <developer id="org.elementary.mseries">
+    <name>ElementaryOS_MSeries</name>
+  </developer>
+  <description>
+    <p>Compose and save image prompts, compare guided workflows, and keep model, LoRA, seed, and tag details with generated images.</p>
+  </description>
+  <launchable type="desktop-id">org.elementary.mseries.ImageStudio.desktop</launchable>
+  <url type="homepage">https://github.com/techmore/ElementaryOS_MSeries</url>
+  <content_rating type="oars-1.1"/>
+  <provides>
+    <binary>mseries-image-studio</binary>
+  </provides>
+</component>

@@ -1,0 +1,77 @@
+# M-Series Image Studio: native Rust + Granite build, core and GTK interaction tests under Xvfb.
+name: Image Studio app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev, main]
+    paths:
+      - "rust/mseries-image-studio/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - "mseries/image-studio/**"
+      - ".github/workflows/mseries-image-studio.yml"
+  pull_request:
+    paths:
+      - "rust/mseries-image-studio/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - "mseries/image-studio/**"
+      - ".github/workflows/mseries-image-studio.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  app:
+    name: Image Studio app, render test (arm64)
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 45
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/../mseries-image-studio-target
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install build and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config git cargo rustc \
+            libgtk-4-dev libgranite-7-dev xvfb xauth dbus-x11 desktop-file-utils
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ env.CARGO_TARGET_DIR }}
+          key: image-studio-${{ runner.arch }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: image-studio-${{ runner.arch }}-
+
+      - name: Validate launcher metadata
+        run: |
+          desktop-file-validate rust/mseries-image-studio/data/org.elementary.mseries.ImageStudio.desktop
+          python3 -c 'import xml.etree.ElementTree as ET; ET.parse("rust/mseries-image-studio/data/org.elementary.mseries.ImageStudio.metainfo.xml")'
+
+      - name: Offline adapter tests (no models or engines run)
+        run: python3 -I -m unittest discover -s rust/mseries-image-studio/tests -p 'adapters.py'
+
+      - name: Core tests, GTK interaction render test, and build
+        env:
+          MSERIES_IMAGE_STUDIO_SHOTS: ${{ runner.temp }}/image-studio-shots
+        run: |
+          cargo test --manifest-path rust/Cargo.toml -p mseries-image-studio --lib
+          dbus-run-session -- env -u WAYLAND_DISPLAY GDK_BACKEND=x11 GSETTINGS_BACKEND=memory GSK_RENDERER=cairo \
+            xvfb-run -a -s "-screen 0 1440x1000x24" cargo test --manifest-path rust/Cargo.toml -p mseries-image-studio --test render
+          cargo build --manifest-path rust/Cargo.toml -p mseries-image-studio
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: image-studio-screenshots
+          path: ${{ runner.temp }}/image-studio-shots
+          if-no-files-found: ignore

@@ -1,0 +1,25 @@
+[package]
+name = "mseries-image-studio"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-only"
+description = "Native Pantheon image creation studio for M-Series"
+
+[lib]
+name = "mseries_image_studio"
+
+[[bin]]
+name = "mseries-image-studio"
+path = "src/main.rs"
+
+[[test]]
+name = "render"
+harness = false
+
+[dependencies]
+gtk = { package = "gtk4", version = "0.11", features = ["v4_20"] }
+granite = { package = "granite-rs", version = "3.3", features = ["v7_8", "gtk_v4_20"] }
+mseries-pantheon-kit = { path = "../mseries-pantheon-kit" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

@@ -1564,6 +1564,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mseries-image-studio"
+version = "0.1.0"
+dependencies = [
+ "granite-rs",
+ "gtk4",
+ "mseries-pantheon-kit",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mseries-messages"
 version = "0.1.0"
 dependencies = [

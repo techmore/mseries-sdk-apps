@@ -1,0 +1,18 @@
+{
+  "author": "Claude Code",
+  "branch": "claude/image-studio-native-ui",
+  "base_commit": "b9eb3b4c627ebd9de26ab587a780e5ff1af08761",
+  "source": "Read-only working-tree snapshot; original worktree not modified",
+  "source_file_sha256": {
+    "ui.rs": "7cada7f882c841c02f7a2a493e49937c542e1d296238433b3e3af2a1dfc82685",
+    "style.rs": "1b93673e2649e71815c1b672b87d8918a6d098eb8a1242b84986cc346b57bf8c",
+    "main.rs": "1ee5be8944f1829df3ae4578462f82d9b3d3a08b8cb38b401c044db1bf2210bb",
+    "lib.rs": "07212344ae9d510855c14eb58af3185010a6f766b773ce705934ee0af78dc658",
+    "logs.rs": "c4631290c31a31ba4f2216935d07709bfe47f1f0f87531abef0a4ca725e6f39d",
+    "study.rs": "c7c3c57394866f7d5883f247676c4a9e7d5c70919f3931afa34c883501e559cb",
+    "models.rs": "fb0d8e20127a24aed7611ec0fd0d96be8f8b8049f729c81ec706679ae9baf704"
+  },
+  "integration": "Decoder/reference/settings/backend dispatch only; original canvas, filmstrip, gallery, model cards and stylesheet retained",
+  "inference_executed": false,
+  "benchmarks_executed": false
+}

@@ -5,6 +5,7 @@ The M-series app SDK (`rust/msdk`, `rust/msdk-gtk`) and the Rust apps built on i
 Extracted with history from [techmore/ElementaryOS_MSeries](https://github.com/techmore/ElementaryOS_MSeries) (`dev`). The OS image, kernel, compositor and Vala plugins stay there.
 
 - SDK and app-building docs: `mseries/SDK-*.md`, `mseries/APP-BUILDING-GUIDE.md`, `mseries/RUST-PANTHEON-SDK.md`
+- Image Studio (native Rust/Granite image generation UI): `rust/mseries-image-studio`, backend contract in `mseries/image-studio/README.md`
 - Workspace: `rust/` (`cd rust && cargo test -p msdk`)
 - SDK tests and bench: `mseries/sdk-tests`, `mseries/sdk-bench`
 
