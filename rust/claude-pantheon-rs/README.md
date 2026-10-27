@@ -132,6 +132,8 @@ the message (10 attachments, 10 MB per image, 50 MB per file). Typing `@` opens 
 thread's project (`projects.searchEntries`) and inserts `@path`. The draft is kept per thread in
 `~/.cache/claude-pantheon-rs/drafts.json` and comes back when the thread is reopened, across restarts.
 
+A new thread can start in the project folder or in a **New worktree** (picker beside the permission mode, shown while composing): the server creates a git worktree from the repository's default branch (`vcs.listRefs` picks the base) and the thread works there.
+
 ## Pairing with the server
 
 The server is `t3 serve` (here: the user service `t3code.service` on `127.0.0.1:3773`). Run `t3 pair`,

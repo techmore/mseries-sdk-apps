@@ -31,6 +31,21 @@ pub const DEFAULT_SERVER: &str = "http://127.0.0.1:3773";
 /// What a toast's Retry button runs.
 pub type Retry = Rc<dyn Fn(&Rc<App>)>;
 
+/// `workspaceStrategy` for a fresh worktree from the repository's refs (`vcs.listRefs`): the default
+/// branch, else the checked-out one. `None` when the folder has no local branch (not a git repository).
+fn worktree_strategy(refs: &Value) -> Option<Value> {
+    let list = refs.as_array()?;
+    let local = |r: &&Value| !r.get("isRemote").and_then(Value::as_bool).unwrap_or(false);
+    let flag = |r: &Value, k: &str| r.get(k).and_then(Value::as_bool).unwrap_or(false);
+    let pick = list
+        .iter()
+        .filter(local)
+        .find(|r| flag(r, "isDefault"))
+        .or_else(|| list.iter().filter(local).find(|r| flag(r, "current")))?;
+    let name = pick.get("name").and_then(Value::as_str)?;
+    Some(json!({"type": "worktree", "baseRef": name}))
+}
+
 const RUNTIME_MODES: [(&str, &str); 4] = [
     ("approval-required", "Ask before actions"),
     ("auto-accept-edits", "Auto-accept edits"),
@@ -102,6 +117,8 @@ pub struct App {
     provider_dd: gtk::DropDown,
     model_dd: gtk::DropDown,
     mode_dd: gtk::DropDown,
+    /// New-thread workspace: the project folder or a fresh git worktree (visible while composing a new thread).
+    workspace_dd: gtk::DropDown,
     entry: Rc<composer::Composer>,
     send_btn: gtk::Button,
     stop_btn: gtk::Button,
@@ -315,10 +332,14 @@ impl App {
         let mode_dd = gtk::DropDown::from_strings(&modes);
         mode_dd.set_selected(0); // supervised by default; full access is an explicit per-thread choice
         mode_dd.set_tooltip_text(Some("Permission mode"));
+        let workspace_dd = gtk::DropDown::from_strings(&["Project folder", "New worktree"]);
+        workspace_dd.set_tooltip_text(Some("Where the new thread works: the project folder, or a fresh git worktree"));
+        workspace_dd.set_visible(false);
         let pickers = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         pickers.append(&provider_dd);
         pickers.append(&model_dd);
         pickers.append(&mode_dd);
+        pickers.append(&workspace_dd);
         let composer_note = label("", &["caption", "dim-label"]);
         composer_note.set_hexpand(true);
         composer_note.set_halign(gtk::Align::End);
@@ -488,6 +509,7 @@ impl App {
             provider_dd,
             model_dd,
             mode_dd,
+            workspace_dd,
             entry,
             send_btn,
             stop_btn,
@@ -2493,6 +2515,7 @@ impl App {
             c.rpc.interrupt(&live.sub_id);
         }
         *self.draft.borrow_mut() = None;
+        self.workspace_dd.set_visible(false);
         self.stop_btn.set_visible(false);
     }
 
@@ -3184,6 +3207,7 @@ impl App {
         *self.current_session.borrow_mut() = None;
         *self.transcript.borrow_mut() = None;
         *self.draft.borrow_mut() = Some(Draft { project_id: project.id.clone() });
+        self.workspace_dd.set_visible(true);
         self.apply_project_defaults(&project.id);
         self.entry.set_draft_key(Some(format!("draft:{}", project.id)));
         self.list.unselect_all();
@@ -3236,6 +3260,15 @@ impl App {
         let live_thread =
             self.live.borrow().as_ref().map(|l| (l.thread_id.clone(), l.running, l.view.active_run_id.clone()));
         let draft = self.draft.borrow().clone();
+        let want_worktree = draft.is_some() && self.workspace_dd.selected() == 1;
+        let project_root = draft
+            .as_ref()
+            .and_then(|d| {
+                self.conn.borrow().as_ref().and_then(|c| {
+                    c.shell.projects.iter().find(|p| p.id == d.project_id).map(|p| p.workspace_root.clone())
+                })
+            })
+            .unwrap_or_default();
         let app = self.clone();
         glib::spawn_future_local(async move {
             if let Some((thread_id, running, run_id)) = live_thread {
@@ -3261,12 +3294,28 @@ impl App {
                 }
             } else if let Some(d) = draft {
                 let title = transcript::first_line(&text, 60);
+                let workspace = if want_worktree {
+                    let refs = rpc
+                        .call("vcs.listRefs", json!({"cwd": project_root, "refKind": "local", "limit": 100}))
+                        .await
+                        .map(|v| v["refs"].clone())
+                        .unwrap_or(Value::Null);
+                    match worktree_strategy(&refs) {
+                        Some(w) => w,
+                        None => {
+                            app.toast("Could not find a branch to start the worktree from; using the project folder.");
+                            json!({"type": "root"})
+                        }
+                    }
+                } else {
+                    json!({"type": "root"})
+                };
                 let payload = json!({
                     "commandId": new_id(), "projectId": d.project_id, "title": title, "generateTitle": true,
                     "creationSource": "web",
                     "modelSelection": {"instanceId": provider.instance_id, "model": model},
                     "runtimeMode": mode, "interactionMode": "default",
-                    "workspaceStrategy": {"type": "root"},
+                    "workspaceStrategy": workspace,
                     "initialMessage": {"messageId": new_id(), "text": text, "attachments": attachments},
                 });
                 match rpc.call("orchestration.launchThread", payload).await {
@@ -3847,5 +3896,24 @@ fn load_css() {
     provider.load_from_string(include_str!("../data/style.css"));
     if let Some(display) = gdk::Display::default() {
         gtk::style_context_add_provider_for_display(&display, &provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worktree_starts_from_the_default_branch_else_the_current_one() {
+        let refs = json!([
+            {"name": "feature", "current": true, "isDefault": false, "worktreePath": null},
+            {"name": "origin/main", "isRemote": true, "current": false, "isDefault": true, "worktreePath": null},
+            {"name": "main", "current": false, "isDefault": true, "worktreePath": null},
+        ]);
+        assert_eq!(worktree_strategy(&refs), Some(json!({"type": "worktree", "baseRef": "main"})));
+        let no_default = json!([{"name": "feature", "current": true, "isDefault": false}]);
+        assert_eq!(worktree_strategy(&no_default), Some(json!({"type": "worktree", "baseRef": "feature"})));
+        assert_eq!(worktree_strategy(&json!([])), None);
+        assert_eq!(worktree_strategy(&Value::Null), None);
     }
 }
