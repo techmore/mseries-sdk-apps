@@ -4,6 +4,7 @@ The M-series app SDK (`rust/msdk`, `rust/msdk-gtk`) and the Rust apps built on i
 
 Extracted with history from [techmore/ElementaryOS_MSeries](https://github.com/techmore/ElementaryOS_MSeries) (`dev`). The OS image, kernel, compositor and Vala plugins stay there.
 
+- Signal Pantheon (native Vala/GTK 4 Signal client over signal-cli): `mseries/signal-pantheon` (imported with history from techmore/signal-pantheon; build with meson, see its README)
 - Torrential (Relm4/Granite torrent client, own Cargo workspace so its dependencies stay out of the others): `rust/torrential` (imported with history from techmore/torrential, branch `mseries-native`)
 - SDK and app-building docs: `mseries/SDK-*.md`, `mseries/APP-BUILDING-GUIDE.md`, `mseries/RUST-PANTHEON-SDK.md`
 - Apps outside the Rust workspace: `mseries/polybagger-print-manager` (PolyBagger T1000 label printing; printer-link notes in `docs/polybagger-t1000-printer-link-troubleshooting.md`)

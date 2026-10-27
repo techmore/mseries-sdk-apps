@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+app_prefix=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+runtime_dir="$app_prefix/share/signal-pantheon/runtime"
+if [ -d "$runtime_dir/temurin25" ]; then
+    export JAVA_HOME="$runtime_dir/temurin25"
+    export PATH="$JAVA_HOME/bin:$runtime_dir/tools/bin:$PATH"
+    export SIGNAL_CLI_PATH="$runtime_dir/signal-cli-arm64/bin/signal-cli"
+    export SIGNAL_CALL_TUNNEL_BIN="$runtime_dir/tools/bin/signal-call-tunnel"
+fi
+exec "$app_prefix/bin/signal-pantheon-client" "$@"
