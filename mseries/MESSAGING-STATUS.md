@@ -9,6 +9,17 @@ over historical implementation notes, test receipts and installation reports.
 | Messages app build-out / Rust Messages | **INCOMPLETE — DEFERRED** | The new client and combined messaging experience are not accepted or finished. Existing fallback behavior does not qualify the new app. |
 | Messages & Signal tab launcher | **INCOMPLETE — DEFERRED** | The owner rejected the delivered experience. A launcher opening separate windows does not establish a polished integrated experience. |
 
+## 2026-10-27: elementary OS redesign (owner request)
+
+The owner asked for Messages to be redesigned as a native elementary OS app. The
+Rust client (`rust/mseries-messages`) now has a split header (sidebar and thread
+each with a flat header bar), coloured initials avatars, two-line conversation
+rows with unread pills and a Signal chip, grouped bubbles anchored above the
+composer, a floating "Latest Messages" pill, and a rounded composer with an
+emoji picker. Screenshots: `rust/mseries-messages/screenshots/` (regenerate with
+`rust/mseries-messages/screenshots.sh`). This does not by itself mark the app
+accepted; the owner decides that after using it.
+
 ## Instructions for the next agent
 
 - Do not resume this app build-out, promote a preview, replace a default client,
