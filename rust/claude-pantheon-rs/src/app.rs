@@ -3868,6 +3868,10 @@ impl App {
                 }
             });
         }));
+        let linked = self.conn.borrow().as_ref().and_then(|c| {
+            c.shell.threads.iter().find(|t| t.id == thread_id).and_then(|t| t.rest.get("linkedPullRequest").cloned())
+        });
+        self.changes_page.set_pull_request(rpc.clone(), linked);
         self.show_page("changes");
         self.changes_page.load(rpc, thread_id, turns, checkpoints);
     }

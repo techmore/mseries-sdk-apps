@@ -88,11 +88,42 @@ pub fn split_sides(hunk: &str) -> (String, String) {
     (old, new)
 }
 
+/// "open · 5 passed, 1 failed, 2 running" from a `pullRequests.checks` answer; skipped/neutral checks are not counted.
+pub fn checks_summary(v: &Value) -> String {
+    if v.is_null() {
+        return "no checks reported".into();
+    }
+    let state = v.get("state").and_then(Value::as_str).unwrap_or("unknown");
+    let (mut ok, mut bad, mut running) = (0, 0, 0);
+    for c in v.get("checks").and_then(Value::as_array).into_iter().flatten() {
+        match c.get("status").and_then(Value::as_str).unwrap_or("") {
+            "success" => ok += 1,
+            "failure" | "cancelled" | "action-required" => bad += 1,
+            "pending" => running += 1,
+            _ => {}
+        }
+    }
+    if ok + bad + running == 0 {
+        return format!("{state} · no checks");
+    }
+    let mut parts = vec![format!("{ok} passed")];
+    if bad > 0 {
+        parts.push(format!("{bad} failed"));
+    }
+    if running > 0 {
+        parts.push(format!("{running} running"));
+    }
+    format!("{state} · {}", parts.join(", "))
+}
+
 pub struct ChangesPage {
     pub root: gtk::Box,
     tree: gtk::ListBox,
     view_box: gtk::Box,
     status: gtk::Label,
+    pr_bar: gtk::Box,
+    pr_label: gtk::Label,
+    pr_url: RefCell<String>,
     side_by_side: gtk::ToggleButton,
     restore_btn: gtk::MenuButton,
     files: RefCell<Vec<FileDiff>>,
@@ -146,6 +177,16 @@ impl ChangesPage {
         let restore_btn = gtk::MenuButton::builder().label("Restore to checkpoint…").build();
         restore_btn.set_sensitive(false);
         bar.append(&restore_btn);
+        let pr_bar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        pr_bar.add_css_class("changes-bar");
+        pr_bar.set_visible(false);
+        let pr_icon = gtk::Image::from_icon_name("emblem-shared-symbolic");
+        pr_bar.append(&pr_icon);
+        let pr_label = label("", &["dim-label"]);
+        pr_label.set_hexpand(true);
+        pr_bar.append(&pr_label);
+        let pr_open = gtk::Button::with_label("Open on GitHub");
+        pr_bar.append(&pr_open);
         let paned = gtk::Paned::builder()
             .orientation(gtk::Orientation::Horizontal)
             .start_child(&tree_scroll)
@@ -155,12 +196,16 @@ impl ChangesPage {
             .build();
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
         root.append(&bar);
+        root.append(&pr_bar);
         root.append(&paned);
         let page = Rc::new(ChangesPage {
             root,
             tree,
             view_box,
             status,
+            pr_bar,
+            pr_label,
+            pr_url: RefCell::new(String::new()),
             side_by_side,
             restore_btn,
             files: RefCell::new(Vec::new()),
@@ -168,6 +213,13 @@ impl ChangesPage {
             thread_id: RefCell::new(None),
             rpc: RefCell::new(None),
             on_restore: RefCell::new(None),
+        });
+        let p = page.clone();
+        pr_open.connect_clicked(move |_| {
+            let url = p.pr_url.borrow().clone();
+            if url.starts_with("https://") {
+                crate::render::open_uri(&url);
+            }
         });
         let p = page.clone();
         page.tree.connect_row_selected(move |_, row| {
@@ -207,6 +259,28 @@ impl ChangesPage {
                 Ok(v) => page.set_diff(v.get("diff").and_then(Value::as_str).unwrap_or("")),
                 Err(e) => page.status.set_text(&format!("Diff failed: {}", e.message())),
             }
+        });
+    }
+
+    /// Shows the thread's linked pull request and its check summary (read-only; `pullRequests.checks`).
+    pub fn set_pull_request(self: &Rc<Self>, rpc: Rpc, linked: Option<Value>) {
+        let Some(pr) = linked.filter(|v| v.get("number").is_some()) else {
+            self.pr_bar.set_visible(false);
+            return;
+        };
+        let repo = pr.get("repository").and_then(Value::as_str).unwrap_or("").to_string();
+        let number = pr.get("number").and_then(Value::as_u64).unwrap_or(0);
+        *self.pr_url.borrow_mut() = pr.get("url").and_then(Value::as_str).unwrap_or("").to_string();
+        self.pr_label.set_text(&format!("Pull request {repo}#{number}"));
+        self.pr_bar.set_visible(true);
+        let payload = json!({"projectId": pr.get("projectId"), "repository": repo, "number": number});
+        let page = self.clone();
+        glib::spawn_future_local(async move {
+            let text = match rpc.call("pullRequests.checks", payload).await {
+                Ok(v) => checks_summary(&v),
+                Err(e) => format!("checks unavailable ({})", e.message()),
+            };
+            page.pr_label.set_text(&format!("Pull request {repo}#{number} · {text}"));
         });
     }
 
@@ -368,6 +442,17 @@ fn diff_view(text: &str, class: Option<&str>) -> gtk::Widget {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn checks_summary_counts_by_outcome() {
+        let v = json!({"state": "open", "checks": [
+            {"name": "a", "status": "success"}, {"name": "b", "status": "success"},
+            {"name": "c", "status": "failure"}, {"name": "d", "status": "pending"},
+            {"name": "e", "status": "skipped"}]});
+        assert_eq!(checks_summary(&v), "open · 2 passed, 1 failed, 1 running");
+        assert_eq!(checks_summary(&json!({"state": "merged", "checks": []})), "merged · no checks");
+        assert_eq!(checks_summary(&Value::Null), "no checks reported");
+    }
+
     use super::*;
 
     const DIFF: &str = "diff --git a/src/a.rs b/src/a.rs\nindex 1..2 100644\n--- a/src/a.rs\n+++ b/src/a.rs\n@@ -1,2 +1,2 @@\n fn a() {}\n-fn b() {}\n+fn c() {}\ndiff --git a/new.txt b/new.txt\nnew file mode 100644\n--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1 @@\n+hello\n";
