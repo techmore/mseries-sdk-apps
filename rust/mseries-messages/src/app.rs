@@ -193,6 +193,8 @@ enum OutboxStatus {
     Sending,
     Transferred,
     OutcomeUnknown,
+    /// Known not to have been sent; the draft is kept and Send retries.
+    Failed,
 }
 
 #[derive(Clone, Debug)]
@@ -1221,6 +1223,12 @@ impl App {
                     app.latest_button.set_visible(false);
                 }
             });
+        glib::timeout_add_seconds_local(30, || {
+            if signal::service::owns_daemon() {
+                gio::spawn_blocking(|| signal::service::stop_if_idle(signal::service::IDLE_LIMIT));
+            }
+            glib::ControlFlow::Continue
+        });
         let weak = Rc::downgrade(self);
         self.window.connect_is_active_notify(move |_| {
             if let Some(app) = weak.upgrade() {
@@ -1236,6 +1244,8 @@ impl App {
                 app.resume_watcher.borrow_mut().take();
                 app.history_subscription.borrow_mut().take();
                 app.stop_media_workers();
+                // Stop only a Signal service this app started itself.
+                signal::service::shutdown();
                 app.enter_armed.set(false);
                 app.enter_generation
                     .set(app.enter_generation.get().wrapping_add(1));
@@ -2257,6 +2267,24 @@ impl App {
                 .threads
                 .retain(|thread| !thread.key.starts_with(signal::THREAD_PREFIX));
             let removed = before != state.threads.len();
+            // Signal accepted these: once the history shows them they are no longer "outgoing".
+            let signal_threads = self.signal_threads.borrow();
+            let echoed = state
+                .outbox
+                .iter()
+                .filter(|entry| entry.status == OutboxStatus::Transferred)
+                .filter(|entry| {
+                    signal_threads
+                        .iter()
+                        .find(|thread| thread.key == entry.key)
+                        .is_some_and(|thread| {
+                            outgoing_echo_count(&thread.messages, &entry.body) > entry.baseline
+                        })
+                })
+                .map(|entry| entry.id)
+                .collect::<HashSet<_>>();
+            drop(signal_threads);
+            state.outbox.retain(|entry| !echoed.contains(&entry.id));
             let added = if self.signal_enabled.get() {
                 let threads = self.signal_threads.borrow().clone();
                 let any = !threads.is_empty();
@@ -3671,12 +3699,18 @@ impl App {
                     bubble.append(&timestamp);
                 }
                 if let Some(outbox_status) = outbox_status {
+                    let signal = thread.key.starts_with(signal::THREAD_PREFIX);
                     let text = match outbox_status {
                         OutboxStatus::Sending => "Sending…",
+                        OutboxStatus::Transferred if signal => "Sent",
                         OutboxStatus::Transferred => "Transferred to your iPhone",
+                        OutboxStatus::OutcomeUnknown if signal => {
+                            "Status unknown · Check Signal before trying again"
+                        }
                         OutboxStatus::OutcomeUnknown => {
                             "Status unknown · Check your iPhone before trying again"
                         }
+                        OutboxStatus::Failed => "Not sent · Press Send to try again",
                     };
                     let status = gtk::Label::builder()
                         .label(text)
@@ -3684,11 +3718,16 @@ impl App {
                         .wrap(true)
                         .build();
                     status.add_css_class("caption");
-                    status.add_css_class(if outbox_status == OutboxStatus::OutcomeUnknown {
-                        "warning"
-                    } else {
-                        "dim-label"
-                    });
+                    status.add_css_class(
+                        if matches!(
+                            outbox_status,
+                            OutboxStatus::OutcomeUnknown | OutboxStatus::Failed
+                        ) {
+                            "warning"
+                        } else {
+                            "dim-label"
+                        },
+                    );
                     mseries_pantheon_kit::set_accessible_label(&status, text);
                     bubble.append(&status);
                 } else {
@@ -3710,9 +3749,9 @@ impl App {
             self.update_send_shortcut();
             self.editor.set_sensitive(true);
             let state = self.state.borrow();
-            self.send_button.set_sensitive(
-                permitted && state.map_ready && !state.pending.contains(&thread.key),
-            );
+            let channel_ready = state.map_ready || thread.key.starts_with(signal::THREAD_PREFIX);
+            self.send_button
+                .set_sensitive(permitted && channel_ready && !state.pending.contains(&thread.key));
             drop(state);
             let draft = self
                 .state
@@ -4093,6 +4132,10 @@ impl App {
             .find(|thread| thread.key == key)
             .cloned();
         let Some(thread) = thread else { return };
+        if thread.key.starts_with(signal::THREAD_PREFIX) {
+            self.dispatch_signal_send(thread.key, thread.is_group, body);
+            return;
+        }
         if !self.state.borrow().map_ready {
             self.status.set_text(&tr(
                 "Your iPhone is offline. Your draft is kept while this window is open.",
@@ -4127,6 +4170,141 @@ impl App {
         } else {
             self.dispatch_send(thread.key, body, false, thread.confirmation_token, None);
         }
+    }
+
+    /// Send to a Signal conversation through signal-cli. Like the iMessage path
+    /// the message shows at once as "Sending…"; a failure keeps the draft and
+    /// Send retries; a conversation never has two sends in flight.
+    fn dispatch_signal_send(self: &Rc<Self>, key: String, is_group: bool, body: String) {
+        if self.state.borrow().pending.contains(&key) {
+            return;
+        }
+        if self.state.borrow().outbox.len() >= MAX_OUTBOX_MESSAGES {
+            self.feedback.set_text(
+                "Recent messages are still waiting for history. Refresh before sending more.",
+            );
+            return;
+        }
+        self.invalidate_ai_request();
+        self.clear_ai_draft();
+        let (outbox_id, thread) = {
+            let mut state = self.state.borrow_mut();
+            let Some(thread) = state
+                .threads
+                .iter()
+                .find(|thread| thread.key == key)
+                .cloned()
+            else {
+                return;
+            };
+            // A retry replaces the earlier failed attempt instead of stacking on it.
+            state
+                .outbox
+                .retain(|entry| !(entry.key == key && entry.status == OutboxStatus::Failed));
+            let normalized = normalize_message_body(&body);
+            let baseline = outgoing_echo_count(&thread.messages, &body)
+                + state
+                    .outbox
+                    .iter()
+                    .filter(|entry| {
+                        entry.key == key && normalize_message_body(&entry.body) == normalized
+                    })
+                    .count();
+            let outbox_id = state.next_outbox_id;
+            state.next_outbox_id = state.next_outbox_id.wrapping_add(1);
+            state.outbox.push(OutboxMessage {
+                id: outbox_id,
+                key: key.clone(),
+                body: body.clone(),
+                timestamp: now_iso8601(),
+                baseline,
+                status: OutboxStatus::Sending,
+            });
+            state.pending.push(key.clone());
+            state
+                .drafts
+                .entry(key.clone())
+                .or_insert_with(|| body.clone());
+            (outbox_id, thread)
+        };
+        self.send_button.set_sensitive(false);
+        self.feedback.set_text(&tr("Sending to Signal…"));
+        if self.state.borrow().selected.as_deref() == Some(key.as_str()) {
+            self.render_conversation(Some(thread));
+            self.scroll_messages_to_bottom();
+        }
+        let weak = Rc::downgrade(self);
+        glib::MainContext::default().spawn_local(async move {
+            let (send_key, send_body) = (key.clone(), body.clone());
+            let result = gio::spawn_blocking(move || {
+                signal::send_text(&send_key, is_group, &send_body)
+            })
+            .await
+            .unwrap_or_else(|_| {
+                Err(signal::SendFailure {
+                    message: "The Signal send ended unexpectedly.".into(),
+                    outcome_unknown: true,
+                })
+            });
+            let Some(app) = weak.upgrade() else { return };
+            #[cfg(test)]
+            app.completed_send_callbacks
+                .set(app.completed_send_callbacks.get() + 1);
+            {
+                let mut state = app.state.borrow_mut();
+                state.pending.retain(|pending| pending != &key);
+                if result.is_ok() && state.drafts.get(&key).is_some_and(|draft| draft == &body) {
+                    state.drafts.remove(&key);
+                }
+                let status = match &result {
+                    Ok(_) => OutboxStatus::Transferred,
+                    Err(error) if error.outcome_unknown => OutboxStatus::OutcomeUnknown,
+                    Err(_) => OutboxStatus::Failed,
+                };
+                if let Some(entry) = state.outbox.iter_mut().find(|entry| entry.id == outbox_id) {
+                    entry.status = status;
+                }
+            }
+            match &result {
+                Ok(signal::write::Saved::Written) => {
+                    app.feedback.set_text(&tr("Sent on Signal."));
+                }
+                Ok(signal::write::Saved::Deferred) => app.feedback.set_text(&tr(
+                    "Sent on Signal. It is saved to history once Signal Pantheon is closed.",
+                )),
+                Err(error) if error.outcome_unknown => app.feedback.set_text(&format!(
+                    "Signal's send status is unknown. Your draft is kept. Check Signal before trying again. {}",
+                    error.message
+                )),
+                Err(error) => app.feedback.set_text(&format!(
+                    "Could not send on Signal. Your draft is kept; press Send to retry. {}",
+                    error.message
+                )),
+            }
+            if result.is_ok() && app.state.borrow().selected.as_deref() == Some(key.as_str()) {
+                let buffer = app.editor.buffer();
+                let current = buffer
+                    .text(&buffer.start_iter(), &buffer.end_iter(), false)
+                    .to_string();
+                if current == body {
+                    buffer.set_text("");
+                    app.state.borrow_mut().drafts.remove(&key);
+                }
+            }
+            let selected_thread = {
+                let state = app.state.borrow();
+                (state.selected.as_deref() == Some(key.as_str()))
+                    .then(|| state.threads.iter().find(|thread| thread.key == key).cloned())
+                    .flatten()
+            };
+            if let Some(thread) = selected_thread {
+                app.render_conversation(Some(thread));
+                app.scroll_messages_to_bottom();
+            }
+            // Re-read the history now so the message shows from the saved copy.
+            app.signal_loaded_at.set(None);
+            app.refresh_signal();
+        });
     }
 
     fn confirm_group(self: &Rc<Self>, thread: Thread, body: String) {
@@ -5030,7 +5208,7 @@ mod tests {
             let state = app.state.borrow();
             let merged = state.threads.iter().find(|thread| thread.key == key);
             let merged = merged.expect("Signal thread is in the list");
-            assert!(!merged.reply_ready, "read-only until the send path exists");
+            assert!(merged.reply_ready, "Signal threads can be replied to");
             assert!(merged.local_only, "never marked read through BlueFerry");
         }
         // Applying twice must not duplicate it.
@@ -5075,6 +5253,122 @@ mod tests {
             "switching Show Signal off removes Signal threads"
         );
         app.signal_threads.borrow_mut().clear();
+    }
+
+    /// Signal sends work with BlueFerry offline, through a fake signal-cli, and
+    /// never send twice. Runs inside the offline GUI test.
+    fn assert_signal_send(app: &std::rc::Rc<super::App>) {
+        use gtk::prelude::*;
+        let log_path = std::env::var("FAKE_SIGNAL_LOG").expect("fake signal-cli log");
+        let sent = || -> Vec<String> {
+            std::fs::read_to_string(&log_path)
+                .unwrap_or_default()
+                .lines()
+                .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+                .filter(|entry| entry["method"] == "send")
+                .map(|entry| entry["params"]["message"].as_str().unwrap().to_string())
+                .collect()
+        };
+        let wait_for_send = |expected: u64| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(90);
+            while app.completed_send_callbacks.get() < expected {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "Signal send timed out"
+                );
+                gtk::glib::MainContext::default().iteration(false);
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        };
+        let snapshot = r#"{"id":"+15550000002","name":"Alice (Signal)","group":false,"unread":0,
+            "messages":[{"text":"earlier","author":"+15550000002","timestamp":1790000000000,
+            "outgoing":false,"localRead":true}]}"#;
+        let thread = crate::signal::thread_from_snapshot("+15550000001", snapshot)
+            .unwrap()
+            .unwrap();
+        let key = thread.key.clone();
+        *app.signal_threads.borrow_mut() = vec![thread];
+        app.signal_enabled.set(true);
+        // This scratch profile has no history file: keep the reload from emptying the list.
+        app.signal_loading.set(true);
+        app.apply_signal_threads();
+        assert!(!app.state.borrow().map_ready, "BlueFerry is offline here");
+        app.select_thread(&key);
+        assert!(
+            app.send_button.is_sensitive(),
+            "Signal sends do not need the iPhone"
+        );
+        let before = app.completed_send_callbacks.get();
+
+        // A message shows at once and is sent exactly once, even if Send is pressed twice.
+        app.editor.buffer().set_text("Hello Signal");
+        app.send_current();
+        app.send_current();
+        {
+            let state = app.state.borrow();
+            assert_eq!(state.outbox.len(), 1);
+            assert_eq!(state.outbox[0].status, OutboxStatus::Sending);
+            assert!(state.pending.contains(&key));
+        }
+        assert!(!app.send_button.is_sensitive());
+        wait_for_send(before + 1);
+        assert_eq!(sent(), ["Hello Signal"]);
+        assert_eq!(
+            app.state.borrow().outbox[0].status,
+            OutboxStatus::Transferred
+        );
+        assert!(app.state.borrow().pending.is_empty());
+        assert!(crate::signal::service::owns_daemon());
+        let params: serde_json::Value = std::fs::read_to_string(&log_path)
+            .unwrap()
+            .lines()
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .find(|entry| entry["method"] == "send")
+            .unwrap()["params"]
+            .clone();
+        assert_eq!(params["recipient"][0], "+15550000002");
+        assert_eq!(params["account"], "+15550000001");
+
+        // A refused send keeps the draft, shows a failure and retries without a duplicate row.
+        app.state.borrow_mut().outbox.clear();
+        app.editor.buffer().set_text("FAIL this one");
+        app.send_current();
+        wait_for_send(before + 2);
+        {
+            let state = app.state.borrow();
+            assert_eq!(state.outbox.len(), 1);
+            assert_eq!(state.outbox[0].status, OutboxStatus::Failed);
+            assert_eq!(state.drafts[&key], "FAIL this one");
+        }
+        assert!(app.send_button.is_sensitive(), "Send is available to retry");
+        app.editor.buffer().set_text("Second try");
+        app.send_current();
+        wait_for_send(before + 3);
+        {
+            let state = app.state.borrow();
+            assert_eq!(state.outbox.len(), 1, "the failed attempt is replaced");
+            assert_eq!(state.outbox[0].status, OutboxStatus::Transferred);
+        }
+        // A send that Signal never confirms is "unknown", never "failed", so it is not retried blindly.
+        app.state.borrow_mut().outbox.clear();
+        app.editor.buffer().set_text("EMPTY recipients");
+        app.send_current();
+        wait_for_send(before + 4);
+        assert_eq!(
+            app.state.borrow().outbox[0].status,
+            OutboxStatus::OutcomeUnknown
+        );
+
+        // Only the daemon this app started is stopped.
+        crate::signal::service::shutdown();
+        assert!(!crate::signal::service::owns_daemon());
+        app.state.borrow_mut().outbox.clear();
+        app.signal_loading.set(false);
+        app.signal_enabled.set(false);
+        app.signal_threads.borrow_mut().clear();
+        app.apply_signal_threads();
+        app.state.borrow_mut().drafts.clear();
+        app.editor.buffer().set_text("");
     }
 
     /// Runs inside the offline GUI test: GTK may only be initialised on one thread.
@@ -5219,6 +5513,7 @@ mod tests {
         assert!(!app.editor.is_sensitive());
         assert_timeline_updates_in_place(&app);
         assert_signal_threads_merge(&app);
+        assert_signal_send(&app);
         app.state
             .borrow_mut()
             .drafts

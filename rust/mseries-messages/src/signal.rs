@@ -1,9 +1,11 @@
-//! Read-only access to the Signal Pantheon client's conversations.
+//! The Signal channel: Signal Pantheon's conversations as Messages threads.
 //!
 //! Signal Pantheon keeps each conversation as one encrypted snapshot in
 //! `~/.local/share/signal-pantheon/message-history.db`. This module reads those
-//! snapshots (never writes) and presents them as Messages threads, so one
-//! conversation list can show iMessage/SMS and Signal side by side.
+//! snapshots and presents them as Messages threads, so one conversation list
+//! can show iMessage/SMS and Signal side by side. Sending goes through
+//! signal-cli (`service`, `rpc`); history is written only under the
+//! single-writer rule (`owner`, `write`): never while the client runs.
 //!
 //! Store format (see `rust/mseries-signal-import`, which can also write it):
 //! * the 32-byte key is base64 text in the login keyring
@@ -27,6 +29,12 @@ use sha2::Sha256;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::time::Duration;
+
+pub mod owner;
+pub mod rpc;
+pub mod service;
+pub mod write;
 
 /// Prefix that marks a thread as coming from Signal.
 pub const THREAD_PREFIX: &str = "signal:";
@@ -34,6 +42,7 @@ pub const THREAD_PREFIX: &str = "signal:";
 type HmacSha256 = Hmac<Sha256>;
 
 /// The 32-byte history key. Never printed or logged.
+#[derive(Clone)]
 pub struct HistoryKey([u8; 32]);
 
 impl HistoryKey {
@@ -57,14 +66,33 @@ impl HistoryKey {
         Ok(Self(key))
     }
 
-    fn hash(&self, key_string: &str) -> Vec<u8> {
+    pub(crate) fn hash(&self, key_string: &str) -> Vec<u8> {
         let mut mac =
             <HmacSha256 as Mac>::new_from_slice(&self.0).expect("HMAC accepts any key length");
         mac.update(key_string.as_bytes());
         mac.finalize().into_bytes().to_vec()
     }
 
-    fn decrypt(&self, nonce: &[u8], ciphertext: &[u8], tag: &[u8]) -> Result<Vec<u8>, String> {
+    /// AES-256-GCM with the given nonce and no AAD; the tag is returned apart.
+    pub(crate) fn encrypt_with_nonce(
+        &self,
+        nonce: &[u8; 12],
+        plain: &[u8],
+    ) -> Result<(Vec<u8>, Vec<u8>), String> {
+        let cipher = Aes256Gcm::new(GenericArray::from_slice(&self.0));
+        let mut buffer = plain.to_vec();
+        let tag = cipher
+            .encrypt_in_place_detached(Nonce::from_slice(nonce), &[], &mut buffer)
+            .map_err(|_| "could not encrypt a Signal history row".to_string())?;
+        Ok((buffer, tag.to_vec()))
+    }
+
+    pub(crate) fn decrypt(
+        &self,
+        nonce: &[u8],
+        ciphertext: &[u8],
+        tag: &[u8],
+    ) -> Result<Vec<u8>, String> {
         if nonce.len() != 12 || tag.len() != 16 {
             return Err("a Signal history row has an unexpected shape".into());
         }
@@ -168,6 +196,8 @@ impl SignalStore {
         let Some(snapshot) = self.read_snapshot(&conversation_key(account, id))? else {
             return Ok(None);
         };
+        // Messages Signal accepted while the client owned the file are shown too.
+        let snapshot = write::PENDING.overlay(account, id, &snapshot);
         thread_from_snapshot(account, &snapshot)
     }
 }
@@ -246,8 +276,7 @@ pub fn thread_from_snapshot(account: &str, snapshot: &str) -> Result<Option<Thre
         name: name.to_string(),
         is_group,
         recipients: Vec::new(),
-        // Sending arrives with the Signal send path; until then Signal threads are read-only.
-        reply_ready: false,
+        reply_ready: true,
         messages,
         last_ts,
         unread_count: unread,
@@ -289,6 +318,10 @@ pub fn load_threads() -> Result<Vec<Thread>, String> {
     let Some(key) = load_history_key()? else {
         return Ok(Vec::new());
     };
+    // Anything sent while the client was running is written now if it has quit.
+    if !write::PENDING.is_empty() {
+        let _ = write::flush_pending(&directory, &account, key.clone(), &write::PENDING);
+    }
     let store = SignalStore::open(&database, key)?;
     let mut threads = Vec::new();
     for id in store.conversation_ids(&account)? {
@@ -298,6 +331,80 @@ pub fn load_threads() -> Result<Vec<Thread>, String> {
     }
     Ok(threads)
 }
+
+/// `signal:<account>:<conversation>` back into its parts.
+pub fn parse_thread_key(key: &str) -> Option<(&str, &str)> {
+    key.strip_prefix(THREAD_PREFIX)?
+        .split_once(':')
+        .filter(|(account, id)| !account.is_empty() && !id.is_empty())
+}
+
+/// Why a Signal send did not go through.
+#[derive(Clone, Debug)]
+pub struct SendFailure {
+    pub message: String,
+    /// The request left this app but no answer came: Signal may have it.
+    pub outcome_unknown: bool,
+}
+
+/// Send `text` to a Signal conversation and record it in the history.
+///
+/// Blocking: call it off the main thread. Once Signal has accepted the message
+/// this never reports failure, whatever happens to the local history copy; the
+/// result says whether the copy was written or is waiting for the client to quit.
+pub fn send_text(
+    thread_key: &str,
+    is_group: bool,
+    text: &str,
+) -> Result<write::Saved, SendFailure> {
+    let (account, id) = parse_thread_key(thread_key).ok_or_else(|| SendFailure {
+        message: "This is not a Signal conversation.".into(),
+        outcome_unknown: false,
+    })?;
+    let layout = service::Layout::detect();
+    let mut connection = service::connect(&layout).map_err(|error| SendFailure {
+        message: error.message().to_string(),
+        outcome_unknown: false,
+    })?;
+    let result = connection
+        .call(
+            "send",
+            rpc::send_params(account, id, is_group, text),
+            SEND_TIMEOUT,
+        )
+        .map_err(|error| SendFailure {
+            outcome_unknown: matches!(error, rpc::RpcError::OutcomeUnknown(_)),
+            message: error.message().to_string(),
+        })?;
+    let timestamp = rpc::confirm_send(&result).map_err(|message| SendFailure {
+        message,
+        outcome_unknown: true,
+    })?;
+    let expiration_seconds = result["expirationByRecipient"][id].as_i64().unwrap_or(0);
+    write::PENDING.push(
+        account,
+        id,
+        write::SentRecord {
+            text: text.to_string(),
+            author: account.to_string(),
+            timestamp,
+            expiration_seconds,
+            expiration_start_ms: result["expirationStartTimestamp"]
+                .as_i64()
+                .unwrap_or(timestamp),
+        },
+    );
+    let saved = match load_history_key() {
+        Ok(Some(key)) => {
+            write::flush_pending(&layout.data_directory, account, key, &write::PENDING)
+                .unwrap_or(write::Saved::Deferred)
+        }
+        _ => write::Saved::Deferred,
+    };
+    Ok(saved)
+}
+
+const SEND_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[cfg(test)]
 mod tests {
@@ -433,7 +540,7 @@ mod tests {
             .expect("saved conversation");
         assert_eq!(thread.key, "signal:+15550000001:+15550000002");
         assert_eq!(thread.name, "Alice");
-        assert!(!thread.reply_ready, "Signal threads are read-only for now");
+        assert!(thread.reply_ready);
         assert_eq!(thread.unread_count, 1);
         // Sorted by time, whatever order the snapshot used.
         let bodies: Vec<_> = thread.messages.iter().map(|m| m.body.as_str()).collect();
