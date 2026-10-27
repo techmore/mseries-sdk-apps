@@ -13,6 +13,15 @@ interaction early; compilation and fixture checks do not establish acceptance.
 At roughly 45-minute checkpoints report elapsed time, running evidence, remaining
 product work and scope changes. Continue independent work while awaiting feedback.
 
+Dock and provider-usage integrations must also follow
+[DOCK-SDK-SPEC.md](DOCK-SDK-SPEC.md). Distill and reuse the native CodexBar
+presentation, account hierarchy and interactions as SDK standards, then build
+T3 to that contract. Fix broken data/runtime adapters without replacing the
+reference with an unrelated dashboard. Verify the actual status-area control
+in each desktop profile; another icon, window or fixture is not equivalent.
+The specification defines a required module capability, not a currently
+implemented SDK API or a claim that CodexBar/T3 has been repaired.
+
 ## SDK and template direction
 
 The owner clarified that not every app needs a native experience (2026-10-26).
