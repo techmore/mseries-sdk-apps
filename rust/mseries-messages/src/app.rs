@@ -7,6 +7,7 @@ use mseries_ai::{
     AiPreferences, AiStore, ChatMessage as AiChatMessage, ChatRole as AiChatRole,
     LocalModelSettings,
 };
+use mseries_pantheon_kit::timeline;
 use mseries_pantheon_kit::{
     BlueFerryMessagesClient as Backend, BlueFerryStatus, ContactMatch, DockBadge, ImportedPinState,
     Message, MessagePosition, PhonePinStore, PinSnapshot, Polling, RecentMessage, ResumeWatcher,
@@ -163,6 +164,27 @@ fn switch_phone_state(
     *current = next_profile
         .and_then(|profile| parked.remove(profile))
         .unwrap_or_default();
+}
+
+/// The widgets appended to `container` after `start` (or all of them when `start` is `None`).
+fn widgets_after(container: &gtk::Box, start: Option<gtk::Widget>) -> Vec<gtk::Widget> {
+    let mut widgets = Vec::new();
+    let mut cursor = match start {
+        Some(widget) => widget.next_sibling(),
+        None => container.first_child(),
+    };
+    while let Some(widget) = cursor {
+        cursor = widget.next_sibling();
+        widgets.push(widget);
+    }
+    widgets
+}
+
+/// One rendered row of the timeline: the widgets it owns and the signature of
+/// everything that shaped them, so an unchanged row is never rebuilt.
+struct RenderedRow {
+    signature: u64,
+    widgets: Vec<gtk::Widget>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -574,6 +596,7 @@ pub struct App {
     message_scroll: gtk::ScrolledWindow,
     latest_button: gtk::Button,
     rendered_history: RefCell<Option<(u64, String, usize)>>,
+    rendered_rows: RefCell<Vec<RenderedRow>>,
     history_render_generation: Cell<u64>,
     editor: gtk::TextView,
     send_button: gtk::Button,
@@ -1068,6 +1091,7 @@ impl App {
             message_scroll,
             latest_button,
             rendered_history: RefCell::new(None),
+            rendered_rows: RefCell::new(Vec::new()),
             history_render_generation: Cell::new(0),
             editor,
             send_button,
@@ -3261,8 +3285,14 @@ impl App {
         self.rendered_history.replace(next);
         self.history_render_generation
             .set(self.history_render_generation.get().wrapping_add(1));
-        while let Some(child) = self.messages.first_child() {
-            self.messages.remove(&child);
+        // Within one conversation only the rows after the first change are
+        // rebuilt; anything else starts from an empty timeline.
+        let keep_rows = !switching && thread.is_some();
+        if !keep_rows {
+            while let Some(child) = self.messages.first_child() {
+                self.messages.remove(&child);
+            }
+            self.rendered_rows.borrow_mut().clear();
         }
         self.copy_addresses_button.set_sensitive(
             thread
@@ -3310,11 +3340,6 @@ impl App {
                 .filter(|entry| entry.key == thread.key)
                 .cloned()
                 .collect::<Vec<_>>();
-            if thread.messages.is_empty() && pending_entries.is_empty() {
-                let empty = gtk::Label::new(Some("No messages in this conversation yet."));
-                empty.add_css_class("dim-label");
-                self.messages.append(&empty);
-            }
             let outbox_messages = pending_entries
                 .iter()
                 .map(|entry| Message {
@@ -3330,11 +3355,46 @@ impl App {
             let mut outbox_statuses = vec![None; thread.messages.len()];
             outbox_statuses.extend(pending_entries.iter().map(|entry| Some(entry.status)));
             let message_layout = layout_messages(visible_messages.iter().copied(), thread.is_group);
-            for ((message, layout), outbox_status) in visible_messages
+            let rows = visible_messages
                 .into_iter()
                 .zip(message_layout)
                 .zip(outbox_statuses)
-            {
+                .map(|((message, layout), status)| (message, layout, status))
+                .collect::<Vec<_>>();
+            let mut signatures = rows
+                .iter()
+                .map(|row| timeline::signature(&(row, thread.is_group)))
+                .collect::<Vec<_>>();
+            let empty_timeline = rows.is_empty();
+            if empty_timeline {
+                signatures.push(timeline::signature(&"empty timeline"));
+            }
+            let plan = {
+                let previous = self.rendered_rows.borrow();
+                let old = previous.iter().map(|row| row.signature).collect::<Vec<_>>();
+                timeline::diff(&old, &signatures)
+            };
+            let mut kept_rows = self.rendered_rows.take();
+            for row in kept_rows.drain(plan.keep..) {
+                for widget in row.widgets {
+                    self.messages.remove(&widget);
+                }
+            }
+            if empty_timeline && plan.build > 0 {
+                let first = self.messages.last_child();
+                let empty = gtk::Label::new(Some("No messages in this conversation yet."));
+                empty.add_css_class("dim-label");
+                self.messages.append(&empty);
+                kept_rows.push(RenderedRow {
+                    signature: signatures[0],
+                    widgets: widgets_after(&self.messages, first),
+                });
+            }
+            for (index, (message, layout, outbox_status)) in rows.into_iter().enumerate() {
+                if index < plan.keep {
+                    continue;
+                }
+                let row_start = self.messages.last_child();
                 if let Some(heading) = layout.date_heading.as_deref() {
                     let stamp = gtk::Label::builder()
                         .label(heading)
@@ -3478,7 +3538,12 @@ impl App {
                     self.messages.append(&card.root);
                     self.request_media_preview(url, card, message.outgoing);
                 }
+                kept_rows.push(RenderedRow {
+                    signature: signatures[index],
+                    widgets: widgets_after(&self.messages, row_start),
+                });
             }
+            self.rendered_rows.replace(kept_rows);
             let permitted =
                 thread.reply_ready && !thread.participants_required && !thread.roster_changed;
             self.update_send_shortcut();
@@ -3564,14 +3629,13 @@ impl App {
             self.messages.append(&empty);
         }
         if self.rendered_history.borrow().is_some() {
-            self.position_messages(
-                if switching || near_bottom {
-                    None
-                } else {
-                    Some(previous_position)
-                },
-                show_latest,
-            );
+            if switching || near_bottom {
+                self.position_messages(None, show_latest);
+            } else {
+                // The rows above the reader were not touched, so the position
+                // is already right. Moving it would only make the view hop.
+                self.latest_button.set_visible(show_latest);
+            }
         } else {
             self.latest_button.set_visible(false);
         }
@@ -4788,6 +4852,85 @@ mod tests {
         bus.unregister_object(registration).unwrap();
     }
 
+    /// Runs inside the offline GUI test: GTK may only be initialised on one thread.
+    fn assert_timeline_updates_in_place(app: &std::rc::Rc<super::App>) {
+        use gtk::prelude::*;
+        let message = |body: &str, outgoing: bool, minute: u32| Message {
+            handle: format!("h{minute}"),
+            body: body.into(),
+            timestamp: format!("2026-10-27T09:{minute:02}:00Z"),
+            outgoing,
+            read: true,
+            ..Message::default()
+        };
+        let mut thread = Thread {
+            key: "timeline-thread".into(),
+            name: "Timeline".into(),
+            messages: vec![
+                message("first", false, 1),
+                message("second", true, 2),
+                message("third", false, 3),
+            ],
+            ..Thread::default()
+        };
+        app.render_conversation(Some(thread.clone()));
+        let rows = |app: &std::rc::Rc<super::App>| {
+            app.rendered_rows
+                .borrow()
+                .iter()
+                .map(|row| row.widgets.clone())
+                .collect::<Vec<_>>()
+        };
+        let before = rows(app);
+        assert!(before.len() >= 3, "one row per message");
+        let first_widget = before[0][0].clone();
+        let child_count = |app: &std::rc::Rc<super::App>| {
+            let mut count = 0;
+            let mut cursor = app.messages.first_child();
+            while let Some(widget) = cursor {
+                count += 1;
+                cursor = widget.next_sibling();
+            }
+            count
+        };
+
+        // An unchanged render touches nothing.
+        let unchanged_children = child_count(app);
+        app.render_conversation(Some(thread.clone()));
+        assert_eq!(child_count(app), unchanged_children);
+        assert_eq!(rows(app)[0][0], first_widget);
+
+        // A newer message keeps every earlier bubble object in place.
+        thread.messages.push(message("fourth", true, 4));
+        app.render_conversation(Some(thread.clone()));
+        let after = rows(app);
+        assert_eq!(after.len(), before.len() + 1);
+        assert_eq!(
+            after[0][0], first_widget,
+            "first bubble must not be rebuilt"
+        );
+        assert_eq!(
+            after[1], before[1],
+            "an unchanged middle row must be reused"
+        );
+        assert!(child_count(app) > unchanged_children);
+
+        // Another conversation starts from an empty timeline.
+        let other = Thread {
+            key: "other-thread".into(),
+            name: "Other".into(),
+            messages: vec![message("hello", false, 5)],
+            ..Thread::default()
+        };
+        app.render_conversation(Some(other));
+        assert!(rows(app).iter().flatten().all(|w| *w != first_widget));
+        assert!(first_widget.parent().is_none());
+
+        // No thread clears the timeline.
+        app.render_conversation(None);
+        assert!(app.rendered_rows.borrow().is_empty());
+    }
+
     #[test]
     #[ignore = "requires an isolated Xvfb display, D-Bus session and config directories"]
     fn offline_gui_disables_sending_and_preserves_drafts_on_back() {
@@ -4849,6 +4992,7 @@ mod tests {
         );
         assert!(!app.send_button.is_sensitive());
         assert!(!app.editor.is_sensitive());
+        assert_timeline_updates_in_place(&app);
         app.state
             .borrow_mut()
             .drafts
