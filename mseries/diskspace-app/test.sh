@@ -19,7 +19,9 @@ echo "== a real scan agrees with du (allocated bytes)"
 cargo build --locked --manifest-path "$manifest" -p mseries-diskspace
 for dir in "$repo/mseries" /usr/share/doc; do
   [[ -d $dir ]] || continue
-  ours=$("$CARGO_TARGET_DIR/debug/mseries-diskspace" --scan "$dir" | head -1 | sed -E 's/^[^:]*: ([0-9]+) bytes on disk.*/\1/')
+  # Capture all output first: piping straight into `head -1` makes the binary hit EPIPE (a panic) under pipefail.
+  scan=$("$CARGO_TARGET_DIR/debug/mseries-diskspace" --scan "$dir")
+  ours=$(sed -n '1s/^[^:]*: \([0-9][0-9]*\) bytes on disk.*/\1/p' <<<"$scan")
   theirs=$(du -sx --block-size=1 "$dir" 2>/dev/null | cut -f1)
   [[ $ours == "$theirs" ]] || { echo "FAIL: $dir: scan says $ours, du says $theirs" >&2; exit 1; }
   echo "ok: $dir = $ours bytes"

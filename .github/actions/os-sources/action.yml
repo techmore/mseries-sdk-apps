@@ -1,0 +1,23 @@
+name: Fetch OS-repo sources
+description: >-
+  Sparse-checkout paths that stay in techmore/ElementaryOS_MSeries (pinned) and copy
+  them into the workspace at the same relative paths. Requires the repo to be checked out.
+inputs:
+  paths:
+    description: Newline-separated repo paths to fetch
+    required: true
+  ref:
+    description: Commit of ElementaryOS_MSeries to read
+    default: 2967dacb6e1b2ce7f90e392a4bf75b0442c26fcd
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v7
+      with:
+        repository: techmore/ElementaryOS_MSeries
+        ref: ${{ inputs.ref }}
+        path: .os-src
+        sparse-checkout: ${{ inputs.paths }}
+        sparse-checkout-cone-mode: false
+    - shell: bash
+      run: rm -rf .os-src/.git && cp -r .os-src/. . && rm -rf .os-src

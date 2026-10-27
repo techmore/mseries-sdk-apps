@@ -15,7 +15,7 @@ on:
       - "mseries/sdk-bench/**"
       - ".github/workflows/msdk.yml"
   push:
-    branches: [dev]
+    branches: [main]
     paths:
       - "rust/msdk/**"
       - "rust/msdk-gtk/**"
@@ -41,6 +41,12 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/work/sdk-target
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/os-sources
+        with:
+          paths: |
+            mseries/dock-taskbar/TaskbarT3RPopover.vala
+            mseries/codexbar-wingpanel/JsonBoundary.vala
+            mseries/codexbar-wingpanel/icons
       - uses: ./.github/actions/fast-apt
 
       - name: Provision native SDK test environment

@@ -9,3 +9,5 @@ Extracted with history from [techmore/ElementaryOS_MSeries](https://github.com/t
 - SDK tests and bench: `mseries/sdk-tests`, `mseries/sdk-bench`
 
 Layout is unchanged from the source repo on purpose; flattening paths is a later step. `msdk.yml` still references the Vala sources `mseries/codexbar-wingpanel` and `mseries/dock-taskbar`, which remain in the OS repo.
+
+`rust/pantheon-compositor/protocol/pantheon-desktop-shell-v1.xml` is a vendored copy of the compositor's shell protocol, which `msdk-gtk` builds against. The OS repo is the source of truth; update this copy when the protocol changes.
