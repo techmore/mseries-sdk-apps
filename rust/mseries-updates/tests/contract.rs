@@ -5,8 +5,20 @@
 use mseries_update_core::model::{Phase, Summary};
 use mseries_updates::backend::{Backend, CliBackend, Failure};
 use std::fs;
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::{RwLock, RwLockReadGuard};
+
+/// Tests run on parallel threads. A child forked to run one test's updater inherits every fd open in
+/// the process until it execs, including another test's script still open for writing, and exec of a
+/// file that has a writer open fails with ETXTBSY ("Text file busy"). Writing a script takes this lock
+/// exclusively; running the updater holds it shared, so no fork happens while a write fd is open.
+static SPAWN: RwLock<()> = RwLock::new(());
+
+fn spawning() -> RwLockReadGuard<'static, ()> {
+    SPAWN.read().unwrap_or_else(|e| e.into_inner())
+}
 
 fn updater_script() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mseries/update/mseries-update.py").canonicalize().expect("mseries-update.py")
@@ -15,19 +27,26 @@ fn updater_script() -> PathBuf {
 /// A command that runs the real updater against `state_dir`, like /usr/sbin/mseries-update would.
 fn wrapper(dir: &Path, state_dir: &Path) -> PathBuf {
     let script = dir.join("mseries-update");
-    fs::write(
-        &script,
-        format!(
-            "#!/bin/sh\nexport MSERIES_UPDATE_STATE='{state}' MSERIES_UPDATE_CONFIG='{dir}/none.conf' \
-             MSERIES_UPDATE_SOURCES='{dir}/sources' MSERIES_UPDATE_LOG='{dir}/log' MSERIES_UPDATE_POWER='{dir}/power'\n\
-             exec python3 -B '{py}' --quiet \"$@\"\n",
-            state = state_dir.display(),
-            dir = dir.display(),
-            py = updater_script().display(),
-        ),
-    )
-    .unwrap();
-    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    let staged = dir.join("mseries-update.tmp");
+    let body = format!(
+        "#!/bin/sh\nexport MSERIES_UPDATE_STATE='{state}' MSERIES_UPDATE_CONFIG='{dir}/none.conf' \
+         MSERIES_UPDATE_SOURCES='{dir}/sources' MSERIES_UPDATE_LOG='{dir}/log' MSERIES_UPDATE_POWER='{dir}/power'\n\
+         exec python3 -B '{py}' --quiet \"$@\"\n",
+        state = state_dir.display(),
+        dir = dir.display(),
+        py = updater_script().display(),
+    );
+    {
+        // Write, sync and close under a temp name, then rename into place; the lock keeps every
+        // spawn out until the write fd is gone.
+        let _writing = SPAWN.write().unwrap_or_else(|e| e.into_inner());
+        let mut file = fs::File::create(&staged).unwrap();
+        file.write_all(body.as_bytes()).unwrap();
+        file.set_permissions(fs::Permissions::from_mode(0o755)).unwrap();
+        file.sync_all().unwrap();
+        drop(file);
+        fs::rename(&staged, &script).unwrap();
+    }
     fs::create_dir_all(dir.join("power")).unwrap();
     script
 }
@@ -45,7 +64,7 @@ fn summary(name: &str, state_json: Option<&str>) -> Summary {
         fs::write(dir.join("state/state.json"), json).unwrap();
     }
     let backend = CliBackend::with_paths(wrapper(&dir, &dir.join("state")), "/nonexistent-helper");
-    let status = backend.status().unwrap_or_else(|f| panic!("{name}: {f:?}"));
+    let status = { let _run = spawning(); backend.status() }.unwrap_or_else(|f| panic!("{name}: {f:?}"));
     let _ = fs::remove_dir_all(&dir);
     Summary::from_status(&status)
 }
@@ -88,7 +107,8 @@ fn states_written_by_the_updater_are_understood() {
 #[test]
 fn a_missing_updater_is_reported_as_not_installed() {
     let backend = CliBackend::with_paths("/nonexistent/mseries-update", "/nonexistent-helper");
-    assert_eq!(backend.status(), Err(Failure::NotInstalled));
+    let status = { let _run = spawning(); backend.status() };
+    assert_eq!(status, Err(Failure::NotInstalled));
 }
 
 #[test]
@@ -96,7 +116,7 @@ fn a_state_file_from_a_newer_updater_is_an_error_not_a_guess() {
     let dir = scratch("newer");
     fs::write(dir.join("state/state.json"), r#"{"schema":2}"#).unwrap();
     let backend = CliBackend::with_paths(wrapper(&dir, &dir.join("state")), "/nonexistent-helper");
-    let err = backend.status().unwrap_err();
+    let err = { let _run = spawning(); backend.status() }.unwrap_err();
     let _ = fs::remove_dir_all(&dir);
     assert!(matches!(err, Failure::Failed(ref why) if why.contains("newer mseries-update")), "{err:?}");
 }
