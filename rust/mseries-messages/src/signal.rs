@@ -111,18 +111,50 @@ impl HistoryKey {
     }
 }
 
+/// How long the keyring may take. A locked or missing keyring service can leave
+/// `secret-tool` waiting indefinitely, and nothing that waits on it may hang.
+const KEYRING_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// The login-keyring lookup, through `secret-tool`, so no secret touches disk.
 pub fn load_history_key() -> Result<Option<HistoryKey>, String> {
-    let output = Command::new("secret-tool")
+    load_history_key_with("secret-tool", KEYRING_TIMEOUT)
+}
+
+fn load_history_key_with(program: &str, timeout: Duration) -> Result<Option<HistoryKey>, String> {
+    use std::io::Read;
+    let mut child = Command::new(program)
         .args(["lookup", "purpose", "encrypted-message-history"])
         .stdin(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .output()
+        .spawn()
         .map_err(|error| format!("could not run secret-tool: {error}"))?;
-    if !output.status.success() || output.stdout.is_empty() {
+    let mut stdout = child.stdout.take().expect("piped stdout");
+    let reader = std::thread::spawn(move || {
+        let mut secret = Vec::new();
+        let _ = stdout.read_to_end(&mut secret);
+        secret
+    });
+    let deadline = std::time::Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            _ => {
+                // Only the process started here is stopped.
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err("the login keyring did not answer in time".into());
+            }
+        }
+    };
+    let secret = reader.join().unwrap_or_default();
+    if !status.success() || secret.is_empty() {
         return Ok(None);
     }
-    HistoryKey::from_keyring_secret(&output.stdout).map(Some)
+    HistoryKey::from_keyring_secret(&secret).map(Some)
 }
 
 pub fn catalog_key(account: &str) -> String {
@@ -465,6 +497,21 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn a_keyring_that_never_answers_cannot_hang_the_caller() {
+        let directory = std::env::temp_dir().join(format!("signal-keyring-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let script = directory.join("secret-tool");
+        std::fs::write(&script, "#!/bin/sh\nsleep 60\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let started = std::time::Instant::now();
+        let result = load_history_key_with(script.to_str().unwrap(), Duration::from_millis(300));
+        assert!(result.is_err());
+        assert!(started.elapsed() < Duration::from_secs(5));
+        std::fs::remove_dir_all(&directory).ok();
     }
 
     #[test]
