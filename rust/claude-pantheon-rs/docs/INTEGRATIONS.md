@@ -40,11 +40,11 @@ Each step: commit, screenshot in `docs/`, PERFORMANCE.md re-run so idle RSS is t
 | Step | State |
 |---|---|
 | 2 client, 3 usage | Done: `src/app.rs`, `src/usage.rs`; plan windows as gauges with the rotation decision (`pick_provider`). |
-| 4a SnapShot | Not built. The compositor is `pantheon-compositor` (mseries Rust), not Gala: no `org.gnome.Shell.Screenshot` and no screencopy global. The portal backend `org.freedesktop.impl.portal.desktop.pantheon` serves `org.freedesktop.portal.Screenshot` v2 (`Screenshot(parent_window, options)`), so the helper will call the portal (interactive=false), accept that portal captures carry no window identity (`docs/internals/linux-snap-shot.md`), and take the focused window's title and PID from AT-SPI's active-window event, matching on title only. A compositor-side `ScreenshotWindow` D-Bus method (PID/title/frame) is a follow-up in the compositor repo. Attachment upload goes through `attachments.createUploadUrl`. |
+| 4a SnapShot | Done: `src/snapshot.rs`, Ctrl+Shift+S, portal screenshot named after the focused window, attached to the draft. Portal captures carry no window identity; a compositor-side `ScreenshotWindow` method remains a follow-up in the compositor repo. |
 | 4b terminal (vte4) | Done: `src/terminal.rs`, a VTE pane under the chat (Ctrl+Shift+T) attached over `terminal.attach` (history replay, live output), keystrokes through `terminal.write`, size through `terminal.resize`, 512 KiB client cap, elementary Terminal palette; no local PTY. |
 | 4c changes | Partial: Changes page from `orchestration.getFullThreadDiff`, one collapsed diff per file. Branch comparison and PR actions (`pullRequests.*`) not built. |
-| 4d environments | Not built; one direct environment (loopback) only. |
+| 4d environments | Done: `src/environments.rs`, Direct / Tailscale / SSH / T3 Connect, switched from the sidebar footer (see README). |
 | 4e Wingpanel indicator | Done: `wingpanel-indicator/` (Vala, Wingpanel 9 API) builds and installs into the system indicator dir; reads the client's `status.json` feed with a FileMonitor (pending prompts as the badge, nearest window with reset countdown, every window as a gauge, rotation line, clickable threads that open the app). Headless probe with a fixture renders `docs/screenshot-indicator.png`. |
-| 4f visual replies (WebKitGTK 6) | Not built: `webkit6` crate not in the offline cache. |
+| 4f visual replies (WebKitGTK 6) | Done: `src/webview.rs`, the web process starts only when Show page is pressed. |
 | 4g diagnostics | Done: `src/diagnostics.rs`, `subscribeResourceTelemetry` only while the page is open. |
 | 5 workflow | Done except the webhook task (needs a reachable webhook endpoint through T3 Connect or Tailscale) and automatic per-run rotation (the server has no per-run hook; the client re-picks the provider when the runner is re-installed). |
