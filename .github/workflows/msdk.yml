@@ -41,22 +41,12 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/work/sdk-target
     steps:
       - uses: actions/checkout@v7
-      - name: Fetch Vala sources that stay in the OS repo (pinned)
-        uses: actions/checkout@v7
+      - uses: ./.github/actions/os-sources
         with:
-          repository: techmore/ElementaryOS_MSeries
-          ref: 2967dacb6e1b2ce7f90e392a4bf75b0442c26fcd
-          path: .os-src
-          sparse-checkout: |
+          paths: |
             mseries/dock-taskbar/TaskbarT3RPopover.vala
             mseries/codexbar-wingpanel/JsonBoundary.vala
             mseries/codexbar-wingpanel/icons
-          sparse-checkout-cone-mode: false
-      - name: Place OS-repo Vala sources
-        run: |
-          mkdir -p mseries/dock-taskbar mseries/codexbar-wingpanel
-          cp .os-src/mseries/dock-taskbar/TaskbarT3RPopover.vala mseries/dock-taskbar/
-          cp -r .os-src/mseries/codexbar-wingpanel/. mseries/codexbar-wingpanel/
       - uses: ./.github/actions/fast-apt
 
       - name: Provision native SDK test environment
