@@ -7,6 +7,7 @@ Extracted with history from [techmore/ElementaryOS_MSeries](https://github.com/t
 - SDK and app-building docs: `mseries/SDK-*.md`, `mseries/APP-BUILDING-GUIDE.md`, `mseries/RUST-PANTHEON-SDK.md`
 - Apps outside the Rust workspace: `mseries/polybagger-print-manager` (PolyBagger T1000 label printing; printer-link notes in `docs/polybagger-t1000-printer-link-troubleshooting.md`)
 - Battery app and history logger: `mseries/battery` (docs `mseries/BATTERY-*.md`, `mseries/install-battery.sh`). The Wingpanel patches (`panel-power-battery-history.patch`, `panel-power-battery-eta.diff`) and `install-battery-eta.sh`'s helpers (`lib-backup.sh`, `lib-build.sh`, `patches/`) belong to the OS image repo, so that script only works from there.
+- Image Studio (native Rust/Granite image generation UI): `rust/mseries-image-studio`, backend contract in `mseries/image-studio/README.md`
 - Workspace: `rust/` (`cd rust && cargo test -p msdk`)
 - SDK tests and bench: `mseries/sdk-tests`, `mseries/sdk-bench`
 
