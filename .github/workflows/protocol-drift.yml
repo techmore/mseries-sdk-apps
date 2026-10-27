@@ -1,0 +1,29 @@
+name: Shell protocol drift
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"
+  pull_request:
+    paths:
+      - "rust/pantheon-compositor/protocol/**"
+      - ".github/workflows/protocol-drift.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compare vendored protocol with ElementaryOS_MSeries dev
+        run: |
+          f=rust/pantheon-compositor/protocol/pantheon-desktop-shell-v1.xml
+          curl -fsS --retry 3 -o /tmp/upstream.xml \
+            "https://raw.githubusercontent.com/techmore/ElementaryOS_MSeries/dev/$f"
+          if ! diff -u /tmp/upstream.xml "$f"; then
+            echo "::error::Vendored shell protocol differs from ElementaryOS_MSeries dev; sync the copy (OS repo is the source of truth)."
+            exit 1
+          fi
