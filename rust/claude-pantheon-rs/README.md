@@ -46,7 +46,7 @@ this does not establish full chat/Work parity or completed SDK qualification.
 Issue #596 retains visual, keyboard, lifecycle and owner-acceptance gates.
 
 Integration evidence (2026-10-26): strict release Clippy with all targets and
-warnings-as-errors passed; 77 library tests passed; rebuilt native client drew
+warnings-as-errors passed; 87 library tests passed (2026-10-27); rebuilt native client drew
 its first frame in an isolated offline session. A real read-only RepoBar
 snapshot returned 87 repositories and explicitly partial Actions coverage.
 These observations do not substitute for remote package CI or owner acceptance.

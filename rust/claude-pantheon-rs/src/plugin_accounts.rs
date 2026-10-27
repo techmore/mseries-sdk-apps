@@ -6,9 +6,9 @@ use gtk::glib;
 use gtk::prelude::*;
 use serde_json::Value;
 use std::cell::RefCell;
-use std::rc::Rc;
 use std::path::PathBuf;
 use std::process::Command;
+use std::rc::Rc;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Account {
@@ -60,6 +60,12 @@ pub struct Accounts {
     list: gtk::ListBox,
     status: gtk::Label,
     cache: Rc<RefCell<Vec<Account>>>,
+}
+
+impl Default for Accounts {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Accounts {

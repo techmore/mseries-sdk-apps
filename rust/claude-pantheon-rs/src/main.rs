@@ -17,6 +17,17 @@ use std::time::Instant;
 fn main() -> gtk::glib::ExitCode {
     let started = Instant::now();
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("claude-pantheon-rs {}", env!("CARGO_PKG_VERSION"));
+        return gtk::glib::ExitCode::SUCCESS;
+    }
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!(
+            "claude-pantheon-rs {}\n\nUsage: claude-pantheon-rs [--new-thread|--usage|--repositories|--fleet|--activity|--settings|--full]\n       claude-pantheon-rs --thread ID | --index | --quit-after-frame\n       claude-pantheon-rs --t3-dump DIR [TOKEN] | --t3-attach ID | --t3-call TAG [JSON]\n\nSee README.md for what each does.",
+            env!("CARGO_PKG_VERSION")
+        );
+        return gtk::glib::ExitCode::SUCCESS;
+    }
     if args.iter().any(|a| a == "--index") {
         let sessions = index::index_all();
         for s in &sessions {

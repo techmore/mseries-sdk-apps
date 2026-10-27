@@ -1,0 +1,67 @@
+name: Claude Pantheon (T3 client)
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - "rust/claude-pantheon-rs/**"
+      - "rust/msdk/**"
+      - "rust/msdk-gtk/**"
+      - "rust/mseries-pantheon-kit/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - ".github/workflows/claude-pantheon-rs.yml"
+  pull_request:
+    paths:
+      - "rust/claude-pantheon-rs/**"
+      - "rust/msdk/**"
+      - "rust/msdk-gtk/**"
+      - "rust/mseries-pantheon-kit/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - ".github/workflows/claude-pantheon-rs.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Claude Pantheon build and test (arm64)
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/fast-apt
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config cargo rustc libgtk-4-dev libgranite-7-dev \
+            libgtksourceview-5-dev libvte-2.91-gtk4-dev libwebkitgtk-6.0-dev \
+            xvfb xauth dbus libsecret-tools gnome-keyring
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: claude-pantheon-${{ runner.arch }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: claude-pantheon-${{ runner.arch }}-
+
+      - name: Rust formatting and lint
+        run: |
+          cargo fmt --manifest-path rust/Cargo.toml -p claude-pantheon-rs --check
+          cargo clippy --manifest-path rust/Cargo.toml -p claude-pantheon-rs --all-targets --locked -- -D warnings
+
+      - name: Unit tests
+        run: cargo test --manifest-path rust/Cargo.toml -p claude-pantheon-rs --locked
+
+      - name: Isolated GTK render test
+        run: bash rust/claude-pantheon-rs/tests/run-render-sandbox.sh
