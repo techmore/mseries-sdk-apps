@@ -1,0 +1,53 @@
+name: Torrential
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - "rust/torrential/**"
+      - ".github/workflows/torrential.yml"
+  pull_request:
+    paths:
+      - "rust/torrential/**"
+      - ".github/workflows/torrential.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Torrential build and tests (arm64)
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/fast-apt
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config cargo rustc libgtk-4-dev libgranite-7-dev \
+            libglib2.0-dev libglib2.0-dev-bin desktop-file-utils appstream
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/torrential/target
+          key: torrential-${{ runner.arch }}-${{ hashFiles('rust/torrential/Cargo.lock') }}
+          restore-keys: torrential-${{ runner.arch }}-
+
+      - name: Build
+        working-directory: rust/torrential
+        run: cargo build --locked
+
+      - name: Unit tests
+        working-directory: rust/torrential
+        run: cargo test --locked

@@ -3,6 +3,11 @@ name = "torrential-relm4"
 version = "0.1.0"
 edition = "2021"
 
+# Deliberately NOT a member of the ../ workspace: Relm4, tokio and the
+# Transmission client would join every other app's dependency graph and
+# lockfile, and slow their builds. Torrential keeps its own Cargo.lock.
+[workspace]
+
 [dependencies]
 granite = { package = "granite-rs", version = "3.3.0", features = ["v7_5", "relm4"] }
 i18n-embed = { version = "0.15.2", features = ["fluent-system", "desktop-requester"] }
