@@ -123,3 +123,42 @@ impl Backend for CliBackend {
         classify(output.status.code(), &output.stderr)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exit_codes_map_to_what_the_user_should_see() {
+        assert_eq!(classify(Some(0), b""), Ok(()));
+        assert_eq!(classify(Some(126), b""), Err(Failure::Cancelled));
+        assert_eq!(classify(Some(127), b""), Err(Failure::NotAuthorized));
+        assert_eq!(
+            classify(
+                Some(75),
+                b"mseries-update: another mseries-update is running\n"
+            ),
+            Err(Failure::Busy)
+        );
+        assert_eq!(
+            classify(
+                Some(3),
+                b"mseries-update: ROLLBACK FAILED, the package set needs attention: x\n"
+            ),
+            Err(Failure::RollbackFailed(
+                "ROLLBACK FAILED, the package set needs attention: x".into()
+            ))
+        );
+        assert_eq!(
+            classify(
+                Some(1),
+                b"INFO noise\nmseries-update: update server unreachable\n\n"
+            ),
+            Err(Failure::Failed("update server unreachable".into()))
+        );
+        assert_eq!(
+            classify(None, b""),
+            Err(Failure::Failed("exit status None".into()))
+        );
+    }
+}
