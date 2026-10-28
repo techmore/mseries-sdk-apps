@@ -4270,7 +4270,9 @@ impl App {
 
 fn load_css() {
     let provider = gtk::CssProvider::new();
-    provider.load_from_string(include_str!("../data/style.css"));
+    // The merged/closed accent is the shared Grape token, not a literal in the stylesheet.
+    let grape = msdk::tokens::tokens()["colors"]["accents"]["grape"].as_str().unwrap_or("#a56de2").to_string();
+    provider.load_from_string(&format!("@define-color t3_merged {grape};\n{}", include_str!("../data/style.css")));
     if let Some(display) = gdk::Display::default() {
         gtk::style_context_add_provider_for_display(&display, &provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
     }

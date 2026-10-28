@@ -102,3 +102,34 @@ Non-Rust first-party apps that remain: Battery (Python), Signal Pantheon
 
 Items 2, 3 and 5 are code changes in shared crates; 4 and 6 touch every app
 and so should run as one change at a time, not in parallel.
+
+## Status (2026-10-28)
+
+Items 2 to 6 are done, one pull request each; item 1 (OS-repo copies) and item 7 (Torrential) were handled
+separately.
+
+- **2** One updates backend: `mseries-updates` re-exports the kit's `Backend`/`CliBackend`/`Failure` (#35).
+- **3** `mseries-signal-history` owns the Signal history key (zeroising `Secret`); Messages and the importer
+  use it (#39).
+- **5** `mseries_pantheon_kit::settings` (`app_config_dir`, `load_json`, `save_json`) replaces the hand-rolled
+  config paths in T3 and Apple Dev (#40). Messages' `preferences.rs`, the dock and `mseries-reply` still read their
+  own files: they merge keys or read paths in other shapes.
+- **4** One namespace, own icon and `StartupWMClass` per app (#41); see [APP-ID-MIGRATION-2026-10-27.md](APP-ID-MIGRATION-2026-10-27.md).
+  Both Messages and both T3 entries still ship.
+- **6** Theme pass: the messaging palette is `colors.pantheon` in `msdk/data/tokens.json` and a kit test keeps the
+  CSS in step with it; Disk Space's bar colours are Granite's `@warning_color`/`@error_color`; T3's merged-issue
+  accent comes from the grape token; every Granite app calls the kit's `follow_color_scheme`; window sizes are kit
+  constants (`WORKSPACE_DEFAULT` 1100×760, `WORKSPACE_MIN` 720×520, `UTILITY_DEFAULT` 560×680, `UTILITY_MIN`
+  360×480).
+
+Deliberate exceptions, so a later audit does not re-flag them:
+
+- Terminal palettes (T3 `terminal.rs`, Apple Dev `console.rs`) and the web view fallback (T3 `webview.rs`): fixed
+  ANSI/Solarized-style sets by design.
+- Disk Space's category colours and chart overlays (`paint.rs`) and T3's provider accents (`sidebar.rs`): data
+  colours that must stay distinguishable and stable, not theme colours.
+- Image Studio's glass HUD (`@is_hud_*`): always dark so it reads over any picture. Image Studio follows the
+  desktop's colour scheme through its own dconf watcher, and opens at 1380×900 so its three-pane (not compact) layout is
+  the default; its minimum is the shared one.
+- T3 follows light/dark/system through its own Appearance setting, so it does not call `follow_color_scheme`.
+  The Signal importer window is GTK-only (no Granite) and fixed-width.

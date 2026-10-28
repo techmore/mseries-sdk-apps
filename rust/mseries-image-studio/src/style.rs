@@ -5,6 +5,9 @@
 use gtk::prelude::*;
 
 const CSS: &str = r#"
+/* The glass HUD is always dark so it reads on any picture; these two are the only fixed colours. */
+@define-color is_hud_bg #17181c;
+@define-color is_hud_fg #f4f4f6;
 .mseries-image-studio { font-size: 1.05em; }
 
 /* ---------- Window chrome ---------- */
@@ -71,10 +74,10 @@ const CSS: &str = r#"
 .mseries-image-studio .is-empty-title { font-size: 1.25em; font-weight: 700; }
 
 /* Glass HUD that sits over images: always dark so it reads on any picture. */
-.mseries-image-studio .is-hud { background: alpha(#17181c, 0.78); color: #f4f4f6; border: 1px solid alpha(white, 0.13); border-radius: 999px; padding: 5px 12px; box-shadow: 0 4px 14px alpha(black, 0.35); }
-.mseries-image-studio .is-hud label, .mseries-image-studio .is-hud image { color: #f4f4f6; }
+.mseries-image-studio .is-hud { background: alpha(@is_hud_bg, 0.78); color: @is_hud_fg; border: 1px solid alpha(white, 0.13); border-radius: 999px; padding: 5px 12px; box-shadow: 0 4px 14px alpha(black, 0.35); }
+.mseries-image-studio .is-hud label, .mseries-image-studio .is-hud image { color: @is_hud_fg; }
 .mseries-image-studio .is-hud .is-dim { opacity: 0.7; }
-.mseries-image-studio .is-hud-rail { background: alpha(#17181c, 0.78); border: 1px solid alpha(white, 0.13); border-radius: 14px; padding: 6px; box-shadow: 0 4px 14px alpha(black, 0.35); }
+.mseries-image-studio .is-hud-rail { background: alpha(@is_hud_bg, 0.78); border: 1px solid alpha(white, 0.13); border-radius: 14px; padding: 6px; box-shadow: 0 4px 14px alpha(black, 0.35); }
 .mseries-image-studio progressbar.is-stage-progress trough { min-height: 4px; min-width: 0; margin: 0; border: none; background: alpha(black, 0.28); border-radius: 0; }
 .mseries-image-studio progressbar.is-stage-progress progress { min-height: 4px; min-width: 0; margin: 0; border: none; background: @accent_color; border-radius: 0; }
 

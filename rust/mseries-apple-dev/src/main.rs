@@ -6,7 +6,6 @@
 //! and `MSERIES_APPLE_DEV_FIXTURE_TESTFLIGHT` point at fixture settings, devices and an App Store
 //! Connect reply.
 
-use granite::prelude::SettingsExt;
 use gtk::{gio, glib, prelude::*};
 use mseries_apple_dev::ui::window::{APP_ID, AppWindow};
 use std::cell::RefCell;
@@ -63,20 +62,8 @@ fn present(app: &gtk::Application, slot: &Rc<RefCell<Option<Rc<AppWindow>>>>) ->
     win
 }
 
-#[allow(deprecated)] // Granite apps still drive GTK's prefer-dark setting.
 fn follow_color_scheme() {
-    let Some(gtk_settings) = gtk::Settings::default() else { return };
-    if let Ok(forced) = std::env::var("MSERIES_APPLE_DEV_DARK") {
-        gtk_settings.set_gtk_application_prefer_dark_theme(forced == "1");
-        return;
-    }
-    let granite_settings = granite::Settings::default();
-    let apply = move |s: &granite::Settings, g: &gtk::Settings| {
-        g.set_gtk_application_prefer_dark_theme(s.prefers_color_scheme() == granite::SettingsColorScheme::Dark);
-    };
-    apply(&granite_settings, &gtk_settings);
-    let g = gtk_settings.clone();
-    granite_settings.connect_prefers_color_scheme_notify(move |s| apply(s, &g));
+    mseries_pantheon_kit::appearance::follow_color_scheme(Some("MSERIES_APPLE_DEV_DARK"));
 }
 
 fn show_about(app: &gtk::Application) {

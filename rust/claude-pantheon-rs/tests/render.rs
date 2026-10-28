@@ -285,7 +285,7 @@ fn main() {
             app.window(),
             &gtk::Paned::new(gtk::Orientation::Horizontal),
         );
-        assert!(state.width >= 640 && state.height >= 420);
+        assert!(state.width >= 720 && state.height >= 520);
         // Icon-only buttons: each one needs a tooltip (shown) and a label (read); the ones without a
         // tooltip are listed so a new one stands out in the log.
         fn icon_buttons_without_tooltip(w: &gtk::Widget, out: &mut Vec<String>) {

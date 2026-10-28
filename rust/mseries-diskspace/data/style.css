@@ -1,7 +1,5 @@
 /* Disk Space. Colours come from the elementary theme; only the bar accents are ours. */
 @define-color ds_bar_accent @accent_color;
-@define-color ds_warn #d9791a;
-@define-color ds_full #c6262e;
 
 .ds-crumbs { padding: 0.25em 0.5em; }
 .ds-crumbs button { padding: 0.12em 0.5em; min-height: 1.5em; }
@@ -23,5 +21,5 @@
 
 progressbar.ds-bar trough { min-height: 4px; border-radius: 2px; }
 progressbar.ds-bar progress { min-height: 4px; border-radius: 2px; background: @ds_bar_accent; }
-progressbar.ds-bar.ds-warn progress { background: @ds_warn; }
-progressbar.ds-bar.ds-full progress { background: @ds_full; }
+progressbar.ds-bar.ds-warn progress { background: @warning_color; }
+progressbar.ds-bar.ds-full progress { background: @error_color; }

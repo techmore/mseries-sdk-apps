@@ -17,9 +17,12 @@ pub fn build(application: &gtk::Application) {
     let window = gtk::ApplicationWindow::builder()
         .application(application)
         .title("System Monitor")
-        .default_width(980)
-        .default_height(680)
         .build();
+    mseries_pantheon_kit::appearance::size_window(
+        &window,
+        mseries_pantheon_kit::appearance::WORKSPACE_DEFAULT,
+        mseries_pantheon_kit::appearance::WORKSPACE_MIN,
+    );
 
     let stack = gtk::Stack::builder()
         .hexpand(true)
