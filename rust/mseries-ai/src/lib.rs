@@ -1,3 +1,4 @@
+mod assist;
 mod client;
 mod persona;
 mod retrieve;
@@ -5,6 +6,7 @@ mod store;
 #[cfg(test)]
 mod test_support;
 
+pub use assist::{DEFAULT_ASSIST_URL, assist_url, clean_suggestion, complete_text};
 pub use client::{
     ChatMessage, ChatRole, Instruction, MAX_NOTE_CHARS, Revision, draft_reply, draft_reply_with,
     strip_thinking,

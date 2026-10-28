@@ -477,7 +477,7 @@ fn matches_rule(rule: &Rule, query: &Query<'_>) -> bool {
 }
 
 /// Terminals, password managers and the lock screen. No rule can lift these.
-fn built_in_blocked_app(app_id: &str) -> bool {
+pub fn built_in_blocked_app(app_id: &str) -> bool {
     let id = app_id.to_ascii_lowercase();
     const FRAGMENTS: &[&str] = &[
         "terminal",
