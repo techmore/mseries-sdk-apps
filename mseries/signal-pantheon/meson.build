@@ -6,7 +6,9 @@ project(
 )
 
 gtk = dependency('gtk4', version: '>= 4.12')
-granite = dependency('granite-7', version: '>= 7.7')
+granite_major = get_option('granite_major')
+granite = dependency('granite-' + granite_major, version: granite_major == '9' ? '>= 9.0' : '>= 7.7')
+granite_vala_args = granite_major == '9' ? ['--define=GRANITE_9'] : []
 cairo = dependency('cairo')
 json_glib = dependency('json-glib-1.0')
 sqlite = dependency('sqlite3')
@@ -38,6 +40,7 @@ executable(
     'src/history-store.c',
   ],
   dependencies: [gtk, granite, cairo, json_glib, sqlite, secret, crypto, gst, gst_app, gio_unix],
+  vala_args: granite_vala_args,
   include_directories: include_directories('src'),
   install: true,
 )

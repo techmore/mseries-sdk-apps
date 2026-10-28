@@ -21,6 +21,23 @@ The `v1` in a protocol's name does not override the XML interface version.
 Neither a Rust service extension version nor a manifest version proves that a
 Gala D-Bus service, T3 server, GitHub API or other backend is compatible.
 
+## elementary OS 9 development SDK
+
+The upstream `resolute` SDK metapackage lists both Granite 7 and Granite 9.
+Granite 9 is a separate ABI (`granite-9`, GTK >= 4.22), not an in-place
+upgrade of `granite-7`. The standalone Signal Pantheon Vala client supports
+both through its `granite_major` Meson option and tests both configurations.
+Granite 7 remains the default, preserving existing packaging.
+
+The Rust Pantheon kit and applications currently use `granite-rs` 3.3 with
+Granite 7 bindings. They have not been ported to Granite 9. A full migration
+requires maintained Granite 9 Rust bindings, per-app API and packaging changes,
+and live appearance and interaction testing. Do not link both Granite majors
+into the same app. Merely installing Granite 9 does not upgrade the Rust apps.
+
+Upstream references: [elementary SDK metapackage](https://github.com/elementary/metapackages/blob/resolute/elementary-sdk-amd64)
+and [Granite development tree](https://github.com/elementary/granite).
+
 ## Manifest loading
 
 The loader validates the complete manifest before publishing anything. Unknown

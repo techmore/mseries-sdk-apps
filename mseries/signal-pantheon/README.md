@@ -51,6 +51,14 @@ and Vala. Voice calls require a working PulseAudio-compatible server. The local
 ARM64 runtime includes Java 25, patched signal-cli 0.14.9, libsignal and the
 RingRTC call tunnel. See `vendor-src/README.md` for source/build provenance.
 
+The default build uses Granite 7. To build against the elementary OS 9
+development SDK, install `libgranite-9-dev` and configure a separate build
+directory with `meson setup build-granite9 -Dgranite_major=9`. Granite 9
+requires GTK 4.22 or newer; the build checks the library's pkg-config
+requirements. Use only one Granite major version in a process. The Granite 9
+build follows GTK's system color-scheme setting; verify desktop appearance on
+the target system before shipping it.
+
 ```sh
 meson setup build
 meson compile -C build
