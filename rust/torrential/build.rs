@@ -4,6 +4,6 @@ fn main() {
     compile_resources(
         &["data"],
         "data/gresource.xml",
-        "com.github.davidmhewitt.torrential.gresource",
+        "org.techmore.mseries.Torrential.gresource",
     );
 }

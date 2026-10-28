@@ -82,6 +82,16 @@
         "org.techmore.mseries.Updates.desktop"
       ],
       "exempt": {}
+    },
+    {
+      "name": "Torrential",
+      "dir": "torrential",
+      "desktop": [
+        "org.techmore.mseries.Torrential.desktop"
+      ],
+      "exempt": {
+        "gettext": "uses Fluent catalogs (i18n-embed; de, en-GB) rather than gettext"
+      }
     }
   ]
 }

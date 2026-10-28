@@ -231,7 +231,7 @@ impl SimpleComponent for PreferencesWindowModel {
         let model = Self { hidden: init };
         let widgets = view_output!();
 
-        let settings = gtk::gio::Settings::new("com.github.davidmhewitt.torrential.settings");
+        let settings = gtk::gio::Settings::new("org.techmore.mseries.Torrential.settings");
         settings
             .bind("max-downloads", &widgets.max_downloads_spin, "value")
             .flags(SettingsBindFlags::DEFAULT)

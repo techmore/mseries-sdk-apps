@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
-    <schema path="/com/github/davidmhewitt/torrential/settings/" id="com.github.davidmhewitt.torrential.settings">
+    <schema path="/org/techmore/mseries/Torrential/settings/" id="org.techmore.mseries.Torrential.settings">
         <key type="i" name="window-width">
             <default>1100</default>
             <summary>Window width</summary>

@@ -7,6 +7,7 @@ action-magnet-description = Paste a magnet link to start downloading
 action-pause = Pause
 action-prefs = Preferences
 action-prefs-description = Set download folder and other preferences
+action-about = About Torrential
 action-quit = Quit
 action-remove = Remove
 action-resume = Resume
@@ -100,3 +101,4 @@ status-count =
     }
 status-count-filtered = { $shown } of { $total } torrents
 status-rates = ↓ { $down }/s   ↑ { $up }/s
+app-description = Download torrents and magnet links

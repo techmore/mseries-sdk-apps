@@ -104,7 +104,7 @@ impl AsyncComponent for Transmission {
             initial_session = tr_client.session().await;
         }
         if let Ok(session) = initial_session {
-            let settings = gio::Settings::new("com.github.davidmhewitt.torrential.settings");
+            let settings = gio::Settings::new("org.techmore.mseries.Torrential.settings");
 
             match settings.set_int("max-downloads", session.download_queue_size) {
                 Ok(_) => {}
@@ -312,7 +312,7 @@ impl AsyncComponent for Transmission {
             }
             TransmissionInput::UpdateSettings => {
                 let tr_client = self.tr_client.as_ref().unwrap();
-                let settings = gio::Settings::new("com.github.davidmhewitt.torrential.settings");
+                let settings = gio::Settings::new("org.techmore.mseries.Torrential.settings");
 
                 let mutator = SessionMutator {
                     download_queue_enabled: Some(settings.int("max-downloads") != 0),

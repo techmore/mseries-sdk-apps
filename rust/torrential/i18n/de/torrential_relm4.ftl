@@ -4,6 +4,7 @@ action-open = Öffne Torrent
 action-open-description = Öffne eine Torrent-Datei von deinem Computer.
 action-prefs = Einstellungen
 action-prefs-description = Lege den Downloadordner und weitere Einstellungen fest.
+action-about = Über Torrential
 action-quit = Beenden
 action-remove = Entfernen
 action-resume = Fortsetzen
@@ -51,3 +52,4 @@ days =
         [one] 1 Tag
         *[other] { $days } Tage
     }
+app-description = Torrents und Magnet-Links herunterladen

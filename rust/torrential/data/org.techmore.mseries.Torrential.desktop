@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Torrential
+GenericName=BitTorrent Client
+Comment=Download torrents and magnet links
+Exec=torrential-relm4 %U
+Icon=org.techmore.mseries.Torrential
+Terminal=false
+Type=Application
+Categories=Network;FileTransfer;P2P;GTK;
+Keywords=torrent;magnet;download;bittorrent;
+MimeType=application/x-bittorrent;x-scheme-handler/magnet;
+StartupNotify=true
+StartupWMClass=org.techmore.mseries.Torrential

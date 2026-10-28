@@ -18,6 +18,7 @@ rust-embed = { version = "8", features = ["debug-embed"] }
 tokio = { version = "1.38", features = ["time"] }
 tracker = "0.2"
 transmission-client = "=0.1.5"
+mseries-pantheon-kit = { path = "../mseries-pantheon-kit" }
 
 [build-dependencies]
 glib-build-tools = "0.22.0"

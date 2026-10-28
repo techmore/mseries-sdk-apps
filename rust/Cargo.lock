@@ -3920,6 +3920,7 @@ dependencies = [
  "i18n-embed-fl",
  "lazy_static",
  "log",
+ "mseries-pantheon-kit",
  "nix",
  "relm4",
  "relm4-components",

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <gresources>
-    <gresource prefix="/com/github/davidmhewitt/torrential">
+    <gresource prefix="/org/techmore/mseries/Torrential">
         <file preprocess="xml-stripblanks">icons/open-magnet-symbolic.svg</file>
         <file preprocess="xml-stripblanks">icons/filter.svg</file>
     </gresource>

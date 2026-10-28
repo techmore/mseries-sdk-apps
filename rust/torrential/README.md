@@ -36,5 +36,5 @@ The following features are missing compared to the last release. In no real orde
 ## Building
 
 ```
-flatpak-builder build com.github.davidmhewitt.torrential.json --user --force-clean --install
+flatpak-builder build org.techmore.mseries.Torrential.json --user --force-clean --install
 ```
