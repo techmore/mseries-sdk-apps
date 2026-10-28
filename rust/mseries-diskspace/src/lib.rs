@@ -8,4 +8,5 @@ pub mod model;
 pub mod ops;
 pub mod paint;
 pub mod scan;
+pub mod strings;
 pub mod sys;

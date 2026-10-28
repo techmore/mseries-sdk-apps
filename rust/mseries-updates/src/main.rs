@@ -9,9 +9,19 @@ fn main() -> gtk::glib::ExitCode {
     let app = gtk::Application::builder()
         .application_id("org.techmore.mseries.Updates")
         .build();
-    app.connect_startup(|_| {
+    app.connect_startup(|app| {
         granite::init();
         mseries_pantheon_kit::appearance::follow_color_scheme(None);
+        mseries_pantheon_kit::chrome::install_app_actions(
+            app,
+            mseries_pantheon_kit::chrome::About {
+                program_name: mseries_updates::strings::tr("Software Updates"),
+                icon: "org.techmore.mseries.Updates".into(),
+                comments: mseries_updates::strings::tr("Shows what the system updater has found and asks it to install, restore or switch channel."),
+                menu_label: mseries_updates::strings::tr("About Software Updates"),
+                website: None,
+            },
+        );
         if let Some(display) = gtk::gdk::Display::default() {
             mseries_pantheon_kit::install_css(&display);
         }

@@ -12,10 +12,10 @@ A generator can read the same JSON for the rule text and the app list.
 | `color_scheme` | Follow the Granite colour scheme. | `mseries_pantheon_kit::appearance::follow_color_scheme(None)` after `granite::init()`. |
 | `window_size` | Workspace windows: default 1100×760, minimum 720×520. Utility windows: default 560×680, minimum 360×480. | `appearance::size_window` with `WORKSPACE_*` / `UTILITY_*`. |
 | `accessible_labels` | Every icon-only control has an accessible label. | `mseries_pantheon_kit::set_accessible_label`. |
-| `about` | An About dialog. | `gtk::AboutDialog` / Granite, program name, icon = app id. |
-| `shortcuts` | Keyboard shortcuts for the main actions, including Ctrl+Q and Ctrl+? where it applies. | `set_accels_for_action`. |
-| `toasts` | Results and errors are reported with toasts. | `granite::Toast` / `adw::Toast`. |
-| `gettext` | User-visible strings go through an app-owned gettext domain. | `glib::dgettext`; see `mseries-messages/po`. |
+| `about` | An About dialog, reachable from the header's menu. | `chrome::install_app_actions` (registers `app.about`, `app.quit`) and `chrome::primary_menu`. |
+| `shortcuts` | Keyboard shortcuts for the main actions, including Ctrl+Q and Ctrl+? where it applies. | `chrome::install_app_actions` (Ctrl+Q), plus app-specific `set_accels_for_action` / key controllers. |
+| `toasts` | Results and errors are reported with toasts. | `chrome::toast_overlay` and `chrome::show_toast`. |
+| `gettext` | User-visible strings go through an app-owned gettext domain. | A `strings.rs` per app (`DOMAIN` = app id, `tr()` over `mseries_pantheon_kit::i18n`). **Coverage is partial:** the domain is bound and the window chrome (About, menus, toasts) is translated; converting every remaining literal in T3, Image Studio, Apple Dev, Disk Space and System Monitor is still owed. Messages and Updates route their strings already. |
 | (config) | Per-app settings are JSON under the user config dir. | `mseries_pantheon_kit::settings`. |
 
 ## Exceptions

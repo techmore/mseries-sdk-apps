@@ -76,9 +76,9 @@ fn main() -> gtk::glib::ExitCode {
             if let Some(app) = app_weak.upgrade() {
                 let dialog = gtk::AboutDialog::builder()
                     .application(&app)
-                    .program_name("Image Studio")
+                    .program_name(mseries_image_studio::strings::tr("Image Studio"))
                     .version(env!("CARGO_PKG_VERSION"))
-                    .comments("A native Pantheon image creation workspace for M-Series.")
+                    .comments(mseries_image_studio::strings::tr("A native Pantheon image creation workspace for M-Series."))
                     .logo_icon_name(APP_ID)
                     .license_type(gtk::License::Gpl30Only)
                     .build();

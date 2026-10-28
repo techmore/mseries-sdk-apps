@@ -68,10 +68,12 @@ fn follow_color_scheme() {
 
 fn show_about(app: &gtk::Application) {
     let dialog = gtk::AboutDialog::builder()
-        .program_name("Apple Dev")
+        .program_name(mseries_apple_dev::strings::tr("Apple Dev"))
         .logo_icon_name(APP_ID)
         .version(env!("CARGO_PKG_VERSION"))
-        .comments("Build, run and ship iPhone apps from Linux with omarchy-apple-dev: no Mac and no Xcode install.")
+        .comments(mseries_apple_dev::strings::tr(
+            "Build, run and ship iPhone apps from Linux with omarchy-apple-dev: no Mac and no Xcode install.",
+        ))
         .website("https://github.com/joshuaswarren/omarchy-apple-dev")
         .website_label("omarchy-apple-dev on GitHub")
         .license_type(gtk::License::Gpl30Only)

@@ -5,6 +5,7 @@ use crate::look::{category, date_text, group_digits, items_text, percent_text, s
 use crate::model::{Kind, Mode, Model, NodeId, ScanRun, SortKey, Tree};
 use crate::paint::{self, Hit, Hits};
 use crate::scan::{self, Progress, ScanMsg};
+use crate::strings::tr;
 use crate::{ops, sys};
 use granite::prelude::{PlaceholderExt, ToastExt};
 use gtk::{gdk, gio, glib, pango, prelude::*};
@@ -110,6 +111,12 @@ impl App {
         set_margins_text_units(&menu_box, 0.55, 0.65, 0.55, 0.65);
         menu_box.append(&cross);
         menu_box.append(&cross_note);
+        menu_box.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+        for (label, action) in [(tr("About Disk Space"), "app.about"), (tr("Quit"), "app.quit")] {
+            let item = gtk::Button::builder().label(label).action_name(action).build();
+            item.add_css_class("flat");
+            menu_box.append(&item);
+        }
         let popover = gtk::Popover::new();
         popover.set_child(Some(&menu_box));
         let menu = gtk::MenuButton::builder().icon_name("open-menu-symbolic").popover(&popover).build();

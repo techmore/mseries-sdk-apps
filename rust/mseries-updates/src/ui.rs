@@ -127,7 +127,9 @@ impl UpdatesWindow {
             mseries_pantheon_kit::appearance::UTILITY_DEFAULT,
             mseries_pantheon_kit::appearance::UTILITY_MIN,
         );
-        window.set_titlebar(Some(&gtk::HeaderBar::new()));
+        let header = gtk::HeaderBar::new();
+        header.pack_end(&mseries_pantheon_kit::chrome::primary_menu(&tr("About Software Updates"), &tr("Quit")));
+        window.set_titlebar(Some(&header));
 
         let icon = gtk::Image::builder()
             .pixel_size(64)

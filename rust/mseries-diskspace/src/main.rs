@@ -4,6 +4,7 @@
 //!   mseries-diskspace --scan FOLDER   no window: print the biggest items, for checking against `du`
 
 use gtk::prelude::*;
+use mseries_diskspace::strings::tr;
 use mseries_diskspace::{app, scan};
 use std::path::PathBuf;
 
@@ -20,9 +21,19 @@ fn main() -> gtk::glib::ExitCode {
         .unwrap_or_else(|| PathBuf::from("/"));
 
     let application = gtk::Application::builder().application_id("org.techmore.mseries.DiskSpace").build();
-    application.connect_startup(|_| {
+    application.connect_startup(|application| {
         granite::init();
         mseries_pantheon_kit::appearance::follow_color_scheme(None);
+        mseries_pantheon_kit::chrome::install_app_actions(
+            application,
+            mseries_pantheon_kit::chrome::About {
+                program_name: tr("Disk Space"),
+                icon: "org.techmore.mseries.DiskSpace".into(),
+                comments: tr("See what is using space in a folder or on a disk, and clean it up."),
+                menu_label: tr("About Disk Space"),
+                website: None,
+            },
+        );
         if let Some(display) = gtk::gdk::Display::default() {
             mseries_pantheon_kit::install_css(&display);
         }

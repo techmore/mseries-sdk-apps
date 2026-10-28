@@ -65,6 +65,7 @@ pub mod model_notes;
 
 pub mod logs;
 
+pub mod strings;
 pub mod style;
 
 /// Embed diagnostics with the worker so development and installed builds agree.

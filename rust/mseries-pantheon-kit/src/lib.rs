@@ -9,8 +9,10 @@ pub use gtk;
 
 pub mod appearance;
 mod blueferry;
+pub mod chrome;
 mod context_menu;
 mod dock_badge;
+pub mod i18n;
 mod images;
 mod layout;
 mod messages;
