@@ -10,6 +10,7 @@ Terminal:
   ./polybagger_print_manager.py --status                       all printer targets + selected CUPS state
   ./polybagger_print_manager.py --send FILE.zpl [--qty N] [--yes]  load a label for N bags (^PQ) and verify, exit 0/1/2
   ./polybagger_print_manager.py --send FILE.zpl --printer QUEUE_OR_SERIAL
+  ./polybagger_print_manager.py --diagnose                     full report: USB bus, kernel log, CUPS queues, settings
   ./polybagger_print_manager.py --watch                        print a line each time the printer is plugged/unplugged
   ./polybagger_print_manager.py --sync [--pull]                refresh the offline label store (works with no network)
   ./polybagger_print_manager.py --cancel                       cancel your stuck jobs
@@ -526,7 +527,73 @@ def describe(st):
     return "\n".join(lines + (["READY"] if st["ready"] else ["NOT READY"]))
 
 
+def all_usb_devices():
+    """Every device on the USB bus (not only printers), so a missing Zebra is obvious."""
+    out = []
+    for d in sorted(Path("/sys/bus/usb/devices").glob("*")):
+        read = lambda n: (d / n).read_text().strip() if (d / n).exists() else ""
+        try:
+            vid = read("idVendor")
+            if not vid or read("bDeviceClass") == "09":  # skip hubs
+                continue
+            out.append(f"{d.name}  {vid}:{read('idProduct')}  {read('manufacturer')} {read('product')}".rstrip()
+                       + (f"  serial {read('serial')}" if read("serial") else ""))
+        except OSError:
+            pass
+    return out
+
+
+def diagnostics_report():
+    """Plain-text snapshot of everything between this computer and the printer."""
+    st = status()
+    lines = [f"PolyBagger Print Manager diagnostics · {time.strftime('%Y-%m-%d %H:%M:%S')}",
+             f"App: {Path(__file__).resolve()}", "",
+             "== Verdict ==", describe(st), "",
+             "== USB devices (hubs hidden) =="]
+    usb = all_usb_devices()
+    lines += usb or ["(none) Nothing is plugged in, or the printer is still booting (~20 s after power-on)."]
+    printers = st["usb"]
+    lines.append(f"Printers among them: {', '.join(d['serial'] or d['bus'] for d in printers) or 'none'}")
+    lines += ["", "== Kernel USB log (latest) =="]
+    rc, out = run(["journalctl", "-k", "-n", "600", "--no-pager", "-o", "short"])
+    if rc == 0:
+        keep = [l for l in out.splitlines()
+                if re.search(r"usb|usblp|xhci", l, re.I) and not re.search(r"apparmor|audit", l, re.I)]
+        lines += keep[-14:] or ["(no USB messages)"]
+    else:
+        lines.append(f"(cannot read kernel log: {out.splitlines()[-1] if out else rc})")
+    lines += ["", "== Printer device nodes (the app prints through CUPS, so it does not need these) =="]
+    nodes = sorted(Path("/dev/usb").glob("lp*")) if Path("/dev/usb").is_dir() else []
+    for n in nodes:
+        try:
+            import grp, pwd, stat as stat_mod
+            info = n.stat()
+            lines.append(f"{n}  {stat_mod.filemode(info.st_mode)}  {pwd.getpwuid(info.st_uid).pw_name}:{grp.getgrgid(info.st_gid).gr_name}")
+        except (OSError, KeyError):
+            lines.append(str(n))
+    if not nodes:
+        lines.append("(none) No kernel printer node: either no printer, or CUPS has it claimed right now.")
+    lines += ["", "== CUPS ==", "Scheduler: " + ("running" if st.get("cups_running", True) else "NOT running (sudo systemctl start cups)")]
+    for t in st["targets"]:
+        if not t.get("queue"):
+            lines.append(f"(no queue) {t['display']}")
+            continue
+        state, reasons = queue_state(t["queue"])
+        mark = "▶ " if t["id"] == st["selected_target"] else "  "
+        lines.append(f"{mark}{t['queue']}: {state}" + (f" ({', '.join(reasons)})" if reasons else "")
+                     + f" · {'on USB' if t['connected'] else 'not on USB'} · {urllib.parse.unquote(t['uri'])}")
+    _, jobs = run(["lpstat", "-W", "not-completed", "-o"])
+    lines.append("Jobs waiting: " + (jobs.replace("\n", "; ") if jobs else "none"))
+    settings = load_settings()
+    lines += ["", "== App settings ==", f"Saved printer: {settings.get('printer_target') or 'none'}",
+              f"Using: {st['selected_target'] or 'none'}"
+              + (" (saved one is not on USB, switched)" if st.get("switched_from") else "")]
+    return "\n".join(lines)
+
+
 def cli(args):
+    if args.diagnose:
+        print(diagnostics_report()); return 0
     if args.cancel:
         st = status(args.printer); done, failed = cancel_jobs(st["queue"]) if st["queue"] else ([], [])
         print(f"cancelled: {' '.join(done) or 'none'}" + (f"; failed: {' '.join(failed)}" if failed else "")); return 1 if failed else 0
@@ -673,6 +740,7 @@ def gui():
             hb.pack_start(icon_button("view-refresh-symbolic", "Update the offline label store", self.on_sync))
             helpb = Gtk.MenuButton(icon_name="help-contents-symbolic", tooltip_text="How this machine prints")
             helpb.set_popover(self.build_help()); hb.pack_end(helpb)
+            hb.pack_end(icon_button("utilities-system-monitor-symbolic", "Printer diagnostics", self.on_diagnostics))
             self.search.set_key_capture_widget(self)
 
             paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL, position=380,
@@ -997,6 +1065,34 @@ def gui():
 
         def say(self, msg):
             b = self.log.get_buffer(); b.insert(b.get_end_iter(), time.strftime("%H:%M:%S ") + msg + "\n")
+
+        def on_diagnostics(self, *_):
+            win = Gtk.Window(title="Printer Diagnostics", transient_for=self, modal=False,
+                             default_width=900, default_height=640)
+            hb = Gtk.HeaderBar(); win.set_titlebar(hb)
+            view = Gtk.TextView(editable=False, monospace=True, wrap_mode=Gtk.WrapMode.WORD_CHAR,
+                                top_margin=12, bottom_margin=12, left_margin=12, right_margin=12)
+            view.get_buffer().set_text("Collecting…")
+            win.set_child(Gtk.ScrolledWindow(child=view, vexpand=True))
+
+            def load(*_):
+                view.get_buffer().set_text("Collecting…")
+                def work():
+                    try:
+                        text = diagnostics_report()
+                    except Exception as e:  # never let a diagnostics bug take the app down
+                        text = f"Diagnostics failed: {e!r}"
+                    GLib.idle_add(view.get_buffer().set_text, text)
+                threading.Thread(target=work, daemon=True).start()
+
+            def copy(*_):
+                b = view.get_buffer()
+                self.get_clipboard().set(b.get_text(b.get_start_iter(), b.get_end_iter(), False))
+                self.notify("Diagnostics copied")
+
+            hb.pack_start(icon_button("view-refresh-symbolic", "Run the checks again", load))
+            hb.pack_end(icon_button("edit-copy-symbolic", "Copy the report", copy))
+            load(); win.present()
 
         def notify(self, msg):
             self.say(msg); self.toast.set_title(msg); self.toast.send_notification()
@@ -1375,6 +1471,7 @@ if __name__ == "__main__":
     ap.add_argument("--watch", action="store_true"); ap.add_argument("--setup", action="store_true")
     ap.add_argument("--sync", action="store_true", help="refresh the offline label store"); ap.add_argument("--pull", action="store_true", help="with --sync: git pull the thril repo first")
     ap.add_argument("--printer", help="select a CUPS queue, USB serial, or USB identity")
+    ap.add_argument("--diagnose", action="store_true", help="print a full printer diagnostics report")
     ap.add_argument("--json", action="store_true"); ap.add_argument("--yes", action="store_true", help="skip the 'did it print?' prompt")
     a = ap.parse_args()
-    sys.exit(cli(a) if (a.status or a.send or a.watch or a.setup or a.sync or a.cancel) else gui())
+    sys.exit(cli(a) if (a.diagnose or a.status or a.send or a.watch or a.setup or a.sync or a.cancel) else gui())
