@@ -15,7 +15,7 @@ fn main() -> gtk::glib::ExitCode {
     let doc = msdk::text::parse(include_str!("../../sdk/t3.msdk"))
         .unwrap_or_else(|e| panic!("embedded t3.msdk does not parse: {e}"))
         .doc;
-    let app = gtk::Application::builder().application_id("io.github.techmore.ClaudePantheonSdk").build();
+    let app = gtk::Application::builder().application_id("org.techmore.mseries.T3Sdk").build();
     let keep = RefCell::new(None);
     app.connect_activate(move |app| {
         let services = Rc::new(T3Services::new());

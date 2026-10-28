@@ -5,7 +5,7 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$here/../.." && pwd)"
 out="${MSERIES_MESSAGES_OUTPUT_DIR:-$repo_root/build/mseries-messages-rs-deb}"
-id=io.elementary.mseries.MessagesRust
+id=org.techmore.mseries.MessagesPreview
 
 for tool in cargo dpkg-deb; do
   command -v "$tool" >/dev/null || { echo "Missing build tool: $tool" >&2; exit 2; }
@@ -21,12 +21,12 @@ trap 'rm -rf "$stage"' EXIT
 (cd "$repo_root/rust" && cargo build --release --locked -p mseries-messages)
 target_dir="$(cd "$repo_root/rust" && cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')"
 install -Dm755 "$target_dir/release/mseries-conversations" "$stage/usr/bin/mseries-conversations"
-install -Dm644 "$here/data/io.elementary.mseries.Conversations.desktop" "$stage/usr/share/applications/io.elementary.mseries.Conversations.desktop"
+install -Dm644 "$here/data/org.techmore.mseries.Messages.desktop" "$stage/usr/share/applications/org.techmore.mseries.Messages.desktop"
 install -Dm755 "$target_dir/release/mseries-messages" "$stage/usr/bin/mseries-messages-rs"
 install -Dm644 "$here/data/$id.desktop" "$stage/usr/share/applications/$id.desktop"
 install -Dm644 "$here/data/$id.metainfo.xml" "$stage/usr/share/metainfo/$id.metainfo.xml"
-install -Dm644 "$repo_root/mseries/phone-setup/io.elementary.mseries.Messages.svg" \
-  "$stage/usr/share/icons/hicolor/scalable/apps/io.elementary.mseries.Messages.svg"
+install -Dm644 "$here/data/org.techmore.mseries.Messages.svg" \
+  "$stage/usr/share/icons/hicolor/scalable/apps/org.techmore.mseries.Messages.svg"
 
 find "$stage" -type d -exec chmod 0755 {} +
 find "$stage/usr/share" -type f -exec chmod 0644 {} +

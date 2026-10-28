@@ -118,7 +118,7 @@ public class ClaudePantheon.Feed : Object {
 }
 
 public class ClaudePantheon.Indicator : Wingpanel.Indicator {
-    private const string APP_ID = "io.github.techmore.ClaudePantheonRs";
+    private const string APP_ID = "org.techmore.mseries.T3";
     private Gtk.Box? display_widget = null;
     private Gtk.Label badge;
     private Gtk.Image icon;

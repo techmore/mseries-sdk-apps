@@ -455,7 +455,7 @@ impl App {
         // ---- other pages ---------------------------------------------------------------------
         let empty = granite::Placeholder::new("No Thread Open");
         empty.set_description("Pick a thread in the sidebar, or start a new one with Ctrl+N.");
-        empty.set_icon(&gio::ThemedIcon::new("io.github.techmore.ClaudePantheonRs"));
+        empty.set_icon(&gio::ThemedIcon::new("org.techmore.mseries.T3"));
         let empty_new = empty.append_button(
             &gio::ThemedIcon::new("list-add-symbolic"),
             "New Thread",
@@ -552,7 +552,7 @@ impl App {
             .title("T3")
             .default_width(1180)
             .default_height(760)
-            .icon_name("io.github.techmore.ClaudePantheonRs")
+            .icon_name("org.techmore.mseries.T3")
             .child(&paned)
             .build();
         winstate::WindowState::load().apply(&window, &paned);
@@ -1187,7 +1187,7 @@ impl App {
             .transient_for(&self.window)
             .modal(true)
             .program_name("T3")
-            .logo_icon_name("io.github.techmore.ClaudePantheonRs")
+            .logo_icon_name("org.techmore.mseries.T3")
             .version(env!("CARGO_PKG_VERSION"))
             .comments(format!(
                 "A native elementary OS client of the T3 Code server.\n\nServer: {server}\nServer version: {version} {environment}\nProviders ready: {}\nOrchestration protocol {} (contracts from t3code {})",

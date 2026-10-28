@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 fn main() -> gtk::glib::ExitCode {
     let application = gtk::Application::builder()
-        .application_id("io.elementary.mseries.MessagesRust")
+        .application_id("org.techmore.mseries.MessagesPreview")
         .build();
     application.connect_startup(|_| {
         granite::init();

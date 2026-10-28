@@ -3,7 +3,7 @@ Name=T3 Monitor (SDK)
 GenericName=Token and repository monitoring
 Comment=Read-only T3 usage and RepoBar GitHub overview through the Pantheon SDK
 Exec=claude-pantheon-sdk
-Icon=io.github.techmore.ClaudePantheonRs
+Icon=org.techmore.mseries.T3Sdk
 Terminal=false
 Type=Application
 Categories=Development;GTK;
@@ -11,4 +11,4 @@ Keywords=T3;usage;tokens;GitHub;repositories;
 StartupNotify=true
 # T3 itself is the one launcher; this SDK build stays runnable for the SDK gates but out of the app grid.
 NoDisplay=true
-StartupWMClass=io.github.techmore.ClaudePantheonSdk
+StartupWMClass=org.techmore.mseries.T3Sdk

@@ -2,7 +2,7 @@ use super::*;
 use msdk::{intents, text, vocab};
 
 const DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../claude-pantheon-rs/sdk");
-const APP: &str = "io.github.techmore.ClaudePantheonRs";
+const APP: &str = "org.techmore.mseries.T3Sdk";
 const AGENT: &str = "agent:test";
 
 fn t3_manifest() -> Value {

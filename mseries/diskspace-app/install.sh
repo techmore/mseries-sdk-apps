@@ -31,4 +31,5 @@ fi
 
 as_root install -Dm755 "$target/release/mseries-diskspace" "$dest$prefix/bin/mseries-diskspace"
 as_root install -Dm644 "$repo/rust/mseries-diskspace/data/org.techmore.mseries.DiskSpace.desktop" "$dest$launcher"
+as_root install -Dm644 "$repo/rust/mseries-diskspace/data/org.techmore.mseries.DiskSpace.svg" "$dest$prefix/share/icons/hicolor/scalable/apps/org.techmore.mseries.DiskSpace.svg"
 echo "Installed Disk Space to $dest$prefix/bin/mseries-diskspace. Launch it from Applications, or run: mseries-diskspace [FOLDER]"

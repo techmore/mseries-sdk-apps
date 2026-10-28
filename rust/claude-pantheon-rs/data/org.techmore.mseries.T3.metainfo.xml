@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.techmore.ClaudePantheonRs</id>
+  <id>org.techmore.mseries.T3</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
   <name>T3</name>
@@ -12,12 +12,12 @@
   <developer id="io.github.techmore">
     <name>techmore</name>
   </developer>
-  <launchable type="desktop-id">io.github.techmore.ClaudePantheonRs.desktop</launchable>
+  <launchable type="desktop-id">org.techmore.mseries.T3.desktop</launchable>
   <url type="homepage">https://github.com/techmore/ElementaryOS_MSeries</url>
   <url type="bugtracker">https://github.com/techmore/ElementaryOS_MSeries/issues</url>
   <provides>
     <binary>claude-pantheon-rs</binary>
-    <dbus type="session">io.github.techmore.ClaudePantheonRs</dbus>
+    <dbus type="session">org.techmore.mseries.T3</dbus>
   </provides>
   <content_rating type="oars-1.1"/>
   <custom>

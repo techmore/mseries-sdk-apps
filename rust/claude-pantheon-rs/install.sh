@@ -27,7 +27,7 @@ while (($#)); do
     esac
 done
 
-id=io.github.techmore.ClaudePantheonRs
+id=org.techmore.mseries.T3
 bindir="$prefix/bin"
 datadir="$prefix/share"
 apps="$datadir/applications"
@@ -39,8 +39,8 @@ fi
 
 if ((uninstall)); then
     "${sudo[@]}" rm -f "$bindir/claude-pantheon-rs" "$bindir/claude-pantheon-sdk" "$apps/$id.desktop" \
-        "$apps/io.github.techmore.ClaudePantheonSdk.desktop" "$datadir/dbus-1/services/$id.service" \
-        "$datadir/metainfo/$id.metainfo.xml" "$icons/scalable/apps/$id.svg" "$icons/symbolic/apps/$id-symbolic.svg"
+        "$apps/org.techmore.mseries.T3Sdk.desktop" "$datadir/dbus-1/services/$id.service" \
+        "$datadir/metainfo/$id.metainfo.xml" "$icons/scalable/apps/$id.svg" "$icons/scalable/apps/${id}Sdk.svg" "$icons/symbolic/apps/$id-symbolic.svg"
     for size in 16 24 32 48 64 128; do
         "${sudo[@]}" rm -f "$icons/${size}x${size}/apps/$id.png"
     done
@@ -73,7 +73,7 @@ done
 "${sudo[@]}" install -Dm644 "$here/../../.agents/skills/TSTACK-LICENSE.txt" "$datadir/mseries/tstack/TSTACK-LICENSE.txt"
 "${sudo[@]}" install -Dm755 "$binary" "$bindir/claude-pantheon-rs"
 "${sudo[@]}" install -Dm755 "$target_dir/release/claude-pantheon-sdk" "$bindir/claude-pantheon-sdk"
-"${sudo[@]}" install -Dm644 "$here/data/io.github.techmore.ClaudePantheonSdk.desktop" "$apps/io.github.techmore.ClaudePantheonSdk.desktop"
+"${sudo[@]}" install -Dm644 "$here/data/org.techmore.mseries.T3Sdk.desktop" "$apps/org.techmore.mseries.T3Sdk.desktop"
 # Shared read-only dependency: also used by the optional RepoBar indicator.
 "${sudo[@]}" install -Dm755 "$here/../../mseries/fleet-shepherd/bin/mseries-fleet" "$bindir/mseries-fleet"
 "${sudo[@]}" install -Dm755 "$here/../../mseries/fleet-shepherd/bin/fleet-snapshot" "$prefix/lib/mseries/fleet/fleet-snapshot"
@@ -84,6 +84,7 @@ done
 "${sudo[@]}" install -d "$datadir/dbus-1/services"
 sed "s|@BINDIR@|$bindir|" "$here/data/$id.service" | "${sudo[@]}" tee "$datadir/dbus-1/services/$id.service" >/dev/null
 "${sudo[@]}" install -Dm644 "$here/data/$id.svg" "$icons/scalable/apps/$id.svg"
+"${sudo[@]}" install -Dm644 "$here/data/${id}Sdk.svg" "$icons/scalable/apps/${id}Sdk.svg"
 "${sudo[@]}" install -Dm644 "$here/data/$id-symbolic.svg" "$icons/symbolic/apps/$id-symbolic.svg"
 if command -v rsvg-convert >/dev/null; then
     tmp=$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/claude-pantheon-icons.XXXXXX")

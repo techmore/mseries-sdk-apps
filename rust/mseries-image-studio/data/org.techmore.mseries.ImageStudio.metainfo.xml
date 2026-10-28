@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>org.elementary.mseries.ImageStudio</id>
+  <id>org.techmore.mseries.ImageStudio</id>
   <name>Image Studio</name>
   <summary>Native image creation for M-Series</summary>
   <metadata_license>CC0-1.0</metadata_license>
@@ -11,7 +11,7 @@
   <description>
     <p>Compose and save image prompts, compare guided workflows, and keep model, LoRA, seed, and tag details with generated images.</p>
   </description>
-  <launchable type="desktop-id">org.elementary.mseries.ImageStudio.desktop</launchable>
+  <launchable type="desktop-id">org.techmore.mseries.ImageStudio.desktop</launchable>
   <url type="homepage">https://github.com/techmore/ElementaryOS_MSeries</url>
   <content_rating type="oars-1.1"/>
   <provides>

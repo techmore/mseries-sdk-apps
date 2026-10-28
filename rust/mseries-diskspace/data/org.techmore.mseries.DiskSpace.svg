@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+ <defs>
+  <linearGradient id="case" x2="0" y2="1"><stop stop-color="#b9c4d4"/><stop offset="1" stop-color="#6b7a90"/></linearGradient>
+  <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dy="3" stdDeviation="3" flood-opacity=".25"/></filter>
+ </defs>
+ <rect x="12" y="16" width="104" height="104" rx="20" fill="#000" opacity=".2"/>
+ <rect x="12" y="11" width="104" height="104" rx="20" fill="url(#case)" stroke="#4a566a"/>
+ <rect x="13.5" y="12.5" width="101" height="101" rx="18.5" fill="none" stroke="#fff" opacity=".35"/>
+  <g filter="url(#shadow)">
+   <circle cx="64" cy="62" r="34" fill="#fff"/>
+   <path d="M64 62V28a34 34 0 0 1 29.4 17Z" fill="#e8745a"/>
+   <path d="M64 62 93.4 45A34 34 0 0 1 98 62Z" fill="#f2b85b"/>
+   <circle cx="64" cy="62" r="34" fill="none" stroke="#4a566a" stroke-width="2"/>
+   <circle cx="64" cy="62" r="10" fill="#6b7a90"/>
+  </g>
+</svg>

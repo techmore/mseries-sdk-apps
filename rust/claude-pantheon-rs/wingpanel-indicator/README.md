@@ -9,7 +9,7 @@ indicator (only a phone widget), so this is the only one.
   resets in 1 h 24 min (22:00)"), every window as a gauge (green under 60 %, amber under 90 %, red
   above), the rotation decision for the next unattended task, then the threads: pending prompts
   ("needs you") and running threads. Clicking a thread opens it in the app through
-  `gapplication action io.github.techmore.ClaudePantheonRs open-thread '<id>'`, where the prompt is
+  `gapplication action org.techmore.mseries.T3 open-thread '<id>'`, where the prompt is
   answered. A bottom bar shows the server and the feed's freshness, and an **Open Claude** button.
 
 ![indicator](../docs/screenshot-indicator.png)

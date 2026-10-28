@@ -22,6 +22,7 @@ target_dir="$(cd "$repo_root/rust" && cargo metadata --format-version 1 --no-dep
 install -Dm755 "$target_dir/release/mseries-system-monitor" "$stage/usr/bin/mseries-system-monitor"
 install -Dm644 "$here/data/$id.desktop" "$stage/usr/share/applications/$id.desktop"
 install -Dm644 "$here/data/$id.metainfo.xml" "$stage/usr/share/metainfo/$id.metainfo.xml"
+install -Dm644 "$here/data/$id.svg" "$stage/usr/share/icons/hicolor/scalable/apps/$id.svg"
 
 find "$stage" -type d -exec chmod 0755 {} +
 find "$stage/usr/share" -type f -exec chmod 0644 {} +

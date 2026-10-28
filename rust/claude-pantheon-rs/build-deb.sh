@@ -11,7 +11,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$here/../.." && pwd)"
 out="${CLAUDE_PANTHEON_OUTPUT_DIR:-$repo_root/build/claude-pantheon-rs-deb}"
 stage="$out/package"
-id=io.github.techmore.ClaudePantheonRs
+id=org.techmore.mseries.T3
 
 for tool in cargo dpkg-deb rsvg-convert; do
   command -v "$tool" >/dev/null || { echo "Missing build tool: $tool" >&2; exit 2; }
@@ -46,12 +46,13 @@ install -Dm755 "$repo_root/mseries/fleet-shepherd/bin/mseries-fleet" "$stage/usr
 install -Dm755 "$repo_root/mseries/fleet-shepherd/bin/fleet-snapshot" "$stage/usr/lib/mseries/fleet/fleet-snapshot"
 install -Dm644 "$repo_root/mseries/fleet-shepherd/LICENSE" "$stage/usr/share/doc/claude-pantheon-rs/fleet-shepherd-MIT.txt"
 install -Dm755 "$repo_root/mseries/repobar.py" "$stage/usr/bin/mseries-repobar"
-install -Dm644 "$here/data/io.github.techmore.ClaudePantheonSdk.desktop" "$stage/usr/share/applications/io.github.techmore.ClaudePantheonSdk.desktop"
+install -Dm644 "$here/data/org.techmore.mseries.T3Sdk.desktop" "$stage/usr/share/applications/org.techmore.mseries.T3Sdk.desktop"
 install -Dm644 "$here/data/$id.desktop" "$stage/usr/share/applications/$id.desktop"
 install -Dm644 "$here/data/$id.metainfo.xml" "$stage/usr/share/metainfo/$id.metainfo.xml"
 install -d "$stage/usr/share/dbus-1/services"
 sed 's|@BINDIR@|/usr/bin|' "$here/data/$id.service" > "$stage/usr/share/dbus-1/services/$id.service"
 install -Dm644 "$here/data/$id.svg" "$stage/usr/share/icons/hicolor/scalable/apps/$id.svg"
+install -Dm644 "$here/data/${id}Sdk.svg" "$stage/usr/share/icons/hicolor/scalable/apps/${id}Sdk.svg"
 install -Dm644 "$here/data/$id-symbolic.svg" "$stage/usr/share/icons/hicolor/symbolic/apps/$id-symbolic.svg"
 for size in 16 24 32 48 64 128; do
   install -d "$stage/usr/share/icons/hicolor/${size}x${size}/apps"

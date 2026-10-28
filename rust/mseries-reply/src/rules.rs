@@ -390,9 +390,10 @@ pub const DEFAULT_RULES_FILE: &str = r#"{
   "apps": {
     "allow": [
       "io.elementary.mseries.Messages",
-      "io.elementary.mseries.MessagesRust",
+      "org.techmore.mseries.Messages",
+      "org.techmore.mseries.MessagesPreview",
       "io.github.sdolbec.SignalPantheonClient",
-      "io.github.techmore.ClaudePantheonRs",
+      "org.techmore.mseries.T3",
       "io.github.qwersyk.Newelle",
       "brave-teams.microsoft.com__v2_-Default"
     ],
@@ -429,10 +430,40 @@ pub fn ensure_default_file(path: &Path) -> Result<bool, String> {
     }
 }
 
+/// App ids that were renamed to `org.techmore.mseries.*`: a rule or a notification that names the old id still
+/// means the same app, so existing rules files keep working.
+const RENAMED_APP_IDS: &[(&str, &str)] = &[
+    (
+        "io.github.techmore.ClaudePantheonRs",
+        "org.techmore.mseries.T3",
+    ),
+    (
+        "io.github.techmore.ClaudePantheonSdk",
+        "org.techmore.mseries.T3Sdk",
+    ),
+    (
+        "io.elementary.mseries.Conversations",
+        "org.techmore.mseries.Messages",
+    ),
+    (
+        "io.elementary.mseries.MessagesRust",
+        "org.techmore.mseries.MessagesPreview",
+    ),
+];
+
+fn canonical_app_id(id: &str) -> String {
+    let id = id.trim();
+    RENAMED_APP_IDS
+        .iter()
+        .find(|(old, _)| old.eq_ignore_ascii_case(id))
+        .map_or(id, |(_, new)| new)
+        .to_ascii_lowercase()
+}
+
 fn matches_rule(rule: &Rule, query: &Query<'_>) -> bool {
     let same = |a: &str, b: &str| a.trim().eq_ignore_ascii_case(b.trim());
     match rule.scope {
-        RuleScope::App => same(&rule.value, query.app_id),
+        RuleScope::App => canonical_app_id(&rule.value) == canonical_app_id(query.app_id),
         RuleScope::FieldKind => same(&rule.value, query.field.name()),
         RuleScope::Contact => query.contact.is_some_and(|contact| {
             if rule.contains {
@@ -731,6 +762,24 @@ mod tests {
         );
         assert!(rules.declares_chat_app("io.github.qwersyk.Newelle"));
         assert!(!rules.declares_chat_app("org.mozilla.firefox"));
+    }
+
+    #[test]
+    fn rules_naming_a_renamed_app_still_match_it() {
+        let old = r#"{"version":1,"enabled":true,"policy":"allow-list",
+            "apps":{"allow":["io.github.techmore.ClaudePantheonRs"],"block":["io.elementary.mseries.MessagesRust"]},
+            "contacts":{"block":[]}}"#;
+        let rules = Rules::load(&write_rules("renamed", old, 0o600));
+        assert!(matches!(
+            rules.decide(&chat("org.techmore.mseries.T3", None)),
+            Decision::Allow(_)
+        ));
+        assert!(matches!(
+            rules.decide(&chat("io.github.techmore.ClaudePantheonRs", None)),
+            Decision::Allow(_)
+        ));
+        assert!(!rules.declares_chat_app("org.techmore.mseries.MessagesPreview"));
+        assert!(rules.declares_chat_app("org.techmore.mseries.T3"));
     }
 
     #[test]
