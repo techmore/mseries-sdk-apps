@@ -1,11 +1,13 @@
-//! Every user-facing string goes through these two functions so it can be extracted with
-//! `xgettext -k_ -kn_:1,2` once the app gets a gettext domain. It has none yet: nothing is translated.
+//! App-owned gettext domain, named after the application id. Every user-facing string goes through
+//! these two functions; a missing catalog falls back to the source text.
+
+pub const DOMAIN: &str = "org.techmore.mseries.Updates";
 
 pub fn tr(text: &str) -> String {
-    text.to_string()
+    mseries_pantheon_kit::i18n::tr(DOMAIN, text)
 }
 
-/// Plural-aware form; `n` selects the singular only for exactly one (English rules until gettext is wired).
+/// Plural-aware form; `{n}` is replaced by the count.
 pub fn trn(singular: &str, plural: &str, n: usize) -> String {
-    (if n == 1 { singular } else { plural }).replace("{n}", &n.to_string())
+    mseries_pantheon_kit::i18n::trn(DOMAIN, singular, plural, n)
 }

@@ -31,9 +31,21 @@ fn main() -> gtk::glib::ExitCode {
     let app = gtk::Application::builder()
         .application_id("org.techmore.mseries.Messages")
         .build();
-    app.connect_startup(|_| {
+    app.connect_startup(|app| {
         granite::init();
         mseries_pantheon_kit::appearance::follow_color_scheme(None);
+        mseries_pantheon_kit::chrome::install_app_actions(
+            app,
+            mseries_pantheon_kit::chrome::About {
+                program_name: mseries_messages::strings::tr("Messages"),
+                icon: "org.techmore.mseries.Messages".into(),
+                comments: mseries_messages::strings::tr(
+                    "Messages and Signal conversations from your iPhone, through BlueFerry.",
+                ),
+                menu_label: mseries_messages::strings::tr("About Messages"),
+                website: None,
+            },
+        );
         if let Some(display) = gtk::gdk::Display::default() {
             mseries_pantheon_kit::install_css(&display);
         }

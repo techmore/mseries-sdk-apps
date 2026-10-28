@@ -630,6 +630,7 @@ pub struct App {
     ai_request_context: RefCell<Option<(String, String)>>,
     ai_draft: RefCell<Option<(String, String, String)>>,
     copy_addresses_button: gtk::Button,
+    toast: granite::Toast,
     star_button: gtk::ToggleButton,
     syncing_star: Cell<bool>,
     state: RefCell<State>,
@@ -934,6 +935,12 @@ impl App {
         menu_actions.append(&ai_preferences_button);
         menu_actions.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         menu_actions.append(&shortcuts_button);
+        let about_button = gtk::Button::builder()
+            .label(tr("About Messages"))
+            .action_name("app.about")
+            .build();
+        about_button.add_css_class("flat");
+        menu_actions.append(&about_button);
         let menu = gtk::Popover::new();
         menu.set_child(Some(&menu_actions));
         let menu_button = gtk::MenuButton::builder()
@@ -1240,7 +1247,8 @@ impl App {
         let no_titlebar = gtk::Grid::new();
         no_titlebar.set_visible(false);
         window.set_titlebar(Some(&no_titlebar));
-        window.set_child(Some(&root));
+        let (overlay, toast) = mseries_pantheon_kit::chrome::toast_overlay(&root);
+        window.set_child(Some(&overlay));
         // When compact navigation shows only one pane, that pane's header carries
         // all the window controls.
         {
@@ -1339,6 +1347,7 @@ impl App {
             ai_request_context: RefCell::new(None),
             ai_draft: RefCell::new(None),
             copy_addresses_button,
+            toast,
             star_button,
             syncing_star: Cell::new(false),
             state: RefCell::new(State::default()),
@@ -1528,6 +1537,14 @@ impl App {
                 return;
             }
             button.clipboard().set_text(&recipients.join(", "));
+            mseries_pantheon_kit::chrome::show_toast(
+                &app.toast,
+                &if recipients.len() == 1 {
+                    tr("Recipient address copied")
+                } else {
+                    tr("Recipient addresses copied")
+                },
+            );
             app.feedback.set_text(if recipients.len() == 1 {
                 "Recipient address copied."
             } else {

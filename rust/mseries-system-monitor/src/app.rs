@@ -1,3 +1,4 @@
+use crate::strings::tr;
 use gtk::{gio, glib, pango, prelude::*};
 use mseries_pantheon_kit::{
     LayoutClass, poll_system_metrics, set_accessible_label, set_box_spacing_text_units,
@@ -34,6 +35,10 @@ pub fn build(application: &gtk::Application) {
     switcher.set_stack(Some(&stack));
     let header = gtk::HeaderBar::new();
     header.set_title_widget(Some(&switcher));
+    header.pack_end(&mseries_pantheon_kit::chrome::primary_menu(
+        &tr("About System Monitor"),
+        &tr("Quit"),
+    ));
     window.set_titlebar(Some(&header));
 
     let overview = gtk::Box::new(gtk::Orientation::Vertical, 16);
@@ -112,7 +117,8 @@ pub fn build(application: &gtk::Application) {
     btop_page.append(&btop_status);
     btop_page.append(&terminal_scroll);
     stack.add_titled(&btop_page, Some("btop"), "btop");
-    window.set_child(Some(&stack));
+    let (overlay, toast) = mseries_pantheon_kit::chrome::toast_overlay(&stack);
+    window.set_child(Some(&overlay));
 
     let poller = poll_system_metrics(Duration::from_secs(2), move |result| match result {
         Ok(sample) => {
@@ -159,7 +165,10 @@ pub fn build(application: &gtk::Application) {
     live.connect_toggled(move |button| poller_for_toggle.set_enabled(button.is_active()));
     poller.set_enabled(live.is_active());
     let poller_for_refresh = poller.clone();
-    refresh.connect_clicked(move |_| poller_for_refresh.poll_now());
+    refresh.connect_clicked(move |_| {
+        poller_for_refresh.poll_now();
+        mseries_pantheon_kit::chrome::show_toast(&toast, &tr("Refreshed CPU and memory"));
+    });
     // Keep the timer alive for the window. The handler also makes close an
     // explicit end to polling before GTK tears down the page.
     let poller_for_close = poller.clone();

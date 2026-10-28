@@ -1186,11 +1186,12 @@ impl App {
         let dialog = gtk::AboutDialog::builder()
             .transient_for(&self.window)
             .modal(true)
-            .program_name("T3")
+            .program_name(crate::strings::tr("T3"))
             .logo_icon_name("org.techmore.mseries.T3")
             .version(env!("CARGO_PKG_VERSION"))
             .comments(format!(
-                "A native elementary OS client of the T3 Code server.\n\nServer: {server}\nServer version: {version} {environment}\nProviders ready: {}\nOrchestration protocol {} (contracts from t3code {})",
+                "{}\n\nServer: {server}\nServer version: {version} {environment}\nProviders ready: {}\nOrchestration protocol {} (contracts from t3code {})",
+                crate::strings::tr("A native elementary OS client of the T3 Code server."),
                 if ready.is_empty() { "none".to_string() } else { ready.join(", ") },
                 t3::contracts::PROTOCOL_VERSION,
                 t3::contracts::CONTRACTS_COMMIT

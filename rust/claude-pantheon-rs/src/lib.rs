@@ -39,6 +39,7 @@ pub mod sidebar;
 pub mod skeleton;
 pub mod snapshot;
 pub mod status;
+pub mod strings;
 pub mod t3;
 pub mod terminal;
 pub mod thread_links;

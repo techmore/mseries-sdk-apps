@@ -17,75 +17,71 @@
     {
       "name": "T3",
       "dir": "claude-pantheon-rs",
-      "desktop": ["org.techmore.mseries.T3.desktop", "org.techmore.mseries.T3Sdk.desktop"],
+      "desktop": [
+        "org.techmore.mseries.T3.desktop",
+        "org.techmore.mseries.T3Sdk.desktop"
+      ],
       "exempt": {
         "colors": "terminal and web view palettes, provider accents (documented in the audit)",
-        "color_scheme": "has its own light/dark/system Appearance setting",
-        "gettext": "gap: no translation domain yet"
+        "color_scheme": "has its own light/dark/system Appearance setting"
       }
     },
     {
       "name": "Messages",
       "dir": "mseries-messages",
-      "desktop": ["org.techmore.mseries.Messages.desktop", "org.techmore.mseries.MessagesPreview.desktop"],
+      "desktop": [
+        "org.techmore.mseries.Messages.desktop",
+        "org.techmore.mseries.MessagesPreview.desktop"
+      ],
       "icon_alias": {
         "org.techmore.mseries.MessagesPreview.desktop": "org.techmore.mseries.Messages"
       },
-      "exempt": {
-        "about": "gap: no About dialog",
-        "shortcuts": "gap: no keyboard shortcuts",
-        "toasts": "gap: no toasts"
-      }
+      "exempt": {}
     },
     {
       "name": "Image Studio",
       "dir": "mseries-image-studio",
-      "desktop": ["org.techmore.mseries.ImageStudio.desktop"],
+      "desktop": [
+        "org.techmore.mseries.ImageStudio.desktop"
+      ],
       "exempt": {
         "colors": "glass HUD is always dark (@is_hud_*)",
-        "color_scheme": "follows the desktop colour scheme through its own dconf watcher",
-        "gettext": "gap: no translation domain yet"
+        "color_scheme": "follows the desktop colour scheme through its own dconf watcher"
       }
     },
     {
       "name": "Apple Dev",
       "dir": "mseries-apple-dev",
-      "desktop": ["org.techmore.mseries.AppleDev.desktop"],
+      "desktop": [
+        "org.techmore.mseries.AppleDev.desktop"
+      ],
       "exempt": {
-        "colors": "terminal palette in the console",
-        "gettext": "gap: no translation domain yet"
+        "colors": "terminal palette in the console"
       }
     },
     {
       "name": "Disk Space",
       "dir": "mseries-diskspace",
-      "desktop": ["org.techmore.mseries.DiskSpace.desktop"],
-      "exempt": {
-        "about": "gap: no About dialog",
-        "shortcuts": "gap: no keyboard shortcuts",
-        "gettext": "gap: no translation domain yet"
-      }
+      "desktop": [
+        "org.techmore.mseries.DiskSpace.desktop"
+      ],
+      "exempt": {}
     },
     {
       "name": "System Monitor",
       "dir": "mseries-system-monitor",
-      "desktop": ["org.techmore.mseries.SystemMonitor.desktop"],
-      "exempt": {
-        "about": "gap: no About dialog",
-        "shortcuts": "gap: no keyboard shortcuts",
-        "toasts": "gap: no toasts",
-        "gettext": "gap: no translation domain yet"
-      }
+      "desktop": [
+        "org.techmore.mseries.SystemMonitor.desktop"
+      ],
+      "exempt": {}
     },
     {
       "name": "Software Updates",
       "dir": "mseries-updates",
-      "desktop": ["org.techmore.mseries.Updates.desktop"],
-      "exempt": {
-        "about": "gap: no About dialog",
-        "shortcuts": "gap: no keyboard shortcuts",
-        "gettext": "gap: strings.rs is prepared but no domain is bound yet"
-      }
+      "desktop": [
+        "org.techmore.mseries.Updates.desktop"
+      ],
+      "exempt": {}
     }
   ]
 }

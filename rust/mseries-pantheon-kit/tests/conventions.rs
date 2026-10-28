@@ -156,16 +156,27 @@ fn every_gui_app_follows_the_conventions() {
             any("set_accessible_label"),
             "never calls set_accessible_label".into(),
         );
-        check("about", any("AboutDialog"), "has no About dialog".into());
+        check(
+            "about",
+            any("AboutDialog") || any("chrome::install_app_actions"),
+            "has no About dialog".into(),
+        );
         check(
             "shortcuts",
-            any("set_accels_for_action"),
+            any("set_accels_for_action")
+                || any("chrome::install_app_actions")
+                || any("ShortcutController")
+                || any("EventControllerKey"),
             "registers no keyboard shortcuts".into(),
         );
-        check("toasts", any("Toast"), "uses no toasts".into());
+        check(
+            "toasts",
+            any("Toast") || any("chrome::toast_overlay"),
+            "uses no toasts".into(),
+        );
         check(
             "gettext",
-            any("dgettext") || any("gettext("),
+            any("dgettext") || any("i18n::tr"),
             "binds no gettext domain".into(),
         );
     }
