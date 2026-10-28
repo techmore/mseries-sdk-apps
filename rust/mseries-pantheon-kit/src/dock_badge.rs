@@ -22,8 +22,8 @@ struct Inner {
 /// A nonblocking badge/progress channel to the Pantheon dock.
 ///
 /// Pass the GTK application ID or its desktop entry ID. For example,
-/// `io.elementary.mseries.MessagesRust` maps to
-/// `application://io.elementary.mseries.MessagesRust.desktop`. A full
+/// `org.techmore.mseries.MessagesPreview` maps to
+/// `application://org.techmore.mseries.MessagesPreview.desktop`. A full
 /// `application://…desktop` URI is accepted too. The dock integration is
 /// best-effort: if the session bus is not available, the latest state is kept
 /// and connection is retried on the next update.

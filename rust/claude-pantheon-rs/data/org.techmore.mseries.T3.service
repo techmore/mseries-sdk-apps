@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=org.techmore.mseries.T3
+Exec=@BINDIR@/claude-pantheon-rs --gapplication-service

@@ -22,7 +22,8 @@ as_root() { if [[ -n $dest || $EUID -eq 0 ]]; then "$@"; else sudo "$@"; fi; }
 
 if [[ ${1:-} == --uninstall ]]; then
   as_root rm -f "$dest$prefix/bin/mseries-updates" "$dest$helper" "$dest$policy" \
-    "$dest/usr/share/applications/org.techmore.mseries.Updates.desktop"
+    "$dest/usr/share/applications/org.techmore.mseries.Updates.desktop" \
+    "$dest/usr/share/icons/hicolor/scalable/apps/org.techmore.mseries.Updates.svg"
   as_root rmdir "$dest$libexec" 2>/dev/null || true
   echo "Removed Software Updates. Update state (/var/lib/mseries-update) is untouched."
   exit 0
@@ -47,4 +48,5 @@ sed "s|@HELPER@|$helper|" "$data/org.techmore.mseries.update.policy.in" > "${TMP
 as_root install -Dm0644 "${TMPDIR:-/tmp}/mseries-update.policy.$$" "$dest$policy"
 rm -f "${TMPDIR:-/tmp}/mseries-update.policy.$$"
 as_root install -Dm0644 "$data/org.techmore.mseries.Updates.desktop" "$dest/usr/share/applications/org.techmore.mseries.Updates.desktop"
+as_root install -Dm0644 "$data/org.techmore.mseries.Updates.svg" "$dest/usr/share/icons/hicolor/scalable/apps/org.techmore.mseries.Updates.svg"
 echo "Installed Software Updates ($prefix/bin/mseries-updates). Run mseries-updates or open it from the launcher."

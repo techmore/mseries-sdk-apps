@@ -22,7 +22,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const APP_ID: &str = "io.github.sdolbec.SignalHistoryImport";
+const APP_ID: &str = "org.techmore.mseries.SignalImport";
 
 enum Message {
     Progress(Progress),

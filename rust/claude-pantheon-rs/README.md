@@ -39,7 +39,7 @@ native launcher through the running Dock without replacing existing pins:
 gdbus call --session --dest io.elementary.dock \
   --object-path /io/elementary/dock \
   --method io.elementary.dock.items.AddLauncher \
-  io.github.techmore.ClaudePantheonRs.desktop
+  org.techmore.mseries.T3.desktop
 ```
 
 Use `io.elementary.dock.items.ListLaunchers` on the same object to verify that
@@ -209,8 +209,8 @@ bash mseries/install-claude-pantheon-rs.sh   # the same from the repo root, with
 
 The script restarts `pantheon-dock` at the end: the dock keeps showing a placeholder icon for a newly
 installed app until it is restarted. The D-Bus service file lets the desktop entry and
-`gapplication launch io.github.techmore.ClaudePantheonRs` start the app; a second launch, the desktop
-actions and `gapplication action io.github.techmore.ClaudePantheonRs new-thread` all reach the running
+`gapplication launch org.techmore.mseries.T3` start the app; a second launch, the desktop
+actions and `gapplication action org.techmore.mseries.T3 new-thread` all reach the running
 window.
 
 ## Visual replies

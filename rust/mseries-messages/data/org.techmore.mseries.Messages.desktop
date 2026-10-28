@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Messages & Signal
+Comment=Switch between your Messages and Signal windows
+Exec=mseries-conversations
+Icon=org.techmore.mseries.Messages
+Terminal=false
+Type=Application
+Categories=Network;Chat;GTK;
+Keywords=Messages;Signal;iPhone;
+StartupNotify=true
+StartupWMClass=org.techmore.mseries.Messages
+DBusActivatable=false

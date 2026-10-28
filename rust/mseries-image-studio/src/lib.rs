@@ -7,7 +7,7 @@ pub mod ui;
 
 pub use recipe::{Recipe, RecipeStore};
 
-pub const APP_ID: &str = "org.elementary.mseries.ImageStudio";
+pub const APP_ID: &str = "org.techmore.mseries.ImageStudio";
 pub const DESKTOP_RESERVE_BYTES: u64 = 6 * 1024 * 1024 * 1024;
 
 pub fn can_run_generation(qualified: bool, available_bytes: u64, measured_peak_bytes: u64) -> bool {

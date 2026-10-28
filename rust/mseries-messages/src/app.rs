@@ -31,6 +31,7 @@ const MAX_OUTBOX_MESSAGES: usize = 128;
 const RECENT_INBOX_FOLDER: &str = "telecom/msg/INBOX";
 const RECENT_INBOX_LIMIT: u32 = 200;
 const RECENT_INBOX_MAX_AGE: Duration = Duration::from_secs(300);
+/// The key the reply-draft preferences are stored under; it predates the app-id rename and must not change.
 const AI_APP_ID: &str = "io.elementary.mseries.MessagesRust";
 
 fn ensure_refresh_phone_unchanged(
@@ -714,7 +715,7 @@ impl App {
     pub fn build(application: &gtk::Application) -> Option<Rc<Self>> {
         let enter_sends = preferences::load_enter_sends();
         let auto_refresh = preferences::load_auto_refresh();
-        let dock_badge = DockBadge::new("io.elementary.mseries.MessagesRust");
+        let dock_badge = DockBadge::new("org.techmore.mseries.MessagesPreview");
         let backend = Backend::connect();
         let backend = match backend {
             Ok(backend) => backend,
@@ -5592,7 +5593,7 @@ mod tests {
             assert!(ready(), "favorite UI/keyring operation did not settle");
         };
         let application = gtk::Application::builder()
-            .application_id("io.elementary.mseries.MessagesRust.FavoriteTest")
+            .application_id("org.techmore.mseries.MessagesPreview.FavoriteTest")
             .build();
         application.register(gio::Cancellable::NONE).unwrap();
         let app = App::build(&application).unwrap();
@@ -5990,7 +5991,7 @@ mod tests {
         granite::init();
         mseries_pantheon_kit::install_css(&gtk::gdk::Display::default().unwrap());
         let application = gtk::Application::builder()
-            .application_id("io.elementary.mseries.MessagesRust.Shot")
+            .application_id("org.techmore.mseries.MessagesPreview.Shot")
             .build();
         application
             .register(None::<&gtk::gio::Cancellable>)
@@ -6092,7 +6093,7 @@ mod tests {
         granite::init();
         mseries_pantheon_kit::install_css(&gtk::gdk::Display::default().unwrap());
         let application = gtk::Application::builder()
-            .application_id("io.elementary.mseries.MessagesRust.Test")
+            .application_id("org.techmore.mseries.MessagesPreview.Test")
             .build();
         application
             .register(None::<&gtk::gio::Cancellable>)

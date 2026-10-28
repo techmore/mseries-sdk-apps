@@ -29,7 +29,7 @@ fn launch(desktop: &str, feedback: &gtk::Label) {
 
 fn main() -> gtk::glib::ExitCode {
     let app = gtk::Application::builder()
-        .application_id("io.elementary.mseries.Conversations")
+        .application_id("org.techmore.mseries.Messages")
         .build();
     app.connect_startup(|_| {
         granite::init();
@@ -52,7 +52,7 @@ fn main() -> gtk::glib::ExitCode {
             (
                 "messages",
                 tr("Messages"),
-                "io.elementary.mseries.MessagesRust.desktop",
+                "org.techmore.mseries.MessagesPreview.desktop",
                 tr("Your iPhone conversations"),
                 tr("Show Messages"),
                 tr("Switch to Messages"),
@@ -121,7 +121,7 @@ fn main() -> gtk::glib::ExitCode {
             match stack.visible_child_name().as_deref() {
                 Some("signal") => launch("signal-desktop.desktop", &feedback_for_switch),
                 Some("messages") => launch(
-                    "io.elementary.mseries.MessagesRust.desktop",
+                    "org.techmore.mseries.MessagesPreview.desktop",
                     &feedback_for_switch,
                 ),
                 _ => {}

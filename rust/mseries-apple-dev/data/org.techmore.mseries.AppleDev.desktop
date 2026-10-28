@@ -9,3 +9,4 @@ Terminal=false
 Categories=GTK;Development;IDE;
 Keywords=ios;iphone;ipad;swift;swiftui;xtool;xcode;testflight;flutter;
 StartupNotify=true
+StartupWMClass=org.techmore.mseries.AppleDev

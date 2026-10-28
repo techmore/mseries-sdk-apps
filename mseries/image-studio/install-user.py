@@ -19,11 +19,11 @@ wrapper=bin_dir/'mseries-image-studio'
 wrapper.write_text('#!/bin/sh\nexport GSK_RENDERER="${GSK_RENDERER:-cairo}"\nexec '+"'"+str(libexec/'mseries-image-studio').replace("'","'\\''")+"'"+' "$@"\n')
 wrapper.chmod(0o755)
 quoted='"'+str(wrapper).replace('\\','\\\\').replace('"','\\"').replace('`','\\`').replace('$','\\$')+'"'
-desktop=(source/'org.elementary.mseries.ImageStudio.desktop').read_text().replace('Exec=mseries-image-studio','Exec='+quoted)
-(data/'applications/org.elementary.mseries.ImageStudio.desktop').write_text(desktop)
-(data/'dbus-1/services/org.elementary.mseries.ImageStudio.service').write_text('[D-BUS Service]\nName=org.elementary.mseries.ImageStudio\nExec='+quoted+'\n')
-shutil.copy2(source/'org.elementary.mseries.ImageStudio.svg',data/'icons/hicolor/scalable/apps/org.elementary.mseries.ImageStudio.svg')
-shutil.copy2(source/'org.elementary.mseries.ImageStudio.metainfo.xml',data/'metainfo/org.elementary.mseries.ImageStudio.metainfo.xml')
+desktop=(source/'org.techmore.mseries.ImageStudio.desktop').read_text().replace('Exec=mseries-image-studio','Exec='+quoted)
+(data/'applications/org.techmore.mseries.ImageStudio.desktop').write_text(desktop)
+(data/'dbus-1/services/org.techmore.mseries.ImageStudio.service').write_text('[D-BUS Service]\nName=org.techmore.mseries.ImageStudio\nExec='+quoted+'\n')
+shutil.copy2(source/'org.techmore.mseries.ImageStudio.svg',data/'icons/hicolor/scalable/apps/org.techmore.mseries.ImageStudio.svg')
+shutil.copy2(source/'org.techmore.mseries.ImageStudio.metainfo.xml',data/'metainfo/org.techmore.mseries.ImageStudio.metainfo.xml')
 for command,argument in [('update-desktop-database',data/'applications'),('gtk-update-icon-cache',data/'icons/hicolor')]:
     binary=shutil.which(command)
     if binary:subprocess.run([binary,str(argument)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)

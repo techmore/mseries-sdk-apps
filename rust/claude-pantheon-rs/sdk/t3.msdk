@@ -1,6 +1,6 @@
 // Claude for elementary OS (the T3 port), written in the SDK's text form.
 // Server access goes through the plug-in services declared in t3.services.json; everything else is rules.
-app "T3 Monitor (SDK)" id io.github.techmore.ClaudePantheonSdk icon claude-pantheon-rs
+app "T3 Monitor (SDK)" id org.techmore.mseries.T3Sdk icon claude-pantheon-rs
 needs "network:localhost", "network", "notifications", "filesystem:data"
 
 type Thread { id: Text, title: Text, project: Text, branch: Text, provider: Text, badge: Text, detail: Text }

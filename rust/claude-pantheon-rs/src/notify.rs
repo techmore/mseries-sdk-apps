@@ -7,7 +7,7 @@ use gtk::{gio, glib, prelude::*};
 pub fn notify(app: &gtk::Application, id: &str, title: &str, body: &str, thread_id: &str, answer: bool) {
     let n = gio::Notification::new(title);
     n.set_body(Some(body));
-    n.set_icon(&gio::ThemedIcon::new("io.github.techmore.ClaudePantheonRs"));
+    n.set_icon(&gio::ThemedIcon::new("org.techmore.mseries.T3"));
     let target = glib::Variant::from(thread_id);
     n.set_default_action_and_target_value("app.open-thread", Some(&target));
     n.add_button_with_target_value(if answer { "Answer" } else { "Open" }, "app.open-thread", Some(&target));

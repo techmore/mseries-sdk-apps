@@ -55,8 +55,8 @@ jobs:
 
       - name: Validate launcher metadata
         run: |
-          desktop-file-validate rust/mseries-image-studio/data/org.elementary.mseries.ImageStudio.desktop
-          python3 -c 'import xml.etree.ElementTree as ET; ET.parse("rust/mseries-image-studio/data/org.elementary.mseries.ImageStudio.metainfo.xml")'
+          desktop-file-validate rust/mseries-image-studio/data/org.techmore.mseries.ImageStudio.desktop
+          python3 -c 'import xml.etree.ElementTree as ET; ET.parse("rust/mseries-image-studio/data/org.techmore.mseries.ImageStudio.metainfo.xml")'
 
       - name: Offline adapter tests (no models or engines run)
         run: python3 -I -m unittest discover -s rust/mseries-image-studio/tests -p 'adapters.py'

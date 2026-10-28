@@ -51,4 +51,4 @@ pub mod webview;
 pub mod winstate;
 pub mod workflow;
 
-pub const APP_ID: &str = "io.github.techmore.ClaudePantheonRs";
+pub const APP_ID: &str = "org.techmore.mseries.T3";

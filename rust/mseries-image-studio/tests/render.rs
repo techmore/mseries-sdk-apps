@@ -174,7 +174,7 @@ fn main() {
         mseries_pantheon_kit::install_css(&display);
     }
     let application = gtk::Application::builder()
-        .application_id("org.elementary.mseries.ImageStudio.RenderTest")
+        .application_id("org.techmore.mseries.ImageStudio.RenderTest")
         .build();
     application
         .register(gtk::gio::Cancellable::NONE)

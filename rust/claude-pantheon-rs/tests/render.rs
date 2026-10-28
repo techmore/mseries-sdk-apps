@@ -185,8 +185,7 @@ fn main() {
         std::process::exit(1);
     }
     granite::init();
-    let application =
-        gtk::Application::builder().application_id("io.github.techmore.ClaudePantheonRs.RenderTest").build();
+    let application = gtk::Application::builder().application_id("org.techmore.mseries.T3.RenderTest").build();
     application.register(gio::Cancellable::NONE).expect("register");
     let env = |k: &str| std::env::var_os(k).map(PathBuf::from);
     let shot = env("CLAUDE_PANTHEON_SHOT");
