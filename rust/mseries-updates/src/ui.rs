@@ -121,9 +121,12 @@ impl UpdatesWindow {
         let window = gtk::ApplicationWindow::builder()
             .application(app)
             .title(tr("Software Updates"))
-            .default_width(560)
-            .default_height(680)
             .build();
+        mseries_pantheon_kit::appearance::size_window(
+            &window,
+            mseries_pantheon_kit::appearance::UTILITY_DEFAULT,
+            mseries_pantheon_kit::appearance::UTILITY_MIN,
+        );
         window.set_titlebar(Some(&gtk::HeaderBar::new()));
 
         let icon = gtk::Image::builder()

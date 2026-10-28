@@ -1,3 +1,22 @@
+/* Palette: the elementary OS colours the messaging classes use. Single source of truth is
+   `colors.pantheon` in rust/msdk/data/tokens.json; a unit test keeps this block in step with it. */
+@define-color pantheon_incoming_bg #d4d4d4;
+@define-color pantheon_incoming_fg #333333;
+@define-color pantheon_light_fg #fafafa;
+@define-color pantheon_blueberry #0d52bf;
+@define-color pantheon_grape #7239b3;
+@define-color pantheon_grape_light #cd9ef7;
+@define-color pantheon_link_dark #8cd5ff;
+@define-color pantheon_osd_fg #1a1a1a;
+@define-color pantheon_channel_messages #dba96b;
+@define-color pantheon_channel_signal #6b96ca;
+@define-color pantheon_strawberry #c6262e;
+@define-color pantheon_orange #cc3b02;
+@define-color pantheon_lime #3a9104;
+@define-color pantheon_mint #0e9a83;
+@define-color pantheon_cocoa #715344;
+@define-color pantheon_slate #485a6c;
+
 /* Shared geometry classes: GTK and Granite continue to provide colors and controls. */
 .pantheon-surface {
     border-radius: 12px;
@@ -76,9 +95,9 @@
 
 /* Message bubbles follow iMessage conventions: yours on the right in colour with
    white text, theirs on the left in grey. Colours are the elementary OS palette:
-   Blueberry 700 #0d52bf (iMessage/SMS), Grape 700 #7239b3 (Signal),
-   Silver 300 #d4d4d4 with Black 500 #333333 (received), and in dark mode
-   Slate 500 #485a6c with Silver 100 #fafafa. White on the 700 shades is
+   Blueberry 700 (iMessage/SMS), Grape 700 (Signal),
+   Silver 300 with Black 500 (received), and in dark mode
+   Slate 500 with Silver 100. White on the 700 shades is
    at least 7:1, so body text stays easy to read. */
 .pantheon-bubble {
     padding: 0.5em 0.95em;
@@ -86,42 +105,42 @@
 }
 
 .pantheon-bubble-incoming {
-    background: #d4d4d4;
-    color: #333333;
+    background: @pantheon_incoming_bg;
+    color: @pantheon_incoming_fg;
 }
 
 .pantheon-bubble-incoming link {
-    color: #0d52bf;
+    color: @pantheon_blueberry;
 }
 
 .pantheon-bubble-outgoing {
-    background: #0d52bf;
-    color: #fafafa;
+    background: @pantheon_blueberry;
+    color: @pantheon_light_fg;
 }
 
 .pantheon-bubble-outgoing link {
-    color: #fafafa;
+    color: @pantheon_light_fg;
     text-decoration: underline;
 }
 
 .pantheon-bubble-outgoing.pantheon-bubble-signal {
-    background: #7239b3;
+    background: @pantheon_grape;
 }
 
 .pantheon-dark .pantheon-bubble-incoming {
-    background: #485a6c;
-    color: #fafafa;
+    background: @pantheon_slate;
+    color: @pantheon_light_fg;
 }
 
 .pantheon-dark .pantheon-bubble-incoming link {
-    color: #8cd5ff;
+    color: @pantheon_link_dark;
 }
 
 .messaging-channel-messages {
-    background: mix(@theme_bg_color, #dba96b, 0.12);
+    background: mix(@theme_bg_color, @pantheon_channel_messages, 0.12);
 }
 .messaging-channel-signal {
-    background: mix(@theme_bg_color, #6b96ca, 0.15);
+    background: mix(@theme_bg_color, @pantheon_channel_signal, 0.15);
 }
 
 /* ---- Messages: elementary OS layout (sidebar, conversation list, thread) ---- */
@@ -165,17 +184,17 @@
 
 /* Unread uses Blueberry 700 (white text 7:1), Blueberry 300 in dark style. */
 .mseries-messages .pantheon-unread-time {
-    color: #0d52bf;
+    color: @pantheon_blueberry;
     font-weight: 700;
 }
 
 .pantheon-dark.mseries-messages .pantheon-unread-time {
-    color: #8cd5ff;
+    color: @pantheon_link_dark;
 }
 
 .mseries-messages .pantheon-unread-badge {
-    background: #0d52bf;
-    color: #ffffff;
+    background: @pantheon_blueberry;
+    color: white;
     border-radius: 999px;
     min-width: 12px;
     padding: 0 6px;
@@ -187,8 +206,8 @@
 
 
 .mseries-messages .pantheon-channel-chip {
-    background: alpha(#7239b3, 0.16);
-    color: #7239b3;
+    background: alpha(@pantheon_grape, 0.16);
+    color: @pantheon_grape;
     border-radius: 999px;
     padding: 0 6px;
     margin-top: 1px;
@@ -197,23 +216,23 @@
 }
 
 .pantheon-dark.mseries-messages .pantheon-channel-chip {
-    background: alpha(#cd9ef7, 0.18);
-    color: #cd9ef7;
+    background: alpha(@pantheon_grape_light, 0.18);
+    color: @pantheon_grape_light;
 }
 
 /* Avatars: initials on an elementary palette colour, as in Contacts and Mail. */
 .pantheon-avatar-initials {
-    color: #ffffff;
+    color: white;
     font-weight: 700;
 }
-.pantheon-avatar-strawberry { background: #c6262e; }
-.pantheon-avatar-orange { background: #cc3b02; }
-.pantheon-avatar-lime { background: #3a9104; }
-.pantheon-avatar-mint { background: #0e9a83; }
-.pantheon-avatar-blueberry { background: #0d52bf; }
-.pantheon-avatar-grape { background: #7239b3; }
-.pantheon-avatar-cocoa { background: #715344; }
-.pantheon-avatar-slate { background: #485a6c; }
+.pantheon-avatar-strawberry { background: @pantheon_strawberry; }
+.pantheon-avatar-orange { background: @pantheon_orange; }
+.pantheon-avatar-lime { background: @pantheon_lime; }
+.pantheon-avatar-mint { background: @pantheon_mint; }
+.pantheon-avatar-blueberry { background: @pantheon_blueberry; }
+.pantheon-avatar-grape { background: @pantheon_grape; }
+.pantheon-avatar-cocoa { background: @pantheon_cocoa; }
+.pantheon-avatar-slate { background: @pantheon_slate; }
 
 .pantheon-avatar-fallback {
     background: alpha(currentColor, 0.1);
@@ -319,6 +338,6 @@
 }
 
 .pantheon-dark.mseries-messages .pantheon-unread-badge {
-    background: #8cd5ff;
-    color: #1a1a1a;
+    background: @pantheon_link_dark;
+    color: @pantheon_osd_fg;
 }

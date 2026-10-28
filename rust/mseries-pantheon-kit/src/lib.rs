@@ -7,6 +7,7 @@
 pub use granite;
 pub use gtk;
 
+pub mod appearance;
 mod blueferry;
 mod context_menu;
 mod dock_badge;

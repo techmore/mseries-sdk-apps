@@ -129,6 +129,10 @@ impl AppWindow {
             .default_width(settings.width.max(720))
             .default_height(settings.height.max(520))
             .build();
+        window.set_size_request(
+            mseries_pantheon_kit::appearance::WORKSPACE_MIN.0,
+            mseries_pantheon_kit::appearance::WORKSPACE_MIN.1,
+        );
         if settings.maximized {
             window.maximize();
         }

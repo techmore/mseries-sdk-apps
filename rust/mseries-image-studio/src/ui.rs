@@ -51,9 +51,10 @@ impl ImageStudioWindow {
         let window = gtk::ApplicationWindow::builder()
             .application(application)
             .title("Image Studio")
-            .default_width(1380)
-            .default_height(900)
             .build();
+        // Three panes: opens wider than the workspace default so the regular layout (not the compact one,
+        // below about 76 text units) is what a new window shows. The minimum is the shared one.
+        mseries_pantheon_kit::appearance::size_window(&window, (1380, 900), mseries_pantheon_kit::appearance::WORKSPACE_MIN);
         window.add_css_class("mseries-image-studio");
         style::install(&window);
 

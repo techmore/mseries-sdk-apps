@@ -1231,7 +1231,11 @@ impl App {
             .title(tr("Messages"))
             .build();
         window.add_css_class("mseries-messages");
-        window.set_default_size(1040, 730);
+        mseries_pantheon_kit::appearance::size_window(
+            &window,
+            mseries_pantheon_kit::appearance::WORKSPACE_DEFAULT,
+            mseries_pantheon_kit::appearance::WORKSPACE_MIN,
+        );
         // Each pane draws its own header bar, so the window titlebar stays empty.
         let no_titlebar = gtk::Grid::new();
         no_titlebar.set_visible(false);

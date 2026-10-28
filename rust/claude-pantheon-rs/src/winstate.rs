@@ -2,6 +2,7 @@
 //! `~/.config/claude-pantheon-rs/window.json`. Read once before the window shows, written on close.
 
 use gtk::prelude::*;
+use mseries_pantheon_kit::appearance;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -16,7 +17,12 @@ pub struct WindowState {
 
 impl Default for WindowState {
     fn default() -> Self {
-        WindowState { width: 1180, height: 760, maximized: false, sidebar: 280 }
+        WindowState {
+            width: appearance::WORKSPACE_DEFAULT.0,
+            height: appearance::WORKSPACE_DEFAULT.1,
+            maximized: false,
+            sidebar: 280,
+        }
     }
 }
 
@@ -30,10 +36,10 @@ impl WindowState {
         s.sane()
     }
 
-    /// Keeps a state that still fits on a screen: nothing below 640×420, a sidebar between 200 and 600.
+    /// Keeps a state that still fits on a screen: nothing below the workspace minimum (720×520), a sidebar between 200 and 600.
     pub fn sane(mut self) -> WindowState {
-        self.width = self.width.clamp(640, 8192);
-        self.height = self.height.clamp(420, 8192);
+        self.width = self.width.clamp(appearance::WORKSPACE_MIN.0, 8192);
+        self.height = self.height.clamp(appearance::WORKSPACE_MIN.1, 8192);
         self.sidebar = self.sidebar.clamp(200, 600);
         self
     }
@@ -44,6 +50,7 @@ impl WindowState {
 
     pub fn apply(&self, window: &gtk::ApplicationWindow, paned: &gtk::Paned) {
         window.set_default_size(self.width, self.height);
+        window.set_size_request(appearance::WORKSPACE_MIN.0, appearance::WORKSPACE_MIN.1);
         paned.set_position(self.sidebar);
         if self.maximized {
             window.maximize();
@@ -65,7 +72,7 @@ mod tests {
     #[test]
     fn clamps_and_round_trips() {
         let s = WindowState { width: 10, height: 20_000, maximized: true, sidebar: 50 }.sane();
-        assert_eq!((s.width, s.height, s.sidebar), (640, 8192, 200));
+        assert_eq!((s.width, s.height, s.sidebar), (720, 8192, 200));
         let json = serde_json::to_string(&s).unwrap();
         let back: WindowState = serde_json::from_str(&json).unwrap();
         assert_eq!(back, s);

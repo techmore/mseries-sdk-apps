@@ -302,10 +302,13 @@ impl App {
         let window = gtk::ApplicationWindow::builder()
             .application(application)
             .title("Disk Space")
-            .default_width(1280)
-            .default_height(780)
             .child(&overlay)
             .build();
+        mseries_pantheon_kit::appearance::size_window(
+            &window,
+            mseries_pantheon_kit::appearance::WORKSPACE_DEFAULT,
+            mseries_pantheon_kit::appearance::WORKSPACE_MIN,
+        );
         window.set_titlebar(Some(&header));
 
         let app = Rc::new(App {

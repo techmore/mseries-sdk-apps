@@ -157,7 +157,7 @@ levelbar.usage-gauge block.full { background: @error_color; }
 .sb-issue-title { font-size: 0.92em; opacity: 0.85; }
 .sb-issue-mark { opacity: 0.7; }
 .sb-issue-mark.open { color: @success_color; opacity: 1; }
-.sb-issue-mark.closed, .sb-issue-mark.merged { color: #a56de2; opacity: 1; }
+.sb-issue-mark.closed, .sb-issue-mark.merged { color: @t3_merged; opacity: 1; }
 row.sb-nested .sb-row { margin-left: 18px; }
 
 /* The open thread's issue or pull request, under the header bar */
@@ -174,7 +174,7 @@ row.sb-nested .sb-row { margin-left: 18px; }
   color: white; background: alpha(currentColor, 0.5);
 }
 .issue-state.open { background: @success_color; }
-.issue-state.closed, .issue-state.merged { background: #a56de2; }
+.issue-state.closed, .issue-state.merged { background: @t3_merged; }
 .issue-state.unknown { color: inherit; background: alpha(currentColor, 0.12); }
 
 /* Usage: plan limit cards, token totals, provider rows */

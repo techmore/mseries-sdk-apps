@@ -33,6 +33,7 @@ fn main() -> gtk::glib::ExitCode {
         .build();
     app.connect_startup(|_| {
         granite::init();
+        mseries_pantheon_kit::appearance::follow_color_scheme(None);
         if let Some(display) = gtk::gdk::Display::default() {
             mseries_pantheon_kit::install_css(&display);
         }
