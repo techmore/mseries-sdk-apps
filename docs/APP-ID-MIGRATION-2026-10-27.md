@@ -69,7 +69,10 @@ app id, so **settings are unaffected**. What is keyed by the id:
    (`gapplication action io.github.techmore.ClaudePantheonRs ...` becomes `org.techmore.mseries.T3`).
 4. **Reply rules.** `mseries-reply` treats the old and new ids as the same app, so an existing
    `rules.json` that names an old id keeps working; the default rule list now names the new ids.
-5. **Notification and badge identity.** The Messages dock badge follows the Preview desktop id
+5. **MCP tool names.** The SDK-hosted T3 monitor's MCP tools are named from the last segment of its app id, so
+   `claudepantheonsdk_send` / `_list_thread` / `_select_thread` are now `t3sdk_send` / `_list_thread` /
+   `_select_thread`. Anything that calls them by name (agent prompts, saved MCP configs) needs the new names.
+6. **Notification and badge identity.** The Messages dock badge follows the Preview desktop id
    (`application://org.techmore.mseries.MessagesPreview.desktop`), so it only shows on the new launcher.
 
 ## Not done here (other repositories)
