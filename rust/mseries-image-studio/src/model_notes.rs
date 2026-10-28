@@ -1,4 +1,5 @@
 //! Personal model assessments, deliberately separate from automated vision reviews.
+use crate::strings::tr;
 use gtk::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -57,7 +58,7 @@ fn save(base: &Path, key: String, assessment: Assessment) -> Result<(), String> 
 /// Personal assessment editor for one exact installed model path.
 pub fn model_notes_editor(base: PathBuf, model_id: String) -> gtk::Box {
     let panel = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    let title = gtk::Label::new(Some("Your model rating & notes"));
+    let title = gtk::Label::new(Some(&tr("Your model rating & notes")));
     title.set_xalign(0.0);
     title.add_css_class("heading");
     panel.append(&title);
@@ -75,7 +76,7 @@ pub fn model_notes_editor(base: PathBuf, model_id: String) -> gtk::Box {
         "4 — Very good",
         "5 — Excellent",
     ]);
-    rating.set_tooltip_text(Some("Your personal model rating"));
+    rating.set_tooltip_text(Some(&tr("Your personal model rating")));
     panel.append(&rating);
     let notes = gtk::TextView::new();
     notes.set_wrap_mode(gtk::WrapMode::WordChar);
@@ -124,7 +125,7 @@ pub fn model_notes_editor(base: PathBuf, model_id: String) -> gtk::Box {
                 .as_secs(),
         };
         match save(&base, key.clone(), assessment) {
-            Ok(()) => status.set_text("Your assessment is saved."),
+            Ok(()) => status.set_text(&tr("Your assessment is saved.")),
             Err(error) => status.set_text(&format!("Assessment was not saved: {error}")),
         }
     });

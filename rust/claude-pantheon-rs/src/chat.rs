@@ -2,6 +2,7 @@
 //! assistant Markdown, collapsed tool rows, diffs and permission prompts.
 
 use crate::markdown::Segment;
+use crate::strings::tr;
 use crate::t3::model::TurnItem;
 use crate::transcript::{self, Block, Role, ToolResult, Turn};
 use gtk::{pango, prelude::*};
@@ -102,7 +103,7 @@ pub fn tool_row(icon_key: &str, summary: &str, input: String, result: Option<Too
     head.append(&text);
     if result.as_ref().is_some_and(|r| r.is_error) {
         let err = gtk::Image::from_icon_name("dialog-warning-symbolic");
-        err.set_tooltip_text(Some("The tool reported an error"));
+        err.set_tooltip_text(Some(&tr("The tool reported an error")));
         head.append(&err);
     }
     let expander = gtk::Expander::builder().label_widget(&head).build();
@@ -555,7 +556,7 @@ fn approval_card(item: &TurnItem, decide: Option<Decide>) -> gtk::Widget {
     if pending && !request_id.is_empty() {
         // Deny with a reason: the entry is sent as the decline's note.
         let reason_entry =
-            gtk::Entry::builder().placeholder_text("Reason for denying (optional)").hexpand(true).build();
+            gtk::Entry::builder().placeholder_text(tr("Reason for denying (optional)")).hexpand(true).build();
         reason_entry.add_css_class("deny-reason");
         let buttons = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         buttons.set_halign(gtk::Align::End);

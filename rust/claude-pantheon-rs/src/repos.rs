@@ -5,6 +5,7 @@ use crate::app::{App, new_id};
 use crate::chat::label;
 use crate::look::{iso_to_unix, now_unix, relative_time};
 use crate::skeleton;
+use crate::strings::tr;
 use crate::workflow::{self, Config, Issue, PinnedRepo};
 use granite::prelude::PlaceholderExt;
 use gtk::{gio, glib, pango, prelude::*};
@@ -127,7 +128,7 @@ impl ReposPage {
 
     /// Lists the server's projects that are GitHub checkouts, with pin toggles, then the pinned repos' backlogs.
     pub fn load(&self, app: Rc<App>) {
-        self.status.set_text("Reading repositories…");
+        self.status.set_text(&tr("Reading repositories…"));
         let projects = app.projects();
         let page = app.repos_page_rc();
         glib::spawn_future_local(async move {
@@ -155,7 +156,7 @@ impl ReposPage {
         if all.is_empty() {
             self.status.set_text("");
             let ph = granite::Placeholder::new("No GitHub repos yet");
-            ph.set_description("None of the server's projects has a GitHub remote. Import your sessions or add a project with a checkout.");
+            ph.set_description(&tr("None of the server's projects has a GitHub remote. Import your sessions or add a project with a checkout."));
             ph.set_icon(&gio::ThemedIcon::new("folder-remote-symbolic"));
             let import = ph.append_button(
                 &gio::ThemedIcon::new("document-import-symbolic"),
@@ -182,7 +183,9 @@ impl ReposPage {
             let open = gtk::Button::with_label("Issues");
             head.append(&open);
             let runner = gtk::Button::with_label("Install runner");
-            runner.set_tooltip_text(Some("A T3 scheduled task every 5 minutes that takes the next agent:ready issue"));
+            runner.set_tooltip_text(Some(&tr(
+                "A T3 scheduled task every 5 minutes that takes the next agent:ready issue",
+            )));
             head.append(&runner);
             let webhook = gtk::Button::with_label("Webhook");
             webhook.set_tooltip_text(Some(

@@ -4,6 +4,7 @@
 //! elementary-matching light/dark style scheme, a copy button and a wrap toggle.
 
 use crate::chat::label;
+use crate::strings::tr;
 use gtk::{gdk, gio, glib, pango, prelude::*};
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use sourceview5::prelude::*;
@@ -366,15 +367,17 @@ pub fn code_widget(lang: &str, code: &str) -> gtk::Widget {
     let tag = label(&shown_lang, &["caption", "dim-label", "code-lang"]);
     tag.set_hexpand(true);
     bar.append(&tag);
-    let wrap =
-        gtk::ToggleButton::builder().icon_name("format-justify-left-symbolic").tooltip_text("Wrap long lines").build();
+    let wrap = gtk::ToggleButton::builder()
+        .icon_name("format-justify-left-symbolic")
+        .tooltip_text(tr("Wrap long lines"))
+        .build();
     wrap.add_css_class("flat");
     let v = view.clone();
     wrap.connect_toggled(move |b| {
         v.set_wrap_mode(if b.is_active() { gtk::WrapMode::WordChar } else { gtk::WrapMode::None })
     });
     bar.append(&wrap);
-    let copy = gtk::Button::builder().icon_name("edit-copy-symbolic").tooltip_text("Copy").build();
+    let copy = gtk::Button::builder().icon_name("edit-copy-symbolic").tooltip_text(tr("Copy")).build();
     copy.add_css_class("flat");
     let text = code.to_string();
     copy.connect_clicked(move |b| {

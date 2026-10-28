@@ -4,6 +4,7 @@
 
 use crate::app::App;
 use crate::chat::label;
+use crate::strings::tr;
 use crate::t3::Rpc;
 use futures_util::StreamExt;
 use gtk::{glib, prelude::*};
@@ -111,7 +112,7 @@ impl DiagnosticsPage {
     /// Subscribes; the server samples only while this runs. `stop` ends it when the page is left.
     pub fn start(&self, app: Rc<App>, rpc: Rpc) {
         self.stop(&rpc);
-        self.status.set_text("Waiting for the first sample…");
+        self.status.set_text(&tr("Waiting for the first sample…"));
         let (id, mut stream) = rpc.subscribe("subscribeResourceTelemetry", json!({}));
         *self.sub_id.borrow_mut() = Some(id);
         glib::spawn_future_local(async move {

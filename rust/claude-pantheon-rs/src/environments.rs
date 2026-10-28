@@ -5,6 +5,7 @@
 //! sign-in itself happens in the browser). Saved in `~/.config/claude-pantheon-rs/environments.json`;
 //! credentials are stored per server URL.
 
+use crate::strings::tr;
 use gtk::{gio, glib, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -242,25 +243,25 @@ pub fn open_dialog(parent: &impl IsA<gtk::Window>, existing: Option<Environment>
         .margin_start(16)
         .margin_end(16)
         .build();
-    let name = gtk::Entry::builder().hexpand(true).placeholder_text("Name").build();
+    let name = gtk::Entry::builder().hexpand(true).placeholder_text(tr("Name")).build();
     let kinds =
         gtk::StringList::new(&["Direct (URL)", "Tailscale peer", "SSH port forward", "T3 Connect (pairing URL)"]);
     let kind = gtk::DropDown::new(Some(kinds), gtk::Expression::NONE);
-    let url = gtk::Entry::builder().hexpand(true).placeholder_text("http://host:3773").build();
+    let url = gtk::Entry::builder().hexpand(true).placeholder_text(tr("http://host:3773")).build();
     let peers = gtk::StringList::new(&["(reading `tailscale status`…)"]);
     let peer = gtk::DropDown::new(Some(peers.clone()), gtk::Expression::NONE);
     peer.set_hexpand(true);
     let ts_port = gtk::SpinButton::with_range(1.0, 65535.0, 1.0);
     ts_port.set_value(3773.0);
     let ssh_target =
-        gtk::Entry::builder().hexpand(true).placeholder_text("user@host (an ssh config alias works)").build();
+        gtk::Entry::builder().hexpand(true).placeholder_text(tr("user@host (an ssh config alias works)")).build();
     let ssh_remote = gtk::SpinButton::with_range(1.0, 65535.0, 1.0);
     ssh_remote.set_value(3773.0);
     let ssh_local = gtk::SpinButton::with_range(1024.0, 65535.0, 1.0);
     ssh_local.set_value(3791.0);
     let connect_url = gtk::Entry::builder()
         .hexpand(true)
-        .placeholder_text("https://…/pair#token=… from `t3 pair` on the host")
+        .placeholder_text(tr("https://…/pair#token=… from `t3 pair` on the host"))
         .build();
     let hint = gtk::Label::new(None);
     hint.set_wrap(true);
@@ -274,15 +275,15 @@ pub fn open_dialog(parent: &impl IsA<gtk::Window>, existing: Option<Environment>
     let tailscale = gtk::Box::new(gtk::Orientation::Vertical, 6);
     tailscale.append(&peer);
     let port_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    port_row.append(&gtk::Label::new(Some("Port")));
+    port_row.append(&gtk::Label::new(Some(&tr("Port"))));
     port_row.append(&ts_port);
     tailscale.append(&port_row);
     let ssh = gtk::Box::new(gtk::Orientation::Vertical, 6);
     ssh.append(&ssh_target);
     let ssh_ports = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    ssh_ports.append(&gtk::Label::new(Some("Remote port")));
+    ssh_ports.append(&gtk::Label::new(Some(&tr("Remote port"))));
     ssh_ports.append(&ssh_remote);
-    ssh_ports.append(&gtk::Label::new(Some("Local port")));
+    ssh_ports.append(&gtk::Label::new(Some(&tr("Local port"))));
     ssh_ports.append(&ssh_local);
     ssh.append(&ssh_ports);
     let t3c = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -379,7 +380,7 @@ pub fn open_dialog(parent: &impl IsA<gtk::Window>, existing: Option<Environment>
             1 => {
                 let i = peer.selected() as usize;
                 let Some(p) = peer_ips.borrow().get(i).cloned() else {
-                    hint.set_text("Pick a Tailscale peer first.");
+                    hint.set_text(&tr("Pick a Tailscale peer first."));
                     return;
                 };
                 Route::Tailscale { host: p.ip, port: ts_port.value() as u16 }
@@ -403,7 +404,7 @@ pub fn open_dialog(parent: &impl IsA<gtk::Window>, existing: Option<Environment>
             Route::Tailscale { host, .. } => !host.is_empty(),
         };
         if label.is_empty() || !ok {
-            hint.set_text("A name and a reachable address are needed.");
+            hint.set_text(&tr("A name and a reachable address are needed."));
             return;
         }
         let id = id.clone().unwrap_or_else(|| {

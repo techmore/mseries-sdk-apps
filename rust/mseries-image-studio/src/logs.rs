@@ -1,4 +1,5 @@
 //! Bounded, read-only structured render diagnostics.
+use crate::strings::tr;
 use gtk::prelude::*;
 use std::{
     cell::RefCell,
@@ -105,7 +106,7 @@ pub fn page(base: PathBuf) -> gtk::Widget {
     let list = gtk::StringList::new(&[]);
     let dropdown = gtk::DropDown::new(Some(list.clone()), None::<gtk::Expression>);
     dropdown.set_hexpand(true);
-    dropdown.set_tooltip_text(Some("Choose a render log"));
+    dropdown.set_tooltip_text(Some(&tr("Choose a render log")));
     let refresh = gtk::Button::with_label("Refresh");
     refresh.add_css_class("is-pill");
     toolbar.append(&dropdown);
@@ -121,7 +122,7 @@ pub fn page(base: PathBuf) -> gtk::Widget {
     view.set_top_margin(12);
     view.set_bottom_margin(12);
     view.buffer()
-        .set_text("No render logs yet. Start a render to collect diagnostics.");
+        .set_text(&tr("No render logs yet. Start a render to collect diagnostics."));
     let scroller = gtk::ScrolledWindow::new();
     scroller.set_vexpand(true);
     scroller.add_css_class("is-code");

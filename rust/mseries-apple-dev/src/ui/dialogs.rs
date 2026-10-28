@@ -4,6 +4,7 @@
 use super::widgets::{button, label, tilde};
 use crate::commands::InstallMode;
 use crate::settings::Settings;
+use crate::strings::tr;
 use gtk::{gio, glib, prelude::*};
 use mseries_pantheon_kit::{set_box_spacing_text_units, set_margins_text_units};
 use std::cell::RefCell;
@@ -150,7 +151,7 @@ pub fn new_app(parent: &gtk::Window, default_folder: PathBuf, on_create: impl Fn
         "Creates a SwiftUI app with xtool new. It opens in the sidebar when the template is ready.",
         "Create",
     );
-    let name = gtk::Entry::builder().placeholder_text("HelloOmarchy").activates_default(true).build();
+    let name = gtk::Entry::builder().placeholder_text(tr("HelloOmarchy")).activates_default(true).build();
     field(&d.fields, "Name", &name, "Letters, digits and underscores; it becomes the Swift module name.");
     let (folder, chosen) = path_button(&d.window, true, Some(default_folder), None);
     field(&d.fields, "Location", &folder, "");
@@ -216,12 +217,12 @@ pub fn preferences(parent: &gtk::Window, settings: &Settings, on_save: impl Fn(S
     let initial = Some(PathBuf::from(&settings.asc_key_path)).filter(|p| !p.as_os_str().is_empty());
     let (key, chosen) = path_button(&d.window, false, initial, Some(("App Store Connect key", "*.p8")));
     field(&d.fields, "Key file", &key, "AuthKey_XXXXXXXXXX.p8 from Users and Access › Integrations.");
-    let key_id = gtk::Entry::builder().text(&settings.asc_key_id).placeholder_text("XXXXXXXXXX").build();
+    let key_id = gtk::Entry::builder().text(&settings.asc_key_id).placeholder_text(tr("XXXXXXXXXX")).build();
     field(&d.fields, "Key ID", &key_id, "");
-    let issuer = gtk::Entry::builder().text(&settings.asc_issuer_id).placeholder_text("Issuer UUID").build();
+    let issuer = gtk::Entry::builder().text(&settings.asc_issuer_id).placeholder_text(tr("Issuer UUID")).build();
     field(&d.fields, "Issuer ID", &issuer, "");
     let team =
-        gtk::Entry::builder().text(&settings.team_id).placeholder_text("Optional").activates_default(true).build();
+        gtk::Entry::builder().text(&settings.team_id).placeholder_text(tr("Optional")).activates_default(true).build();
     field(&d.fields, "Team ID", &team, "Ten characters. Device Build fills $(AppIdentifierPrefix) with it.");
     let link = gtk::LinkButton::with_label(
         "https://appstoreconnect.apple.com/access/integrations/api",

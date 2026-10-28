@@ -1,4 +1,5 @@
 use gtk::prelude::*;
+use crate::strings::tr;
 use std::path::Path;
 
 pub fn storage_bytes(path: &Path) -> u64 {
@@ -340,7 +341,7 @@ pub fn page(on_select: std::rc::Rc<dyn Fn(&str)>) -> gtk::Widget {
         let status = status.clone();
         use_model.connect_clicked(move |_| {
             if choices.selected() >= 5 {
-                status.set_text("Auxiliary component installed separately; keep an SD 1.5 checkpoint selected in Create.");
+                status.set_text(&tr("Auxiliary component installed separately; keep an SD 1.5 checkpoint selected in Create."));
                 return;
             }
             let names = [
@@ -356,7 +357,7 @@ pub fn page(on_select: std::rc::Rc<dyn Fn(&str)>) -> gtk::Widget {
             if file.is_file() {
                 on_select(&file.to_string_lossy());
             } else {
-                status.set_text("Download the selected model first.");
+                status.set_text(&tr("Download the selected model first."));
             }
         });
     }
@@ -369,7 +370,7 @@ pub fn page(on_select: std::rc::Rc<dyn Fn(&str)>) -> gtk::Widget {
     engine_text.set_hexpand(true);
     engine_text.append(
         &gtk::Label::builder()
-            .label("Local image engine · stable-diffusion.cpp")
+            .label(tr("Local image engine · stable-diffusion.cpp"))
             .xalign(0.0)
             .css_classes(["is-card-title"])
             .build(),
@@ -409,7 +410,7 @@ pub fn page(on_select: std::rc::Rc<dyn Fn(&str)>) -> gtk::Widget {
     }
     install.connect_clicked(move |button| {
         button.set_sensitive(false);
-        engine_status.set_text("Preparing the local engine… This can take several minutes.");
+        engine_status.set_text(&tr("Preparing the local engine… This can take several minutes."));
         let directory = gtk::glib::user_data_dir().join("mseries-image-studio");
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
@@ -483,7 +484,7 @@ pub fn page(on_select: std::rc::Rc<dyn Fn(&str)>) -> gtk::Widget {
         let choices = choices_for_download.clone();
         button.set_sensitive(false);
         choices.set_sensitive(false);
-        status.set_text("Downloading and verifying… Storage totals include partial downloads.");
+        status.set_text(&tr("Downloading and verifying… Storage totals include partial downloads."));
         let index = choices.selected();
         let directory = gtk::glib::user_data_dir().join("mseries-image-studio/models");
         let _ = std::fs::remove_file(directory.join("download.cancel"));

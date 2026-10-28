@@ -4,6 +4,7 @@
 //! `CommandPalette.vala` and T3's palette.
 
 use crate::chat::label;
+use crate::strings::tr;
 use gtk::{gdk, glib, pango, prelude::*};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -83,13 +84,14 @@ impl Palette {
         let window = gtk::Window::builder()
             .transient_for(parent)
             .modal(true)
-            .title("Command Palette")
+            .title(tr("Command Palette"))
             .default_width(640)
             .default_height(440)
             .decorated(false)
             .build();
         window.add_css_class("palette");
-        let query = gtk::SearchEntry::builder().placeholder_text("Threads, projects, repos, issues, actions…").build();
+        let query =
+            gtk::SearchEntry::builder().placeholder_text(tr("Threads, projects, repos, issues, actions…")).build();
         let list = gtk::ListBox::builder().selection_mode(gtk::SelectionMode::Single).build();
         list.add_css_class("palette-list");
         let scroll =

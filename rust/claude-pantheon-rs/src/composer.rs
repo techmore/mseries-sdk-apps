@@ -4,6 +4,7 @@
 //! kept per thread across restarts in `~/.cache/claude-pantheon-rs/drafts.json`.
 
 use crate::chat::label;
+use crate::strings::tr;
 use crate::t3::attach::{self, Attachment};
 use gtk::{gdk, gio, glib, pango, prelude::*};
 use serde_json::Value;
@@ -86,7 +87,7 @@ impl Composer {
         voice_btn.add_css_class("flat");
         voice_btn.add_css_class("circular");
         voice_btn.add_css_class("voice-btn");
-        voice_btn.set_tooltip_text(Some("Voice input: press to record, press again to stop (Ctrl+Shift+V). The words go into the draft; nothing is sent."));
+        voice_btn.set_tooltip_text(Some(&tr("Voice input: press to record, press again to stop (Ctrl+Shift+V). The words go into the draft; nothing is sent.")));
         voice_btn.update_property(&[gtk::accessible::Property::Label("Voice input")]);
         voice_btn.set_valign(gtk::Align::Center);
         let tools = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -98,7 +99,7 @@ impl Composer {
         root.append(&tools);
 
         // The @ picker: a popover anchored to the text view.
-        let picker_entry = gtk::SearchEntry::builder().placeholder_text("File in this project…").build();
+        let picker_entry = gtk::SearchEntry::builder().placeholder_text(tr("File in this project…")).build();
         picker_entry.update_property(&[gtk::accessible::Property::Label("File to attach")]);
         let picker_list = gtk::ListBox::builder().selection_mode(gtk::SelectionMode::Single).build();
         let picker_scroll = gtk::ScrolledWindow::builder()
@@ -405,10 +406,10 @@ impl Composer {
             chip.append(&text);
             let remove = gtk::Button::from_icon_name("window-close-symbolic");
             remove.update_property(&[gtk::accessible::Property::Label("Remove attachment")]);
-            remove.set_tooltip_text(Some("Remove attachment"));
+            remove.set_tooltip_text(Some(&tr("Remove attachment")));
             remove.add_css_class("flat");
             remove.add_css_class("circular");
-            remove.set_tooltip_text(Some("Remove attachment"));
+            remove.set_tooltip_text(Some(&tr("Remove attachment")));
             chip.append(&remove);
             self.chips.insert(&chip, -1);
             let idx = i;

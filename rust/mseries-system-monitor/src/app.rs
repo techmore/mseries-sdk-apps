@@ -17,7 +17,7 @@ pub fn build(application: &gtk::Application) {
 
     let window = gtk::ApplicationWindow::builder()
         .application(application)
-        .title("System Monitor")
+        .title(tr("System Monitor"))
         .build();
     mseries_pantheon_kit::appearance::size_window(
         &window,
@@ -46,7 +46,7 @@ pub fn build(application: &gtk::Application) {
     set_box_spacing_text_units(&overview, 1.0);
     set_margins_text_units(&overview, 2.0, 2.0, 2.0, 2.0);
     let intro = gtk::Label::builder()
-        .label("Live host usage with btop when you need process-level detail.")
+        .label(tr("Live host usage with btop when you need process-level detail."))
         .xalign(0.0)
         .wrap(true)
         .build();
@@ -57,7 +57,7 @@ pub fn build(application: &gtk::Application) {
     let live = gtk::ToggleButton::with_label("Live updates");
     live.set_active(true);
     let refresh = gtk::Button::from_icon_name("view-refresh-symbolic");
-    refresh.set_tooltip_text(Some("Refresh CPU and memory now"));
+    refresh.set_tooltip_text(Some(&tr("Refresh CPU and memory now")));
     set_accessible_label(&refresh, "Refresh CPU and memory");
     controls.append(&live);
     controls.append(&refresh);
@@ -82,7 +82,7 @@ pub fn build(application: &gtk::Application) {
     });
 
     let updated = gtk::Label::builder()
-        .label("Waiting for the first sample…")
+        .label(tr("Waiting for the first sample…"))
         .xalign(0.0)
         .build();
     updated.add_css_class("dim-label");
@@ -94,7 +94,7 @@ pub fn build(application: &gtk::Application) {
     btop_page.add_css_class("pantheon-page");
     set_box_spacing_text_units(&btop_page, 0.75);
     let btop_status = gtk::Label::builder()
-        .label("btop starts when this page opens. Press q in the terminal to close it.")
+        .label(tr("btop starts when this page opens. Press q in the terminal to close it."))
         .xalign(0.0)
         .wrap(true)
         .build();
@@ -125,11 +125,11 @@ pub fn build(application: &gtk::Application) {
             if let Some(percent) = sample.cpu.percent {
                 cpu_value.set_text(&format!("{percent:.0}%"));
                 cpu_bar.set_fraction(percent / 100.0);
-                cpu_detail.set_text("Average host CPU utilization since the last sample");
+                cpu_detail.set_text(&tr("Average host CPU utilization since the last sample"));
             } else {
-                cpu_value.set_text("Sampling…");
+                cpu_value.set_text(&tr("Sampling…"));
                 cpu_bar.set_fraction(0.0);
-                cpu_detail.set_text("A second sample is needed to calculate CPU use");
+                cpu_detail.set_text(&tr("A second sample is needed to calculate CPU use"));
             }
             let fraction = if sample.memory.total_bytes == 0 {
                 0.0
@@ -151,13 +151,13 @@ pub fn build(application: &gtk::Application) {
             updated.set_text(&format!("Updated at {time}"));
         }
         Err(_) => {
-            cpu_value.set_text("Unavailable");
+            cpu_value.set_text(&tr("Unavailable"));
             cpu_bar.set_fraction(0.0);
-            cpu_detail.set_text("Linux CPU counters could not be read");
-            memory_value.set_text("Unavailable");
+            cpu_detail.set_text(&tr("Linux CPU counters could not be read"));
+            memory_value.set_text(&tr("Unavailable"));
             memory_bar.set_fraction(0.0);
-            memory_detail.set_text("Linux memory counters could not be read");
-            updated.set_text("Metrics could not be read; check the host procfs");
+            memory_detail.set_text(&tr("Linux memory counters could not be read"));
+            updated.set_text(&tr("Metrics could not be read; check the host procfs"));
         }
     });
     poller.bind_to_widget_mapped(&overview);
@@ -189,7 +189,7 @@ pub fn build(application: &gtk::Application) {
         move |_| {
             if started.get() {
                 terminal.feed_child(b"q");
-                status.set_text("Stopping btop while this page is hidden…");
+                status.set_text(&tr("Stopping btop while this page is hidden…"));
             }
         }
     });
@@ -217,7 +217,7 @@ pub fn build(application: &gtk::Application) {
     let exit_status = btop_status.clone();
     terminal.connect_child_exited(move |_, _| {
         terminal_started.set(false);
-        exit_status.set_text("btop has exited. Select Start or restart btop to reopen it.");
+        exit_status.set_text(&tr("btop has exited. Select Start or restart btop to reopen it."));
     });
     let terminal_to_close = terminal.clone();
     window.connect_close_request(move |_| {
@@ -244,7 +244,7 @@ fn metric_card(title: &str) -> (gtk::Box, gtk::Label, gtk::ProgressBar, gtk::Lab
     let bar = gtk::ProgressBar::new();
     bar.set_show_text(false);
     let detail = gtk::Label::builder()
-        .label("Waiting for data")
+        .label(tr("Waiting for data"))
         .xalign(0.0)
         .wrap(true)
         .build();
@@ -260,7 +260,7 @@ fn start_btop(terminal: &vte4::Terminal, started: &Rc<Cell<bool>>, status: &gtk:
     if started.replace(true) {
         return;
     }
-    status.set_text("Starting btop…");
+    status.set_text(&tr("Starting btop…"));
     let terminal_for_result = terminal.clone();
     let started_for_result = started.clone();
     let status_for_result = status.clone();
@@ -276,12 +276,12 @@ fn start_btop(terminal: &vte4::Terminal, started: &Rc<Cell<bool>>, status: &gtk:
         move |result| match result {
             Ok(pid) => {
                 terminal_for_result.watch_child(pid);
-                status_for_result.set_text("btop is running. Press q to close it.");
+                status_for_result.set_text(&tr("btop is running. Press q to close it."));
             }
             Err(_) => {
                 started_for_result.set(false);
                 status_for_result
-                    .set_text("Could not start btop. Install the btop package, then retry.");
+                    .set_text(&tr("Could not start btop. Install the btop package, then retry."));
             }
         },
     );

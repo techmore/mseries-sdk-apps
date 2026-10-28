@@ -6,6 +6,7 @@
 
 use crate::chat::label;
 use crate::look::{iso_to_unix, relative_time};
+use crate::strings::tr;
 use crate::t3::model::{Provider, ThreadShell};
 use gtk::{gdk, gio, glib, pango, prelude::*};
 use serde::{Deserialize, Serialize};
@@ -114,12 +115,12 @@ pub fn thread_row(t: &ThreadShell, title: &str, accent: &str, now: i64) -> gtk::
         head.append(&spinner);
     } else if t.pending_requests() > 0 {
         let b = label("?", &["sb-unread", "sb-ask"]);
-        b.set_tooltip_text(Some("Needs your answer"));
+        b.set_tooltip_text(Some(&tr("Needs your answer")));
         head.append(&b);
     } else if is_unread(t) {
         let b = gtk::Label::new(None);
         b.add_css_class("sb-unread");
-        b.set_tooltip_text(Some("New activity"));
+        b.set_tooltip_text(Some(&tr("New activity")));
         b.update_property(&[gtk::accessible::Property::Label("New activity")]);
         head.append(&b);
     }
@@ -157,7 +158,7 @@ pub fn session_row(title: &str, mtime: i64, imported: bool, id: &str, now: i64) 
     if imported {
         let mark = gtk::Image::from_icon_name("emblem-synchronizing-symbolic");
         mark.add_css_class("dim-label");
-        mark.set_tooltip_text(Some("Imported on the server"));
+        mark.set_tooltip_text(Some(&tr("Imported on the server")));
         head.append(&mark);
     }
     row_box.append(&head);
@@ -171,7 +172,7 @@ pub fn session_row(title: &str, mtime: i64, imported: bool, id: &str, now: i64) 
 /// A small Granite-style dialog asking for a new title.
 pub fn rename_dialog(parent: &gtk::ApplicationWindow, current: &str, on_ok: impl Fn(String) + 'static) {
     let dialog =
-        gtk::Window::builder().transient_for(parent).modal(true).title("Rename Thread").default_width(420).build();
+        gtk::Window::builder().transient_for(parent).modal(true).title(tr("Rename Thread")).default_width(420).build();
     let column = gtk::Box::new(gtk::Orientation::Vertical, 10);
     column.set_margin_top(16);
     column.set_margin_bottom(16);

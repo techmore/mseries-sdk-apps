@@ -3,6 +3,7 @@
 
 use crate::plugin::{Plugin, StatusLine};
 use crate::repos::ReposPage;
+use crate::strings::tr;
 use gtk::glib;
 use gtk::prelude::*;
 use serde_json::Value;
@@ -110,7 +111,7 @@ impl Shiplog {
                 if !s.url.is_empty() {
                     let open = gtk::Button::from_icon_name("web-browser-symbolic");
                     open.add_css_class("flat");
-                    open.set_tooltip_text(Some("Open on GitHub"));
+                    open.set_tooltip_text(Some(&tr("Open on GitHub")));
                     let url = s.url.clone();
                     open.connect_clicked(move |_| {
                         let _ = gtk::gio::AppInfo::launch_default_for_uri(&url, None::<&gtk::gio::AppLaunchContext>);
@@ -151,10 +152,10 @@ impl Plugin for Shiplog {
     fn refresh(&self) {
         let repos: Vec<String> = self.repos.config().repos.into_iter().map(|r| r.repo).collect();
         if repos.is_empty() {
-            self.status.set_text("Pin a repo on the Repos page to see what ships there.");
+            self.status.set_text(&tr("Pin a repo on the Repos page to see what ships there."));
             return;
         }
-        self.status.set_text("Reading merged pull requests…");
+        self.status.set_text(&tr("Reading merged pull requests…"));
         let (list, status, cache) = (self.list.clone(), self.status.clone(), self.cache.clone());
         let (tx, rx) = futures_channel::oneshot::channel();
         std::thread::spawn(move || {

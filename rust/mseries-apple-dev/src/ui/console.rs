@@ -4,6 +4,7 @@
 //! here exactly as in a terminal. The pane keeps the scrollback of earlier commands.
 
 use crate::commands::Job;
+use crate::strings::tr;
 use gtk::{gdk, gio, glib, pango, prelude::*};
 use mseries_pantheon_kit::{set_accessible_label, set_box_spacing_text_units, set_margins_text_units};
 use std::cell::{Cell, RefCell};
@@ -51,10 +52,11 @@ impl Console {
         icon.set_accessible_role(gtk::AccessibleRole::Presentation);
         let spinner = gtk::Spinner::new();
         spinner.set_visible(false);
-        let title = gtk::Label::builder().label("Activity").xalign(0.0).ellipsize(pango::EllipsizeMode::End).build();
+        let title =
+            gtk::Label::builder().label(tr("Activity")).xalign(0.0).ellipsize(pango::EllipsizeMode::End).build();
         title.add_css_class("heading");
         let status = gtk::Label::builder()
-            .label("Commands you run appear here.")
+            .label(tr("Commands you run appear here."))
             .xalign(0.0)
             .hexpand(true)
             .ellipsize(pango::EllipsizeMode::End)
@@ -62,15 +64,15 @@ impl Console {
         status.add_css_class("dim-label");
         let stop = gtk::Button::builder().icon_name("media-playback-stop-symbolic").sensitive(false).build();
         stop.add_css_class("flat");
-        stop.set_tooltip_text(Some("Stop the running command (Ctrl+.)"));
+        stop.set_tooltip_text(Some(&tr("Stop the running command (Ctrl+.)")));
         set_accessible_label(&stop, "Stop the running command");
         let copy = gtk::Button::from_icon_name("edit-copy-symbolic");
         copy.add_css_class("flat");
-        copy.set_tooltip_text(Some("Copy the selection, or everything when nothing is selected"));
+        copy.set_tooltip_text(Some(&tr("Copy the selection, or everything when nothing is selected")));
         set_accessible_label(&copy, "Copy terminal output");
         let clear = gtk::Button::from_icon_name("edit-clear-all-symbolic");
         clear.add_css_class("flat");
-        clear.set_tooltip_text(Some("Clear the output"));
+        clear.set_tooltip_text(Some(&tr("Clear the output")));
         set_accessible_label(&clear, "Clear the output");
         bar.append(&icon);
         bar.append(&spinner);
@@ -194,7 +196,7 @@ impl Console {
         let cwd = job.cwd.to_string_lossy().into_owned();
         self.feed_line(&format!("\n\x1b[1m▶ {}\x1b[0m  \x1b[2m{}\x1b[0m\n", job.title, cwd));
         self.title.set_text(&job.title);
-        self.status.set_text("Starting…");
+        self.status.set_text(&tr("Starting…"));
         self.icon.set_icon_name(Some("utilities-terminal-symbolic"));
         self.stop_requested.set(false);
         self.generation.set(self.generation.get() + 1);
@@ -218,7 +220,7 @@ impl Console {
             move |result| match result {
                 Ok(pid) => {
                     this.pid.set(Some(pid));
-                    this.status.set_text("Running");
+                    this.status.set_text(&tr("Running"));
                     this.tick();
                 }
                 Err(error) => {
@@ -251,7 +253,7 @@ impl Console {
     pub fn stop(self: &Rc<Self>) {
         let Some(pid) = self.pid.get() else { return };
         self.stop_requested.set(true);
-        self.status.set_text("Stopping…");
+        self.status.set_text(&tr("Stopping…"));
         // VTE starts the child as a session leader, so the negative pid reaches its whole group.
         unsafe { libc::kill(-pid.0, libc::SIGINT) };
         let generation = self.generation.get();

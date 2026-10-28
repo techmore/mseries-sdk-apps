@@ -6,6 +6,7 @@ use crate::chat::{self, label};
 use crate::index::{self, Session};
 use crate::look::{now_unix, tilde};
 use crate::provider_status;
+use crate::strings::tr;
 use crate::t3::attach;
 use crate::t3::model::Project;
 use crate::t3::model::{Provider, ServerConfig, Shell, ThreadShell, ThreadView, TurnItem};
@@ -223,7 +224,7 @@ impl App {
         let side_header = header_bar();
         side_header.pack_start(&gtk::WindowControls::new(gtk::PackType::Start));
         side_header.set_title_widget(Some(&label("", &[])));
-        let search = gtk::SearchEntry::builder().placeholder_text("Search chats").hexpand(true).build();
+        let search = gtk::SearchEntry::builder().placeholder_text(tr("Search chats")).hexpand(true).build();
         search.set_margin_start(12);
         search.set_margin_end(12);
         search.set_margin_bottom(6);
@@ -261,7 +262,7 @@ impl App {
         env_child.append(&env_label);
         env_child.append(&gtk::Image::from_icon_name("pan-down-symbolic"));
         let env_button =
-            gtk::MenuButton::builder().child(&env_child).has_frame(false).tooltip_text("Environment").build();
+            gtk::MenuButton::builder().child(&env_child).has_frame(false).tooltip_text(tr("Environment")).build();
         env_button.add_css_class("env-switch");
         mseries_pantheon_kit::set_accessible_label(&env_button, "Environment");
         status_box.append(&env_button);
@@ -286,7 +287,7 @@ impl App {
         titles.append(&subtitle);
         main_header.set_title_widget(Some(&titles));
         let new_chat = gtk::Button::from_icon_name("list-add-symbolic");
-        new_chat.set_tooltip_text(Some("New Thread (Ctrl+N)"));
+        new_chat.set_tooltip_text(Some(&tr("New Thread (Ctrl+N)")));
         main_header.pack_start(&new_chat);
         // The app menu (elementary HIG: a MenuButton in the header, sections, accelerator labels drawn by
         // GTK from the `win.*` accelerators registered in `wire`).
@@ -350,7 +351,7 @@ impl App {
         menu_model.append_section(None, &section(&[("About T3", "win.about")]));
         let menu =
             gtk::MenuButton::builder().icon_name("open-menu-symbolic").menu_model(&menu_model).primary(true).build();
-        menu.set_tooltip_text(Some("Menu"));
+        menu.set_tooltip_text(Some(&tr("Menu")));
         main_header.pack_end(&gtk::WindowControls::new(gtk::PackType::End));
         main_header.pack_end(&menu);
 
@@ -370,15 +371,16 @@ impl App {
 
         // ---- composer ------------------------------------------------------------------------
         let provider_dd = gtk::DropDown::from_strings(&[]);
-        provider_dd.set_tooltip_text(Some("Provider"));
+        provider_dd.set_tooltip_text(Some(&tr("Provider")));
         let model_dd = gtk::DropDown::from_strings(&[]);
-        model_dd.set_tooltip_text(Some("Model"));
+        model_dd.set_tooltip_text(Some(&tr("Model")));
         let modes: Vec<&str> = RUNTIME_MODES.iter().map(|(_, l)| *l).collect();
         let mode_dd = gtk::DropDown::from_strings(&modes);
         mode_dd.set_selected(0); // supervised by default; full access is an explicit per-thread choice
-        mode_dd.set_tooltip_text(Some("Permission mode"));
+        mode_dd.set_tooltip_text(Some(&tr("Permission mode")));
         let workspace_dd = gtk::DropDown::from_strings(&["Project folder", "New worktree"]);
-        workspace_dd.set_tooltip_text(Some("Where the new thread works: the project folder, or a fresh git worktree"));
+        workspace_dd
+            .set_tooltip_text(Some(&tr("Where the new thread works: the project folder, or a fresh git worktree")));
         workspace_dd.set_visible(false);
         let pickers = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         pickers.append(&provider_dd);
@@ -392,11 +394,11 @@ impl App {
         let entry = composer::Composer::new();
         let send_btn = gtk::Button::from_icon_name("mail-send-symbolic");
         send_btn.add_css_class("suggested-action");
-        send_btn.set_tooltip_text(Some("Send (Enter; Shift+Enter for a new line)"));
+        send_btn.set_tooltip_text(Some(&tr("Send (Enter; Shift+Enter for a new line)")));
         send_btn.set_valign(gtk::Align::End);
         let stop_btn = gtk::Button::from_icon_name("media-playback-stop-symbolic");
         stop_btn.add_css_class("destructive-action");
-        stop_btn.set_tooltip_text(Some("Stop"));
+        stop_btn.set_tooltip_text(Some(&tr("Stop")));
         stop_btn.set_valign(gtk::Align::End);
         stop_btn.set_visible(false);
         let entry_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -434,7 +436,7 @@ impl App {
         let issue_open = gtk::Button::builder().child(&issue_open_child).build();
         issue_open.add_css_class(granite::STYLE_CLASS_FLAT);
         issue_open.set_valign(gtk::Align::Center);
-        issue_open.set_tooltip_text(Some("Open on GitHub"));
+        issue_open.set_tooltip_text(Some(&tr("Open on GitHub")));
         mseries_pantheon_kit::set_accessible_label(&issue_open, "Open on GitHub");
         let issue_box = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         issue_box.add_css_class("issue-bar");
@@ -454,7 +456,7 @@ impl App {
 
         // ---- other pages ---------------------------------------------------------------------
         let empty = granite::Placeholder::new("No Thread Open");
-        empty.set_description("Pick a thread in the sidebar, or start a new one with Ctrl+N.");
+        empty.set_description(&tr("Pick a thread in the sidebar, or start a new one with Ctrl+N."));
         empty.set_icon(&gio::ThemedIcon::new("org.techmore.mseries.T3"));
         let empty_new = empty.append_button(
             &gio::ThemedIcon::new("list-add-symbolic"),
@@ -491,8 +493,8 @@ impl App {
         pair_text.set_justify(gtk::Justification::Center);
         pair_text.set_xalign(0.5);
         pair_box.append(&pair_text);
-        let pair_server = gtk::Entry::builder().text(DEFAULT_SERVER).placeholder_text("Server URL").build();
-        let pair_entry = gtk::Entry::builder().placeholder_text("Pairing token or URL").build();
+        let pair_server = gtk::Entry::builder().text(DEFAULT_SERVER).placeholder_text(tr("Server URL")).build();
+        let pair_entry = gtk::Entry::builder().placeholder_text(tr("Pairing token or URL")).build();
         let pair_button = gtk::Button::with_label("Pair");
         pair_button.add_css_class("suggested-action");
         pair_button.set_halign(gtk::Align::End);
@@ -1125,14 +1127,14 @@ impl App {
     fn providers_window(self: &Rc<Self>) {
         let window = gtk::Window::builder()
             .transient_for(&self.window)
-            .title("AI Providers")
+            .title(tr("AI Providers"))
             .default_width(560)
             .default_height(420)
             .build();
         let header = gtk::HeaderBar::builder().show_title_buttons(true).build();
         header.add_css_class(granite::STYLE_CLASS_FLAT);
         let refresh = gtk::Button::from_icon_name("view-refresh-symbolic");
-        refresh.set_tooltip_text(Some("Ask the server to re-check every provider"));
+        refresh.set_tooltip_text(Some(&tr("Ask the server to re-check every provider")));
         refresh.update_property(&[gtk::accessible::Property::Label("Refresh providers")]);
         header.pack_end(&refresh);
         window.set_titlebar(Some(&header));
@@ -1805,7 +1807,7 @@ impl App {
     fn pair(self: &Rc<Self>) {
         let input = self.pair_entry.text().to_string();
         if input.trim().is_empty() {
-            self.pair_status.set_text("Paste the token from `t3 pair`.");
+            self.pair_status.set_text(&tr("Paste the token from `t3 pair`."));
             return;
         }
         let (server, token) = auth::parse_pairing(&input, &self.pair_server.text());
@@ -1826,7 +1828,7 @@ impl App {
             }
             self.refresh_environments();
         }
-        self.pair_status.set_text("Pairing…");
+        self.pair_status.set_text(&tr("Pairing…"));
         self.pair_button.set_sensitive(false);
         let app = self.clone();
         glib::spawn_future_local(async move {
@@ -3594,8 +3596,8 @@ impl App {
         hint.set_icon(&gio::ThemedIcon::new("mail-message-new-symbolic"));
         hint.set_vexpand(true);
         self.chat.append(&hint);
-        self.title.set_text("New thread");
-        self.window.set_title(Some("New thread - T3"));
+        self.title.set_text(&tr("New thread"));
+        self.window.set_title(Some(&tr("New thread - T3")));
         self.subtitle.set_text(&tilde(&project.workspace_root));
         self.subtitle.set_visible(true);
         self.composer.set_visible(true);
@@ -3813,9 +3815,9 @@ impl App {
         let rpc = self.conn.borrow().as_ref().map(|c| c.rpc.clone());
         self.leave_live();
         self.list.unselect_all();
-        self.title.set_text("Usage");
-        self.window.set_title(Some("Usage - T3"));
-        self.subtitle.set_text("Plan limits, resets and tokens per provider");
+        self.title.set_text(&tr("Usage"));
+        self.window.set_title(Some(&tr("Usage - T3")));
+        self.subtitle.set_text(&tr("Plan limits, resets and tokens per provider"));
         self.subtitle.set_visible(true);
         self.show_page("usage");
         self.usage_page.load_local();
@@ -3831,9 +3833,9 @@ impl App {
     pub fn show_fleet(self: &Rc<Self>) {
         self.leave_live();
         self.list.unselect_all();
-        self.title.set_text("Remote Machines");
-        self.window.set_title(Some("Remote Machines - T3"));
-        self.subtitle.set_text("Fleet Shepherd · configured SSH aliases · read-only monitoring");
+        self.title.set_text(&tr("Remote Machines"));
+        self.window.set_title(Some(&tr("Remote Machines - T3")));
+        self.subtitle.set_text(&tr("Fleet Shepherd · configured SSH aliases · read-only monitoring"));
         self.subtitle.set_visible(true);
         self.show_page("fleet");
         self.fleet_page.open();
@@ -3861,9 +3863,9 @@ impl App {
     pub fn show_activity(self: &Rc<Self>) {
         self.leave_live();
         self.list.unselect_all();
-        self.title.set_text("Activity");
-        self.window.set_title(Some("Activity - T3"));
-        self.subtitle.set_text("Today's activity in pinned repositories on this computer");
+        self.title.set_text(&tr("Activity"));
+        self.window.set_title(Some(&tr("Activity - T3")));
+        self.subtitle.set_text(&tr("Today's activity in pinned repositories on this computer"));
         self.subtitle.set_visible(true);
         self.show_page("activity");
         self.activity_page.refresh();
@@ -3876,9 +3878,9 @@ impl App {
     pub fn show_repository_overview(self: &Rc<Self>) {
         self.leave_live();
         self.list.unselect_all();
-        self.title.set_text("Repository Overview");
-        self.window.set_title(Some("Repository Overview - T3"));
-        self.subtitle.set_text("Read-only RepoBar GitHub status · separate account from T3");
+        self.title.set_text(&tr("Repository Overview"));
+        self.window.set_title(Some(&tr("Repository Overview - T3")));
+        self.subtitle.set_text(&tr("Read-only RepoBar GitHub status · separate account from T3"));
         self.subtitle.set_visible(true);
         self.show_page("repository-overview");
         self.repo_monitor.refresh();
@@ -3910,9 +3912,9 @@ impl App {
     pub fn show_repos(self: &Rc<Self>) {
         self.leave_live();
         self.list.unselect_all();
-        self.title.set_text("Repos");
-        self.window.set_title(Some("Repos - T3"));
-        self.subtitle.set_text("Pinned GitHub repos, their issue backlog, and the runner");
+        self.title.set_text(&tr("Repos"));
+        self.window.set_title(Some(&tr("Repos - T3")));
+        self.subtitle.set_text(&tr("Pinned GitHub repos, their issue backlog, and the runner"));
         self.subtitle.set_visible(true);
         self.show_page("repos");
         self.repos_page.wire_filters(self.clone());
@@ -4227,9 +4229,9 @@ impl App {
         };
         self.leave_live();
         self.list.unselect_all();
-        self.title.set_text("Diagnostics");
-        self.window.set_title(Some("Diagnostics - T3"));
-        self.subtitle.set_text("The server's resource telemetry: it samples only while this page is open");
+        self.title.set_text(&tr("Diagnostics"));
+        self.window.set_title(Some(&tr("Diagnostics - T3")));
+        self.subtitle.set_text(&tr("The server's resource telemetry: it samples only while this page is open"));
         self.subtitle.set_visible(true);
         self.show_page("diagnostics");
         self.diagnostics_page.start(self.clone(), rpc);

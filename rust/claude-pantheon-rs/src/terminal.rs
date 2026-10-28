@@ -4,6 +4,7 @@
 //! `terminal.resize`. No local PTY. The client keeps at most 512 KiB of history (the contract's
 //! client cap); the server retains 5,000 lines / 8 MiB on its side.
 
+use crate::strings::tr;
 use crate::t3::Rpc;
 use futures_util::StreamExt;
 use gtk::{gdk, glib, prelude::*};
@@ -160,7 +161,7 @@ impl TerminalPane {
                 self.status
                     .set_text(&format!("The shell exited{}", code.map(|c| format!(" with {c}")).unwrap_or_default()));
             }
-            "closed" => self.status.set_text("The terminal was closed on the server"),
+            "closed" => self.status.set_text(&tr("The terminal was closed on the server")),
             "cleared" => {
                 self.term.reset(true, true);
                 self.fed.set(0);
