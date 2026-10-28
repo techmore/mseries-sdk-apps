@@ -66,6 +66,18 @@ impl A11y {
         String::try_from(self.property(&root, "org.a11y.atspi.Application", "ToolkitName")?).ok()
     }
 
+    /// The last `max_chars` characters before the caret of a text field, read through the AT-SPI Text interface.
+    /// `None` when the node has no Text interface or no caret.
+    pub fn text_before_caret(&self, node: &NodeRef, max_chars: usize) -> Option<String> {
+        let caret = i32::try_from(self.property(node, TEXT, "CaretOffset")?).ok()?;
+        if caret < 0 {
+            return None;
+        }
+        let start = (caret - max_chars as i32).max(0);
+        let reply = self.call(node, TEXT, "GetText", &(start, caret))?;
+        reply.body().deserialize::<String>().ok()
+    }
+
     async fn call_async<B>(
         &self,
         node: &NodeRef,

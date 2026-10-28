@@ -1,6 +1,7 @@
 //! Smart Reply: the hotkey command, the input service and the fixture tools.
 //!
 //!   mseries-reply trigger [--in SECONDS] [--dry-run]   draft a reply for the focused chat field (bound to the hotkey)
+//!   mseries-reply suggest [--dry-run]                 continue the text in the focused field (F6); Tab inserts it
 //!   mseries-reply input-service                        hold the draft; Tab inserts it, Esc discards it (systemd user unit)
 //!   mseries-reply memory add|list|edit|rm|export|preview   what Smart Reply knows about you (run it with no arguments for help)
 //!   mseries-reply init-rules                           write the default rules file unless one exists
@@ -15,7 +16,7 @@ use mseries_reply::context::build_packet;
 use mseries_reply::fixture::Fixture;
 use mseries_reply::marker::ChatMarker;
 use mseries_reply::rules::{FieldKind, Query, Rules};
-use mseries_reply::{ibus, memory, probe, trigger};
+use mseries_reply::{ibus, memory, probe, suggest, trigger};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -30,6 +31,9 @@ fn main() -> ExitCode {
                 dry_run: args.iter().any(|arg| arg == "--dry-run"),
             };
             return ExitCode::from(trigger::run(&options));
+        }
+        Some("suggest") => {
+            return ExitCode::from(suggest::run(args.iter().any(|arg| arg == "--dry-run")));
         }
         Some("input-service") => {
             return match ibus::serve() {

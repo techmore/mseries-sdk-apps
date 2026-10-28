@@ -23,6 +23,7 @@ pub mod memory;
 pub mod probe;
 pub mod rules;
 pub mod source;
+pub mod suggest;
 pub mod tree;
 pub mod trigger;
 pub mod window;
