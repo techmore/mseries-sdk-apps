@@ -1,0 +1,28 @@
+[package]
+name = "mseries-assistant"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+description = "On-device Siri-like assistant: desktop driver tools (also as an MCP server), agent loop over mseries-assistd, and the Assistant app"
+
+[dependencies]
+mseries-pantheon-kit = { path = "../mseries-pantheon-kit" }
+mseries-reply = { path = "../mseries-reply" }
+gtk = { package = "gtk4", version = "0.11", features = ["v4_20"] }
+granite = { package = "granite-rs", version = "3.3", features = ["v7_8", "gtk_v4_20"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "json", "rustls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2.5"
+zbus = "=5.19.0"
+futures-channel = "0.3"
+futures-util = { version = "0.3", default-features = false }
+
+[[bin]]
+name = "mseries-assistant"
+path = "src/main.rs"
+
+[[bin]]
+name = "mseries-desktop-mcp"
+path = "src/bin/mseries-desktop-mcp.rs"

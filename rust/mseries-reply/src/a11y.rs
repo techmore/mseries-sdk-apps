@@ -78,6 +78,33 @@ impl A11y {
         reply.body().deserialize::<String>().ok()
     }
 
+    /// Runs the node's AT-SPI action `index` (0 is the default: press, activate, toggle). `true` when the app accepted it.
+    pub fn do_action(&self, node: &NodeRef, index: i32) -> Option<bool> {
+        let reply = self.call(node, "org.a11y.atspi.Action", "DoAction", &(index,))?;
+        reply.body().deserialize::<bool>().ok()
+    }
+
+    /// Names of the node's AT-SPI actions, for example `["click"]`. Empty when it has none.
+    pub fn action_names(&self, node: &NodeRef) -> Vec<String> {
+        let count = self
+            .property(node, "org.a11y.atspi.Action", "NActions")
+            .and_then(|value| i32::try_from(value).ok())
+            .unwrap_or(0)
+            .clamp(0, 8);
+        (0..count)
+            .filter_map(|index| {
+                let reply = self.call(node, "org.a11y.atspi.Action", "GetName", &(index,))?;
+                reply.body().deserialize::<String>().ok()
+            })
+            .collect()
+    }
+
+    /// Replaces an editable field's text. `true` when the app accepted it.
+    pub fn set_text_contents(&self, node: &NodeRef, text: &str) -> Option<bool> {
+        let reply = self.call(node, "org.a11y.atspi.EditableText", "SetTextContents", &(text,))?;
+        reply.body().deserialize::<bool>().ok()
+    }
+
     async fn call_async<B>(
         &self,
         node: &NodeRef,
