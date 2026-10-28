@@ -16,7 +16,7 @@ Label sources: [techmore/thril](https://github.com/techmore/thril) `poly-bagger/
 inline thermal printer, "Printer Settings" and "Stored Labels", pp. 20–22.
 
 ```bash
-mseries/polybagger-print-manager/install.sh                          # launcher, app icon, offline label sync
+mseries/polybagger-print-manager/install.sh                          # copies the app to ~/.local/share (survives reboots and branch switches), launcher, icon, label sync
 python3 mseries/polybagger-print-manager/polybagger_print_manager.py # GUI
 python3 mseries/polybagger-print-manager/polybagger_print_manager.py --status
 python3 mseries/polybagger-print-manager/polybagger_print_manager.py --status --printer QUEUE_OR_SERIAL
