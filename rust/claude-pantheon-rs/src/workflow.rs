@@ -69,24 +69,15 @@ pub struct WebhookInstall {
 }
 
 fn config_path() -> PathBuf {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join(".config"));
-    base.join("claude-pantheon-rs").join("workflow.json")
+    mseries_pantheon_kit::settings::app_config_dir("claude-pantheon-rs").join("workflow.json")
 }
 
 pub fn load_config() -> Config {
-    std::fs::read(config_path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    mseries_pantheon_kit::settings::load_json(&config_path())
 }
 
 pub fn save_config(c: &Config) {
-    let path = config_path();
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    if let Ok(bytes) = serde_json::to_vec_pretty(c) {
-        let _ = std::fs::write(path, bytes);
-    }
+    let _ = mseries_pantheon_kit::settings::save_json(&config_path(), c);
 }
 
 #[derive(Clone, Debug, Default)]

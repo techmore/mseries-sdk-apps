@@ -41,16 +41,12 @@ pub struct Environments {
 }
 
 fn path() -> PathBuf {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join(".config"));
-    base.join("claude-pantheon-rs").join("environments.json")
+    mseries_pantheon_kit::settings::app_config_dir("claude-pantheon-rs").join("environments.json")
 }
 
 impl Environments {
     pub fn load() -> Environments {
-        let mut e: Environments =
-            std::fs::read(path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        let mut e: Environments = mseries_pantheon_kit::settings::load_json(&path());
         if e.list.is_empty() {
             e.list.push(Environment {
                 id: "local".into(),
@@ -63,13 +59,7 @@ impl Environments {
     }
 
     pub fn save(&self) {
-        let p = path();
-        if let Some(dir) = p.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        if let Ok(bytes) = serde_json::to_vec_pretty(self) {
-            let _ = std::fs::write(p, bytes);
-        }
+        let _ = mseries_pantheon_kit::settings::save_json(&path(), self);
     }
 
     pub fn current(&self) -> Option<&Environment> {

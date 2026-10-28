@@ -128,10 +128,7 @@ pub async fn socket_url(cred: &Credential) -> Result<String, WsError> {
 // ---- storage ---------------------------------------------------------------------------------------
 
 fn config_dir() -> PathBuf {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join(".config"));
-    base.join("claude-pantheon-rs")
+    mseries_pantheon_kit::settings::app_config_dir("claude-pantheon-rs")
 }
 
 fn credentials_file() -> PathBuf {

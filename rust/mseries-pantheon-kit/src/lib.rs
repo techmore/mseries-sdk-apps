@@ -15,6 +15,7 @@ mod layout;
 mod messages;
 mod phone_pins;
 mod polling;
+pub mod settings;
 mod system;
 pub mod timeline;
 pub mod updates;

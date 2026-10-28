@@ -22,25 +22,16 @@ pub struct SidebarConfig {
 }
 
 fn config_path() -> PathBuf {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join(".config"));
-    base.join("claude-pantheon-rs").join("sidebar.json")
+    mseries_pantheon_kit::settings::app_config_dir("claude-pantheon-rs").join("sidebar.json")
 }
 
 impl SidebarConfig {
     pub fn load() -> SidebarConfig {
-        std::fs::read(config_path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+        mseries_pantheon_kit::settings::load_json(&config_path())
     }
 
     pub fn save(&self) {
-        let p = config_path();
-        if let Some(dir) = p.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        if let Ok(bytes) = serde_json::to_vec_pretty(self) {
-            let _ = std::fs::write(p, bytes);
-        }
+        let _ = mseries_pantheon_kit::settings::save_json(&config_path(), self);
     }
 
     /// Sorts project ids by the saved order; unknown ones keep their incoming order after the known ones.
