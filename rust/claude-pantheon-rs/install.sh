@@ -65,20 +65,33 @@ binary="$target_dir/release/claude-pantheon-rs"
 [[ -x "$target_dir/release/claude-pantheon-sdk" ]] || { echo 'SDK release binary is missing; run without --no-build' >&2; exit 1; }
 
 # ---- install ---------------------------------------------------------------------------------
-"${sudo[@]}" install -Dm755 "$here/../../mseries/install-tstack-skills.py" "$bindir/mseries-install-tstack-skills"
-for skill in full-send full-stop council sol-loop file-pr takeover babysit-pr modernize leaving-pr-comments; do
-    "${sudo[@]}" install -d "$datadir/mseries/tstack/$skill"
-    "${sudo[@]}" cp -a "$here/../../.agents/skills/$skill/." "$datadir/mseries/tstack/$skill/"
-done
-"${sudo[@]}" install -Dm644 "$here/../../.agents/skills/TSTACK-LICENSE.txt" "$datadir/mseries/tstack/TSTACK-LICENSE.txt"
+# Helpers that live in the OS repo are installed only when this checkout has them.
+install_optional() {
+    if [[ -e "$2" ]]; then
+        "${sudo[@]}" install -D"$1" "$2" "$3"
+    else
+        echo "skipped (not in this checkout): ${2#"$here/../../"}" >&2
+    fi
+}
+# tstack skills ship only when this checkout carries them (they stayed in the OS repo history).
+tstack_script="$here/../../mseries/install-tstack-skills.py"
+tstack_skills="$here/../../.agents/skills"
+if [[ -f "$tstack_script" && -d "$tstack_skills" ]]; then
+    "${sudo[@]}" install -Dm755 "$tstack_script" "$bindir/mseries-install-tstack-skills"
+    for skill in full-send full-stop council sol-loop file-pr takeover babysit-pr modernize leaving-pr-comments; do
+        "${sudo[@]}" install -d "$datadir/mseries/tstack/$skill"
+        "${sudo[@]}" cp -a "$tstack_skills/$skill/." "$datadir/mseries/tstack/$skill/"
+    done
+    "${sudo[@]}" install -Dm644 "$tstack_skills/TSTACK-LICENSE.txt" "$datadir/mseries/tstack/TSTACK-LICENSE.txt"
+fi
 "${sudo[@]}" install -Dm755 "$binary" "$bindir/claude-pantheon-rs"
 "${sudo[@]}" install -Dm755 "$target_dir/release/claude-pantheon-sdk" "$bindir/claude-pantheon-sdk"
 "${sudo[@]}" install -Dm644 "$here/data/org.techmore.mseries.T3Sdk.desktop" "$apps/org.techmore.mseries.T3Sdk.desktop"
 # Shared read-only dependency: also used by the optional RepoBar indicator.
-"${sudo[@]}" install -Dm755 "$here/../../mseries/fleet-shepherd/bin/mseries-fleet" "$bindir/mseries-fleet"
-"${sudo[@]}" install -Dm755 "$here/../../mseries/fleet-shepherd/bin/fleet-snapshot" "$prefix/lib/mseries/fleet/fleet-snapshot"
-"${sudo[@]}" install -Dm644 "$here/../../mseries/fleet-shepherd/LICENSE" "$datadir/licenses/claude-pantheon-rs/fleet-shepherd-MIT.txt"
-"${sudo[@]}" install -Dm755 "$here/../../mseries/repobar.py" "$bindir/mseries-repobar"
+install_optional m755 "$here/../../mseries/fleet-shepherd/bin/mseries-fleet" "$bindir/mseries-fleet"
+install_optional m755 "$here/../../mseries/fleet-shepherd/bin/fleet-snapshot" "$prefix/lib/mseries/fleet/fleet-snapshot"
+install_optional m644 "$here/../../mseries/fleet-shepherd/LICENSE" "$datadir/licenses/claude-pantheon-rs/fleet-shepherd-MIT.txt"
+install_optional m755 "$here/../../mseries/repobar.py" "$bindir/mseries-repobar"
 "${sudo[@]}" install -Dm644 "$here/data/$id.desktop" "$apps/$id.desktop"
 "${sudo[@]}" install -Dm644 "$here/data/$id.metainfo.xml" "$datadir/metainfo/$id.metainfo.xml"
 "${sudo[@]}" install -d "$datadir/dbus-1/services"
@@ -101,8 +114,8 @@ fi
 
 # tstack skills are shared with local provider CLIs, not owned runtime data.
 # User-modified skills are retained; a conflict is reported without replacing them.
-if [[ "$prefix" == "$HOME/.local" ]]; then
-    python3 "$here/../../mseries/install-tstack-skills.py"
+if [[ "$prefix" == "$HOME/.local" && -f "$tstack_script" && -d "$tstack_skills" ]]; then
+    python3 "$tstack_script"
 fi
 
 # ---- Pantheon quirks -------------------------------------------------------------------------
@@ -112,4 +125,4 @@ fi
 if ((reload_dock)) && systemctl --user is-active --quiet pantheon-dock 2>/dev/null; then
     systemctl --user restart pantheon-dock && echo "Restarted pantheon-dock so the new icon shows."
 fi
-echo "Installed Claude to $prefix (binary, desktop entry with New Thread and Usage actions, D-Bus activation, metainfo, icons)."
+echo "Installed T3 to $prefix (binary, desktop entry with New Thread and Usage actions, D-Bus activation, metainfo, icons)."
