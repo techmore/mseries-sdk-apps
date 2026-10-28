@@ -36,11 +36,7 @@ pub trait Plugin {
 }
 
 pub fn config_path() -> PathBuf {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-        .unwrap_or_default();
-    base.join("claude-pantheon").join("plugins.json")
+    mseries_pantheon_kit::settings::app_config_dir("claude-pantheon").join("plugins.json")
 }
 
 pub fn disabled_ids() -> Vec<String> {

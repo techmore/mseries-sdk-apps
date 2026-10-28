@@ -50,11 +50,7 @@ impl Default for Settings {
 }
 
 pub fn config_dir() -> PathBuf {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .unwrap_or_else(|| home().join(".config"));
-    base.join("mseries-apple-dev")
+    mseries_pantheon_kit::settings::app_config_dir("mseries-apple-dev")
 }
 
 pub fn home() -> PathBuf {
@@ -74,21 +70,15 @@ impl Settings {
     }
 
     pub fn load_from(path: &Path) -> Settings {
-        std::fs::read(path).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default()
+        mseries_pantheon_kit::settings::load_json(path)
     }
 
     pub fn save(&self) -> io::Result<()> {
         self.save_to(&Self::file())
     }
 
-    /// Write through a temporary file so a crash never leaves half a settings file.
     pub fn save_to(&self, path: &Path) -> io::Result<()> {
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        let tmp = path.with_extension("json.tmp");
-        std::fs::write(&tmp, serde_json::to_vec_pretty(self).map_err(io::Error::other)?)?;
-        std::fs::rename(&tmp, path)
+        mseries_pantheon_kit::settings::save_json(path, self)
     }
 
     /// All three App Store Connect values are present and the key file exists.

@@ -111,25 +111,16 @@ impl Default for Settings {
 }
 
 pub fn path() -> PathBuf {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join(".config"));
-    base.join("claude-pantheon-rs").join("settings.json")
+    mseries_pantheon_kit::settings::app_config_dir("claude-pantheon-rs").join("settings.json")
 }
 
 impl Settings {
     pub fn load() -> Settings {
-        std::fs::read(path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+        mseries_pantheon_kit::settings::load_json(&path())
     }
 
     pub fn save(&self) {
-        let p = path();
-        if let Some(dir) = p.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        if let Ok(bytes) = serde_json::to_vec_pretty(self) {
-            let _ = std::fs::write(p, bytes);
-        }
+        let _ = mseries_pantheon_kit::settings::save_json(&path(), self);
     }
 
     /// Provider and mode for a project: its overrides, else the global defaults.
