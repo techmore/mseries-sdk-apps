@@ -20,6 +20,7 @@ mseries/polybagger-print-manager/install.sh                          # copies th
 python3 mseries/polybagger-print-manager/polybagger_print_manager.py # GUI
 python3 mseries/polybagger-print-manager/polybagger_print_manager.py --status
 python3 mseries/polybagger-print-manager/polybagger_print_manager.py --status --printer QUEUE_OR_SERIAL
+python3 mseries/polybagger-print-manager/polybagger_print_manager.py --diagnose   # USB bus, kernel log, CUPS queues, saved printer (also the header-bar Diagnostics button)
 python3 mseries/polybagger-print-manager/polybagger_print_manager.py --send "<file>.zpl" --qty 1000
 python3 mseries/polybagger-print-manager/polybagger_print_manager.py --send "<file>.zpl" --printer QUEUE_OR_SERIAL --qty 1000
 python3 mseries/polybagger-print-manager/polybagger_print_manager.py --setup --printer USB_SERIAL
