@@ -2376,20 +2376,17 @@ dependencies = [
 name = "mseries-messages"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
- "base64 0.22.1",
  "granite-rs",
  "gtk4",
- "hmac",
  "image",
  "ipnet",
  "mseries-ai",
  "mseries-pantheon-kit",
+ "mseries-signal-history",
  "percent-encoding",
  "reqwest",
  "rusqlite",
  "serde_json",
- "sha2 0.10.9",
  "url",
 ]
 
@@ -2419,6 +2416,16 @@ dependencies = [
  "serde",
  "serde_json",
  "zbus",
+]
+
+[[package]]
+name = "mseries-signal-history"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "base64 0.22.1",
+ "hmac",
+ "sha2 0.10.9",
 ]
 
 [[package]]

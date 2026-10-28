@@ -6,5 +6,7 @@ pub mod history;
 pub mod import;
 pub mod keyring;
 pub mod progress;
-pub mod secret;
+pub mod secret {
+    pub use mseries_signal_history::Secret;
+}
 pub mod signal_db;

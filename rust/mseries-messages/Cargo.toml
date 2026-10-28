@@ -10,6 +10,7 @@ description = "Native Pantheon Messages client for BlueFerry"
 [dependencies]
 mseries-pantheon-kit = { path = "../mseries-pantheon-kit" }
 mseries-ai = { path = "../mseries-ai" }
+mseries-signal-history = { path = "../mseries-signal-history" }
 gtk = { package = "gtk4", version = "0.11", features = ["v4_20"] }
 granite = { package = "granite-rs", version = "3.3", features = ["v7_8", "gtk_v4_20"] }
 image = { version = "0.25", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
@@ -17,9 +18,5 @@ ipnet = "2.12"
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "rustls"] }
 serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled", "backup"] }
-aes-gcm = "0.10"
-hmac = "0.12"
-sha2 = "0.10"
-base64 = "0.22"
 url = "2.5"
 percent-encoding = "2"

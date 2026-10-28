@@ -465,7 +465,7 @@ fn open_history(cfg: &Config, secrets: &dyn Secrets) -> Result<HistoryStore, Str
     let secret = secrets
         .lookup(&[("purpose", "encrypted-message-history")])?
         .ok_or("no Signal Pantheon history key in the keyring; start Signal Pantheon once first")?;
-    let key = HistoryKey::from_keyring_secret(&secret)?;
+    let key = HistoryKey::from_keyring_secret(secret.expose())?;
     HistoryStore::open(&cfg.history_db, key, false)
 }
 
