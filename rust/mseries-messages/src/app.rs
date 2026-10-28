@@ -615,9 +615,16 @@ pub struct App {
     /// Signal threads opened here: key -> last message handle seen. The Pantheon
     /// client owns the saved read state; this only keeps the list quiet meanwhile.
     signal_seen: RefCell<HashMap<String, String>>,
+    /// Shown when Signal cannot work: a stuck daemon (with Restart) or an unreadable store.
+    signal_banner: gtk::Box,
+    signal_banner_title: gtk::Label,
+    signal_banner_detail: gtk::Label,
+    signal_restart: gtk::Button,
+    signal_stuck_pid: Cell<Option<u32>>,
     history_render_generation: Cell<u64>,
     editor: gtk::TextView,
     send_button: gtk::Button,
+    composer_row: gtk::Box,
     ai_button: gtk::Button,
     ai_spinner: gtk::Spinner,
     ai_status: gtk::Label,
@@ -889,7 +896,7 @@ impl App {
             .build();
         let signal_description = gtk::Label::builder()
             .label(tr(
-                "Read-only for now: lists conversations saved by Signal Pantheon",
+                "Signal conversations from Signal Pantheon, in the same list",
             ))
             .xalign(0.0)
             .wrap(true)
@@ -949,9 +956,9 @@ impl App {
             .build();
         menu_button.set_popover(Some(&menu));
         mseries_pantheon_kit::set_accessible_label(&menu_button, &tr("Menu"));
+        header.add_css_class("pantheon-pane-header");
         header.pack_end(&menu_button);
         header.pack_end(&new_message);
-        header.pack_end(&refresh);
 
         let status = gtk::Label::builder()
             .label(tr("Connecting to BlueFerry…"))
@@ -961,6 +968,13 @@ impl App {
         status.add_css_class("dim-label");
         status.add_css_class("caption");
         status.add_css_class("pantheon-sidebar-status");
+        // The sidebar footer speaks only when something needs attention.
+        status.connect_label_notify(|status| {
+            let text = status.text();
+            status.set_visible(
+                !text.is_empty() && text != "Connected to BlueFerry · iPhone Messages available",
+            );
+        });
         let feedback = gtk::Label::builder()
             .label("")
             .xalign(0.0)
@@ -1019,6 +1033,35 @@ impl App {
             .hscrollbar_policy(gtk::PolicyType::Never)
             .vexpand(true)
             .build();
+        let signal_banner_title = gtk::Label::builder()
+            .label(tr("Signal is stuck"))
+            .xalign(0.0)
+            .wrap(true)
+            .build();
+        signal_banner_title.add_css_class("heading");
+        let signal_banner_detail = gtk::Label::builder().xalign(0.0).wrap(true).build();
+        signal_banner_detail.add_css_class("caption");
+        signal_banner_detail.add_css_class("dim-label");
+        let signal_restart = gtk::Button::with_label(&tr("Restart Signal"));
+        signal_restart.set_halign(gtk::Align::End);
+        mseries_pantheon_kit::set_accessible_label(
+            &signal_restart,
+            &tr("Restart the Signal service"),
+        );
+        let signal_banner_icon = gtk::Image::from_icon_name("dialog-warning-symbolic");
+        signal_banner_icon.set_valign(gtk::Align::Start);
+        signal_banner_icon.add_css_class("pantheon-banner-icon");
+        let signal_banner_text = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        signal_banner_text.set_hexpand(true);
+        signal_banner_text.append(&signal_banner_title);
+        signal_banner_text.append(&signal_banner_detail);
+        signal_banner_text.append(&signal_restart);
+        let signal_banner = gtk::Box::new(gtk::Orientation::Horizontal, 9);
+        signal_banner.add_css_class("pantheon-banner");
+        signal_banner.append(&signal_banner_icon);
+        signal_banner.append(&signal_banner_text);
+        signal_banner.set_visible(false);
+
         let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 0);
         sidebar.add_css_class("sidebar");
         sidebar.add_css_class("pantheon-messages-sidebar");
@@ -1027,6 +1070,7 @@ impl App {
         sidebar.append(&favorites_section);
         sidebar.append(&pin_note);
         sidebar.append(&list_scroll);
+        sidebar.append(&signal_banner);
         sidebar.append(&status);
 
         let conversation_title = gtk::Label::builder()
@@ -1061,6 +1105,7 @@ impl App {
             .decoration_layout(":maximize")
             .build();
         conversation_header.add_css_class("flat");
+        conversation_header.add_css_class("pantheon-pane-header");
         conversation_header.set_title_widget(Some(&title_box));
         let back_button = granite::BackButton::new(&tr("Conversations")).upcast::<gtk::Button>();
         back_button.set_visible(false);
@@ -1151,8 +1196,11 @@ impl App {
         compose.append(&composer_field);
         compose.append(&send_button);
 
-        let ai_button = gtk::Button::with_label("Draft reply");
+        let ai_button = gtk::Button::from_icon_name("document-edit-symbolic");
         ai_button.add_css_class("flat");
+        ai_button.add_css_class("circular");
+        ai_button.set_valign(gtk::Align::End);
+        composer_field.insert_child_after(&ai_button, Some(&editor_scroll));
         ai_button.set_sensitive(false);
         ai_button.set_tooltip_text(Some(
             "Draft a reply with the local Qwen model. Conversation text is not saved to the AI database.",
@@ -1170,9 +1218,19 @@ impl App {
         let ai_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         mseries_pantheon_kit::set_box_spacing_text_units(&ai_row, 0.5);
         mseries_pantheon_kit::set_margins_text_units(&ai_row, 0.3, 0.75, 0.3, 0.75);
-        ai_row.append(&ai_button);
         ai_row.append(&ai_spinner);
         ai_row.append(&ai_status);
+        ai_row.set_visible(false);
+        {
+            let sync = {
+                let (row, spinner, status) =
+                    (ai_row.clone(), ai_spinner.clone(), ai_status.clone());
+                Rc::new(move || row.set_visible(spinner.is_visible() || !status.text().is_empty()))
+            };
+            let label_sync = sync.clone();
+            ai_status.connect_label_notify(move |_| label_sync());
+            ai_spinner.connect_visible_notify(move |_| sync());
+        }
 
         let ai_preview_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
         ai_preview_box.add_css_class("card");
@@ -1214,6 +1272,8 @@ impl App {
 
         let detail = gtk::Box::new(gtk::Orientation::Vertical, 0);
         detail.add_css_class("view");
+        detail.add_css_class("pantheon-detail");
+        compose.add_css_class("pantheon-composer");
         detail.append(&conversation_header);
         detail.append(&history_overlay);
         detail.append(&feedback);
@@ -1332,9 +1392,15 @@ impl App {
             signal_reload_scheduled: Cell::new(false),
             signal_events_heard: Cell::new(0),
             signal_seen: RefCell::new(HashMap::new()),
+            signal_banner,
+            signal_banner_title,
+            signal_banner_detail,
+            signal_restart,
+            signal_stuck_pid: Cell::new(None),
             history_render_generation: Cell::new(0),
             editor,
             send_button,
+            composer_row: compose.clone(),
             ai_button,
             ai_spinner,
             ai_status,
@@ -1395,6 +1461,9 @@ impl App {
         signal_switch.connect_state_set(move |_, active| {
             if let Some(app) = weak.upgrade() {
                 app.signal_enabled.set(active);
+                if !active {
+                    app.signal_banner.set_visible(false);
+                }
                 if let Err(error) = preferences::save_show_signal(active) {
                     app.feedback.set_text(&format!(
                         "Could not save the Show Signal preference. It applies for this session only. {error}"
@@ -2466,6 +2535,14 @@ impl App {
     /// and a moment after the Signal daemon reports a message, edit, delete,
     /// reaction or receipt.
     fn install_signal_live(self: &Rc<Self>) {
+        {
+            let weak = Rc::downgrade(self);
+            self.signal_restart.connect_clicked(move |_| {
+                if let Some(app) = weak.upgrade() {
+                    app.restart_signal();
+                }
+            });
+        }
         let listener = signal::live::Listener::start(|| {
             let layout = signal::service::Layout::detect();
             vec![layout.own_socket, layout.client_socket]
@@ -2548,25 +2625,84 @@ impl App {
         self.signal_loading.set(true);
         let weak = Rc::downgrade(self);
         glib::spawn_future_local(async move {
-            let result = gio::spawn_blocking(signal::load_threads).await;
+            let result = gio::spawn_blocking(|| {
+                let stuck = signal::service::stuck_daemon(&signal::service::Layout::detect())
+                    .map(|daemon| daemon.pid);
+                (signal::load_threads(), stuck)
+            })
+            .await;
             let Some(app) = weak.upgrade() else { return };
             app.signal_loading.set(false);
             app.signal_loaded_at.set(Some(std::time::Instant::now()));
             match result {
-                Ok(Ok(threads)) => {
+                Ok((Ok(threads), stuck)) => {
                     *app.signal_threads.borrow_mut() = threads;
                     app.apply_signal_threads();
+                    app.show_signal_health(stuck, None);
                 }
-                Ok(Err(error)) => {
+                Ok((Err(error), stuck)) => {
                     // A missing key or unreadable store only hides Signal; iMessage keeps working.
                     app.signal_threads.borrow_mut().clear();
                     app.apply_signal_threads();
-                    app.feedback.set_tooltip_text(Some(&format!(
-                        "Signal conversations unavailable: {error}"
-                    )));
+                    app.show_signal_health(stuck, Some(&error));
                 }
                 Err(_) => {}
             }
+        });
+    }
+
+    /// The sidebar banner: a stuck Signal daemon (with Restart) comes first, then
+    /// a store that could not be read. Hidden while Signal is fine or switched off.
+    fn show_signal_health(&self, stuck: Option<u32>, error: Option<&str>) {
+        self.signal_stuck_pid.set(stuck);
+        let enabled = self.signal_enabled.get();
+        if let (true, Some(_)) = (enabled, stuck) {
+            self.signal_banner_title.set_text(&tr("Signal is stuck"));
+            self.signal_banner_detail.set_text(&tr(
+                "Its background service stopped answering, so Signal messages cannot be sent or received.",
+            ));
+            self.signal_restart.set_visible(true);
+            self.signal_restart.set_sensitive(true);
+            self.signal_banner.set_visible(true);
+        } else if let (true, Some(error)) = (enabled, error) {
+            self.signal_banner_title
+                .set_text(&tr("Signal conversations are unavailable"));
+            self.signal_banner_detail.set_text(error);
+            self.signal_restart.set_visible(false);
+            self.signal_banner.set_visible(true);
+        } else {
+            self.signal_banner.set_visible(false);
+        }
+    }
+
+    /// Stop the stuck daemon at the owner's request, then look again.
+    fn restart_signal(self: &Rc<Self>) {
+        let Some(pid) = self.signal_stuck_pid.get() else {
+            return;
+        };
+        self.signal_restart.set_sensitive(false);
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let result = gio::spawn_blocking(move || signal::service::restart_stuck_daemon(pid))
+                .await
+                .unwrap_or_else(|_| Err("The restart ended unexpectedly.".into()));
+            let Some(app) = weak.upgrade() else { return };
+            match result {
+                Ok(()) => {
+                    app.signal_stuck_pid.set(None);
+                    app.signal_banner.set_visible(false);
+                    mseries_pantheon_kit::chrome::show_toast(
+                        &app.toast,
+                        &tr("Signal restarted. Sending works again."),
+                    );
+                }
+                Err(error) => {
+                    app.signal_restart.set_sensitive(true);
+                    app.signal_banner_detail.set_text(&error);
+                }
+            }
+            app.signal_loaded_at.set(None);
+            app.refresh_signal();
         });
     }
 
@@ -3885,6 +4021,9 @@ impl App {
                 .is_some_and(|thread| !thread.recipients.is_empty()),
         );
         if let Some(thread) = thread {
+            self.composer_row.set_visible(true);
+            self.star_button.set_visible(true);
+            self.copy_addresses_button.set_visible(true);
             self.conversation_title.set_text(&thread.name);
             let subtitle = conversation_subtitle(&thread);
             self.conversation_subtitle.set_visible(!subtitle.is_empty());
@@ -4181,25 +4320,33 @@ impl App {
                 self.backend_available.get() || !self.signal_threads.borrow().is_empty();
             self.conversation_subtitle.set_visible(false);
             self.messages.set_valign(gtk::Align::Fill);
+            // elementary leaves the header of an empty view untitled.
             self.conversation_title.set_text(if backend_available {
-                "Select a conversation"
+                ""
             } else {
                 "Connect iPhone to get started"
             });
+            self.composer_row.set_visible(false);
+            self.star_button.set_visible(false);
+            self.copy_addresses_button.set_visible(false);
             self.star_button.set_sensitive(false);
             self.editor.set_sensitive(false);
             self.send_button.set_sensitive(false);
             let empty = granite::Placeholder::new(if backend_available {
-                "Your conversations appear here"
+                "No Conversation Selected"
             } else {
                 "BlueFerry is unavailable"
             });
             empty.set_description(if backend_available {
-                "Choose a conversation from the list to read and reply."
+                "Choose a conversation from the list, or press Ctrl+N to start a new one."
             } else {
                 "Set up your iPhone connection, open BlueFerry, or retry."
             });
-            empty.set_icon(&gio::ThemedIcon::new("mail-message-new-symbolic"));
+            empty.set_icon(&gio::ThemedIcon::new(if backend_available {
+                "internet-chat-symbolic"
+            } else {
+                "phone-symbolic"
+            }));
             empty.set_vexpand(true);
             empty.set_valign(gtk::Align::Center);
             if !backend_available {
@@ -5758,6 +5905,17 @@ mod tests {
             .unwrap()
             .unwrap();
         let key = thread.key.clone();
+        // Let a Signal load still running from start-up finish first: it would
+        // otherwise land mid-test and replace this fixture with the empty store.
+        let settle = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while app.signal_loading.get() {
+            assert!(
+                std::time::Instant::now() < settle,
+                "start-up Signal load never finished"
+            );
+            gtk::glib::MainContext::default().iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
         *app.signal_threads.borrow_mut() = vec![thread];
         app.signal_enabled.set(true);
         // This scratch profile has no history file: keep the reload from emptying the list.
@@ -6100,6 +6258,9 @@ mod tests {
         save("imessage");
         app.select_thread("signal:+15550000001:+15550000002");
         save("signal");
+        // The banner the owner sees when an orphaned Signal daemon holds the account.
+        app.show_signal_health(Some(1), None);
+        save("signal-stuck");
     }
 
     #[test]

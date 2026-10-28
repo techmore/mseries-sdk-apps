@@ -16,6 +16,8 @@
 @define-color pantheon_mint #0e9a83;
 @define-color pantheon_cocoa #715344;
 @define-color pantheon_slate #485a6c;
+@define-color pantheon_blueberry_500 #3689e6;
+@define-color pantheon_grape_500 #a56de2;
 
 /* Shared geometry classes: GTK and Granite continue to provide colors and controls. */
 .pantheon-surface {
@@ -109,6 +111,20 @@
     color: @pantheon_incoming_fg;
 }
 
+/* Messages: received bubbles are a quiet tint of the text colour, so they sit
+   on the view in light and dark alike; sent bubbles are halfway between
+   Blueberry 500 and 700 (white text about 5:1), Grape for Signal. */
+.mseries-messages .pantheon-bubble-incoming {
+    background: alpha(@theme_fg_color, 0.085);
+    color: @theme_fg_color;
+}
+.mseries-messages .pantheon-bubble-outgoing {
+    background: mix(@pantheon_blueberry_500, @pantheon_blueberry, 0.55);
+}
+.mseries-messages .pantheon-bubble-outgoing.pantheon-bubble-signal {
+    background: mix(@pantheon_grape_500, @pantheon_grape, 0.6);
+}
+
 .pantheon-bubble-incoming link {
     color: @pantheon_blueberry;
 }
@@ -131,6 +147,10 @@
     background: @pantheon_slate;
     color: @pantheon_light_fg;
 }
+.pantheon-dark.mseries-messages .pantheon-bubble-incoming {
+    background: alpha(@theme_fg_color, 0.12);
+    color: @theme_fg_color;
+}
 
 .pantheon-dark .pantheon-bubble-incoming link {
     color: @pantheon_link_dark;
@@ -145,7 +165,20 @@
 
 /* ---- Messages: elementary OS layout (sidebar, conversation list, thread) ---- */
 
-/* Split header: the list side keeps the sidebar background, the thread side the view. */
+/* Split header: the list side keeps the sidebar background, the thread side the view.
+   Same height on both sides and the same with or without client-side decorations. */
+.mseries-messages headerbar.pantheon-pane-header {
+    min-height: 34px;
+    padding: 6px;
+    box-shadow: none;
+    background: transparent;
+}
+.mseries-messages headerbar.pantheon-pane-header .title {
+    font-weight: 700;
+}
+.mseries-messages .pantheon-detail > headerbar.pantheon-pane-header {
+    border-bottom: 1px solid alpha(@theme_fg_color, 0.08);
+}
 .mseries-messages .pantheon-messages-sidebar searchentry {
     margin: 0 9px 6px 9px;
 }
@@ -156,7 +189,23 @@
 }
 
 .mseries-messages .pantheon-sidebar-status {
-    padding: 6px 12px 8px 12px;
+    margin: 6px 9px 9px 9px;
+    padding: 6px 9px;
+    border-radius: 8px;
+    background: alpha(@theme_fg_color, 0.05);
+}
+
+/* A problem the owner can act on, at the foot of the conversation list. */
+.mseries-messages .pantheon-banner {
+    margin: 6px 9px 0 9px;
+    padding: 9px 9px 9px 9px;
+    border-radius: 9px;
+    background: alpha(@warning_color, 0.12);
+    border: 1px solid alpha(@warning_color, 0.3);
+}
+.mseries-messages .pantheon-banner .pantheon-banner-icon {
+    color: @warning_color;
+    margin-top: 1px;
 }
 
 /* Conversation rows: avatar, name and time, two lines of preview. */
@@ -167,7 +216,7 @@
 }
 
 .mseries-messages .pantheon-conversation {
-    padding: 6px 6px 6px 9px;
+    padding: 7px 6px 7px 8px;
 }
 
 .mseries-messages .pantheon-conversation .pantheon-row {
@@ -283,8 +332,10 @@
 
 .mseries-messages .pantheon-message-stamp {
     font-weight: 600;
-    margin-top: 1.1em;
-    margin-bottom: 0.5em;
+    font-size: 0.78em;
+    opacity: 0.75;
+    margin-top: 1.4em;
+    margin-bottom: 0.6em;
 }
 
 .mseries-messages .pantheon-history > viewport > box > box > label.caption.dim-label {
@@ -300,10 +351,14 @@
 }
 
 /* Composer: one rounded field with the emoji button inside, and a round send button. */
+.mseries-messages .pantheon-composer {
+    border-top: 1px solid alpha(@theme_fg_color, 0.06);
+}
+
 .mseries-messages .pantheon-composer-field {
     border-radius: 20px;
-    border: 1px solid alpha(currentColor, 0.15);
-    background: alpha(currentColor, 0.04);
+    border: 1px solid alpha(@theme_fg_color, 0.14);
+    background: @theme_base_color;
     padding: 2px 3px;
 }
 
@@ -320,10 +375,19 @@
     box-shadow: none;
 }
 
-.mseries-messages .pantheon-composer-field menubutton > button {
+.mseries-messages .pantheon-composer-field menubutton > button,
+.mseries-messages .pantheon-composer-field > button {
     min-width: 32px;
     min-height: 32px;
-    margin: 2px;
+    margin: 2px 0;
+    opacity: 0.7;
+    background: none;
+    border: none;
+    box-shadow: none;
+}
+.mseries-messages .pantheon-composer-field menubutton > button:hover,
+.mseries-messages .pantheon-composer-field > button:hover {
+    opacity: 1;
 }
 
 .mseries-messages button.pantheon-send {
@@ -340,4 +404,10 @@
 .pantheon-dark.mseries-messages .pantheon-unread-badge {
     background: @pantheon_link_dark;
     color: @pantheon_osd_fg;
+}
+
+/* Granite fixes the placeholder description at #333 unless its dark sheet is
+   loaded; follow the theme so the empty view reads in dark style too. */
+.mseries-messages placeholder .title-2 {
+    color: @theme_fg_color;
 }
