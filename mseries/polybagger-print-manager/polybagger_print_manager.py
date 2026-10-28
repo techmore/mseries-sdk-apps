@@ -161,15 +161,26 @@ def find_target(targets, preferred):
     if len(identities) == 1:
         return identities[0]
     serials = [t for t in targets if t.get("device") and preferred == t["device"].get("serial")]
+    if not serials:  # an unplugged printer is still known by the serial in its queue URI
+        serials = [t for t in targets if t.get("queue") and preferred == urllib.parse.unquote(
+            urllib.parse.parse_qs(urllib.parse.urlsplit(t["uri"]).query).get("serial", [""])[0])]
     return serials[0] if len(serials) == 1 else None
 
 
-def choose_target(targets, preferred=None):
+def choose_target(targets, preferred=None, strict=False):
+    """Pick the printer to use.
+
+    A saved choice wins only while it is usable. A saved USB queue whose printer is
+    unplugged must not hide a Zebra that is plugged in right now (two baggers, two
+    serials: the laptop moves between them). strict=True is for an explicit --printer.
+    """
+    connected_usb = [t for t in targets if t["transport"] == "usb" and t["connected"]]
+    # a connected device with a working queue beats one that still needs setup
+    connected_usb.sort(key=lambda t: (t["needs_setup"], t.get("queue") or ""))
     if preferred:
         target = find_target(targets, preferred)
-        if target:
+        if target and (strict or target["connected"] or not connected_usb):
             return target
-    connected_usb = [t for t in targets if t["transport"] == "usb" and t["connected"]]
     if connected_usb:
         return connected_usb[0]
     default = default_queue_name()
@@ -177,6 +188,11 @@ def choose_target(targets, preferred=None):
         if target.get("queue") == default and target["connected"]:
             return target
     return targets[0] if targets else None
+
+
+def cups_running():
+    rc, out = run(["lpstat", "-r"])
+    return rc == 0 and "not running" not in out
 
 
 def queue_state(name):
@@ -196,9 +212,12 @@ def status(preferred=None):
     targets = printer_targets(devices)
     explicit = preferred is not None
     preferred = preferred or load_settings().get("printer_target")
-    target = choose_target(targets, preferred)
+    target = choose_target(targets, preferred, strict=explicit)
     if explicit and not find_target(targets, preferred):
         target = None
+    saved = find_target(targets, preferred) if preferred and not explicit else None
+    # the saved printer is unplugged and we switched to the one that is plugged in
+    switched_from = saved["display"] if saved and target and saved["id"] != target["id"] else None
     name = target.get("queue") if target else None
     uri = target.get("uri") if target else None
     qstate, reasons = queue_state(name) if name else ("missing", [])
@@ -209,7 +228,8 @@ def status(preferred=None):
             "selected_target": target["id"] if target else None, "target": target,
             "device": target.get("device") if target else None, "connected": connected,
             "queue": name, "uri": uri, "queue_state": qstate,
-            "reasons": reasons, "uri_matches_device": uri_ok, "ready": ready}
+            "reasons": reasons, "uri_matches_device": uri_ok, "ready": ready,
+            "switched_from": switched_from, "cups_running": cups_running()}
 
 
 def managed_queue_name(dev):
@@ -267,12 +287,20 @@ MACHINE_FLOW = [
     "Clear Labels unloads the current label (back to No Label). Send or recall it again.",
 ]
 
+NO_PRINTER_HINT = ("No Zebra on USB. Switch the printer on and check the bagger's Printer Settings screen: "
+                   "Power goes Off, Self-Test, Ready, and the Zebra shows up on USB about 20 s after power-on. "
+                   "If Power reaches Ready and it still is not found, reseat the USB cable. "
+                   "If Power never reaches Ready, the Zebra is not booting (printer fault, not this computer).")
+NO_PRINTER_SLOW = 30  # seconds without a USB printer before the app says the Zebra may not be booting
+
 KNOWN_ISSUES = [
     "The app sends raw ZPL. Select only a printer queue whose device supports ZPL; network printers must first be added in System Settings.",
     "USB printer-class devices are discovered every second. Queues match by serial or a unique USB URI; identical devices without serials cannot be distinguished safely.",
     "The library's label files carry no ^PQ. The app adds the chosen quantity to a temporary copy; printer support for ^PQ varies.",
     "CUPS \"completed\" means the printer received the data. It does not mean a label printed: that needs a bag cycle.",
     "The printer can stop taking data (jobs sit at \"waiting for printer\") or drop off USB. A printer reboot has cleared it.",
+    "A saved printer choice applies only while that printer is plugged in. Plug in a different bagger's Zebra and the app switches to it.",
+    "The app reaches the printer through CUPS, so your account does not need access to /dev/usb/lp*. CUPS briefly detaching usblp after plug-in is normal.",
     "After a drop-off CUPS may disable the queue. Re-enabling needs admin: sudo cupsenable <queue>.",
     "Sending the same label twice can leave it printing on every cycle if Reprint is on. Check the bagger screen.",
     "Clear Labels on the bagger unloads the label. Stored flash formats (E:) are not erased by it, per the TI-1000Z manual.",
@@ -476,9 +504,14 @@ def describe(st):
     if not target:
         if st.get("targets"):
             return "No matching printer selected. Available: " + "; ".join(t["display"] for t in st["targets"])
-        return "No CUPS printers or USB printers found. Connect a printer or add a CUPS queue.\nNOT READY"
+        return (("CUPS is not running. Start it: sudo systemctl start cups\n" if not st.get("cups_running", True) else "")
+                + NO_PRINTER_HINT + "\nNOT READY")
     else:
         lines = [f"Selected: {target['display']}"]
+    if not st.get("cups_running", True):
+        lines.append("CUPS is not running. Start it: sudo systemctl start cups")
+    if st.get("switched_from"):
+        lines.append(f"Saved printer is unplugged ({st['switched_from']}); using the one that is plugged in.")
     others = [t["display"] for t in st.get("targets", []) if not target or t["id"] != target["id"]]
     if others:
         lines.append("Other printers: " + "; ".join(others))
@@ -486,7 +519,7 @@ def describe(st):
         serial = target["device"].get("serial") or target["device"]["identity"]
         lines.append(f"CUPS: no queue. Run: ./polybagger_print_manager.py --setup --printer {serial}")
     elif not st["connected"]:
-        lines.append(f"USB printer is disconnected; queue '{st['queue']}' is retained for replug.")
+        lines.append(f"This printer is not on USB; queue '{st['queue']}' is kept for when it returns. " + NO_PRINTER_HINT)
     else:
         lines.append(f"CUPS: queue '{st['queue']}' is {st['queue_state']}" +
                      (f", alerts: {' '.join(st['reasons'])}" if st["reasons"] else ""))
@@ -626,6 +659,7 @@ def gui():
             self.add_css_class("pbpm")
             self.busy = False; self.last = None; self.recent = {}; self.st = None
             self.last_target_id = None; self.last_connected = None
+            self.no_usb_since = time.monotonic(); self.last_switch_note = None
             self.usb_signature = tuple(d["identity"] for d in usb_printers())
             self.refresh_generation = 0; self._printer_ids = []; self._printer_options = []
             self._updating_printer_dropdown = False
@@ -763,7 +797,8 @@ def gui():
             box.append(Granite.HeaderLabel(label="Choosing a printer"))
             for t in ("Choose a configured CUPS printer from the Printer menu. Network printers must be added in System Settings first.",
                       "A new USB printer gets its own raw ZPL queue named from its serial. The printer selection and loaded-label status are remembered separately for each queue.",
-                      "USB connection changes are detected automatically. Reconnect the same printer and its queue becomes available again."):
+                      "USB connection changes are detected every second, including a Zebra that appears 20 s after power-on.",
+                      "A saved printer is used only while it is plugged in; otherwise the app switches to the Zebra that is."):
                 box.append(lbl(t, wrap=True))
             box.append(Granite.HeaderLabel(label="How the T-1000 printer prints"))
             for i, t in enumerate(MACHINE_FLOW, 1): box.append(lbl(f"{i}. {t}", wrap=True))
@@ -1058,6 +1093,16 @@ def gui():
                     if target and target.get("transport") == "usb":
                         self.set_label_state("unknown")  # a power cut or unplug drops the loaded label
             self.last_target_id, self.last_connected = target_id, connected
+            if st.get("switched_from") and st["switched_from"] != self.last_switch_note and target:
+                self.notify(f"Using the printer that is plugged in: {target['display']}")
+            self.last_switch_note = st.get("switched_from")
+            if st.get("usb"):
+                self.no_usb_since = None
+            elif self.no_usb_since is None:
+                self.no_usb_since = time.monotonic()
+            waited = time.monotonic() - self.no_usb_since if self.no_usb_since is not None else 0
+            usb_hint = NO_PRINTER_HINT if waited >= NO_PRINTER_SLOW else \
+                "Waiting for the Zebra on USB. It shows up about 20 s after the printer is switched on."
             stuck = "waiting-for-printer" in st["reasons"]
             d = st.get("device")
             if connected and d:
@@ -1085,14 +1130,16 @@ def gui():
             self.mark("ready", "ok" if st["ready"] else ("bad" if target else "todo"),
                       "stuck: waiting for printer" if stuck else st["queue_state"] + (f" · {' '.join(st['reasons'])}" if st["reasons"] else ""))
             if self.busy: return False
-            if st["ready"]:
+            if not st.get("cups_running", True):
+                icon, title, sub = "printer-error", "Printing service stopped", "CUPS is not running. In a terminal: sudo systemctl start cups"
+            elif st["ready"]:
                 icon, title, sub = "printer", "Printer ready", "Pick a label and send it. Confirm the label at the printer after delivery."
             elif not target:
-                icon, title, sub = "printer-error", "No printers found", "Connect a USB printer or add a printer in System Settings."
+                icon, title, sub = "printer-error", "No printer found", usb_hint
             elif target.get("needs_setup"):
                 icon, title, sub = "printer-error", "Print queue needed", "Set up a raw ZPL queue for this USB printer."
             elif not connected:
-                icon, title, sub = "printer-error", "Printer unplugged", "Reconnect this printer. The app will detect it and restore its queue automatically."
+                icon, title, sub = "printer-error", "Printer not on USB", usb_hint
             elif stuck:
                 icon, title, sub = "printer-error", "Printer not taking jobs", STUCK_HINT
             elif st["queue_state"] == "disabled":

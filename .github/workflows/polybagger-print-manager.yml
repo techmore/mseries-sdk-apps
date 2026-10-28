@@ -39,6 +39,9 @@ jobs:
           m = u.module_from_spec(s); s.loader.exec_module(m)
           PY
 
+      - name: Printer selection selftest (fake devices and queues)
+        run: python3 -I mseries/polybagger-print-manager/selftest.py
+
       - name: Installer and icon
         run: |
           bash -n mseries/polybagger-print-manager/install.sh
