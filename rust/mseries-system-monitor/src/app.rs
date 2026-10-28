@@ -46,7 +46,9 @@ pub fn build(application: &gtk::Application) {
     set_box_spacing_text_units(&overview, 1.0);
     set_margins_text_units(&overview, 2.0, 2.0, 2.0, 2.0);
     let intro = gtk::Label::builder()
-        .label(tr("Live host usage with btop when you need process-level detail."))
+        .label(tr(
+            "Live host usage with btop when you need process-level detail.",
+        ))
         .xalign(0.0)
         .wrap(true)
         .build();
@@ -94,7 +96,9 @@ pub fn build(application: &gtk::Application) {
     btop_page.add_css_class("pantheon-page");
     set_box_spacing_text_units(&btop_page, 0.75);
     let btop_status = gtk::Label::builder()
-        .label(tr("btop starts when this page opens. Press q in the terminal to close it."))
+        .label(tr(
+            "btop starts when this page opens. Press q in the terminal to close it.",
+        ))
         .xalign(0.0)
         .wrap(true)
         .build();
@@ -217,7 +221,9 @@ pub fn build(application: &gtk::Application) {
     let exit_status = btop_status.clone();
     terminal.connect_child_exited(move |_, _| {
         terminal_started.set(false);
-        exit_status.set_text(&tr("btop has exited. Select Start or restart btop to reopen it."));
+        exit_status.set_text(&tr(
+            "btop has exited. Select Start or restart btop to reopen it.",
+        ));
     });
     let terminal_to_close = terminal.clone();
     window.connect_close_request(move |_| {
@@ -280,8 +286,9 @@ fn start_btop(terminal: &vte4::Terminal, started: &Rc<Cell<bool>>, status: &gtk:
             }
             Err(_) => {
                 started_for_result.set(false);
-                status_for_result
-                    .set_text(&tr("Could not start btop. Install the btop package, then retry."));
+                status_for_result.set_text(&tr(
+                    "Could not start btop. Install the btop package, then retry.",
+                ));
             }
         },
     );
