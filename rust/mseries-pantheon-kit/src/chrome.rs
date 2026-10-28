@@ -24,7 +24,11 @@ pub fn install_app_actions(app: &gtk::Application, about: About) {
     quit.connect_activate(move |_, _| handle.quit());
     app.add_action(&quit);
     app.set_accels_for_action("app.quit", &["<Control>q"]);
+    install_about_action(app, about);
+}
 
+/// Registers only `app.about`, for apps (relm4) that already own their Quit action.
+pub fn install_about_action(app: &gtk::Application, about: About) {
     let action = gio::SimpleAction::new("about", None);
     let handle = app.clone();
     action.connect_activate(move |_, _| show_about(&handle, &about));

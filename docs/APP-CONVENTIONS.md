@@ -33,5 +33,5 @@ passing, so gaps are removed from the file as they are fixed and the file only e
 
 ## Not covered by the check yet
 
-Layout adaptivity (compact breakpoints), the per-app `Settings` file formats, and Torrential, which joins the list when
-it moves onto the kit.
+Layout adaptivity (compact breakpoints) and the per-app `Settings` file formats. Torrential is on the list; it keeps
+Fluent catalogs instead of gettext (a documented exception) and its relm4 stack otherwise.

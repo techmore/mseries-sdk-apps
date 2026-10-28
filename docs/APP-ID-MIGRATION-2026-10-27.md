@@ -15,6 +15,7 @@ its application id (what the dock uses to group a window with its launcher). The
 | `io.elementary.mseries.Conversations` | `org.techmore.mseries.Messages` | "Messages & Signal". |
 | `io.elementary.mseries.MessagesRust` | `org.techmore.mseries.MessagesPreview` | "Messages (Rust Preview)". |
 | `io.github.sdolbec.SignalHistoryImport` | `org.techmore.mseries.SignalImport` | The importer used the Signal Pantheon client's icon. |
+| `com.github.davidmhewitt.torrential` | `org.techmore.mseries.Torrential` | Torrential. The GSettings schema (`….torrential.settings` → `….Torrential.settings`), its path, the gresource prefix and the Flatpak manifest id follow, and a desktop entry and icon are new. **Saved Torrential preferences (download folder, window size) live under the old schema and are not carried over**: copy them with `dconf dump /com/github/davidmhewitt/torrential/settings/ | dconf load /org/techmore/mseries/Torrential/settings/` (the dump has a `[/]` header; edit it to match). |
 
 Already in the namespace, unchanged: `AppleDev`, `DiskSpace`, `SystemMonitor`, `Updates`.
 

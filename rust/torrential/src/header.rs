@@ -63,18 +63,21 @@ impl SimpleComponent for HeaderModel {
                 },
             },
 
+            #[name = "open_button"]
             pack_start = &gtk::Button {
                 set_icon_name: "document-open",
                 set_tooltip_markup: Some(&shortcut_tooltip(&fl!("open-torrent-tooltip"), "Ctrl+O")),
                 connect_clicked[sender] => move |_| sender.output(HeaderOutput::OpenTorrent).unwrap(),
             },
 
+            #[name = "magnet_button"]
             pack_start = &gtk::Button {
                 set_icon_name: "open-magnet-symbolic",
                 set_tooltip_markup: Some(&shortcut_tooltip(&fl!("open-magnet-tooltip"), "Ctrl+L")),
                 connect_clicked[sender] => move |_| sender.output(HeaderOutput::OpenMagnet).unwrap(),
             },
 
+            #[name = "menu_button"]
             pack_end = &gtk::MenuButton {
                 set_icon_name: "open-menu",
                 set_tooltip_text: Some(&fl!("appmenu-tooltip")),
@@ -107,8 +110,13 @@ impl SimpleComponent for HeaderModel {
             }
         }
 
+        main_menu.append(Some(&fl!("action-about")), Some("app.about"));
+
         let model = Self::default();
         let widgets = view_output!();
+        mseries_pantheon_kit::set_accessible_label(&widgets.open_button, &fl!("open-torrent-tooltip"));
+        mseries_pantheon_kit::set_accessible_label(&widgets.magnet_button, &fl!("open-magnet-tooltip"));
+        mseries_pantheon_kit::set_accessible_label(&widgets.menu_button, &fl!("appmenu-tooltip"));
 
         ComponentParts { model, widgets }
     }

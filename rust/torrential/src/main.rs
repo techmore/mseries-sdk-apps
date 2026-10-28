@@ -135,6 +135,10 @@ impl SimpleComponent for App {
     view! {
         main_window = gtk::Window {
             set_default_size: (400, 100),
+            set_size_request: (
+                mseries_pantheon_kit::appearance::UTILITY_MIN.0,
+                mseries_pantheon_kit::appearance::UTILITY_MIN.1,
+            ),
             set_title: Some("Torrential"),
             set_titlebar: Some(model.header.widget()),
 
@@ -238,6 +242,9 @@ impl SimpleComponent for App {
         granite::init();
 
         sync_color_scheme();
+        if let Some(display) = gtk::gdk::Display::default() {
+            mseries_pantheon_kit::install_css(&display);
+        }
 
         let css = gtk::CssProvider::new();
         css.load_from_data(APP_CSS);
@@ -809,7 +816,7 @@ impl App {
             } else {
                 let notification = gio::Notification::new(&fl!("download-complete-title"));
                 notification.set_body(Some(&torrent.name));
-                notification.set_icon(&ThemedIcon::new("com.github.davidmhewitt.torrential"));
+                notification.set_icon(&ThemedIcon::new("org.techmore.mseries.Torrential"));
                 application.send_notification(
                     Some(&format!("complete-{}", torrent.hash_string)),
                     &notification,
@@ -835,6 +842,7 @@ fn sync_color_scheme() {
         return;
     };
     let granite_settings = granite::Settings::default();
+    mseries_pantheon_kit::appearance::follow_color_scheme(None);
 
     // Error text needs a darker red on light backgrounds and a lighter one on dark, so it is
     // restyled whenever the scheme flips.
@@ -847,7 +855,6 @@ fn sync_color_scheme() {
 
     let apply = move |granite_settings: &granite::Settings| {
         let dark = granite_settings.prefers_color_scheme() == granite::SettingsColorScheme::Dark;
-        gtk_settings.set_gtk_application_prefer_dark_theme(dark);
         scheme_css.load_from_data(if dark {
             "label.error-text { color: @STRAWBERRY_300; }"
         } else {
@@ -932,7 +939,7 @@ impl AppWidgets {
     }
 
     fn save_window_size(&self) -> Result<(), gtk::glib::BoolError> {
-        let settings = gio::Settings::new("com.github.davidmhewitt.torrential.settings");
+        let settings = gio::Settings::new("org.techmore.mseries.Torrential.settings");
         let (width, height) = self.main_window.default_size();
 
         settings
@@ -948,7 +955,7 @@ impl AppWidgets {
     }
 
     fn load_window_size(&self) {
-        let settings = gio::Settings::new("com.github.davidmhewitt.torrential.settings");
+        let settings = gio::Settings::new("org.techmore.mseries.Torrential.settings");
         let width = settings.int("window-width");
         let height = settings.int("window-height");
 
@@ -999,13 +1006,24 @@ fn main() {
         &requested_languages,
     );
 
-    let app = RelmApp::new("com.github.davidmhewitt.torrential");
+    let app = RelmApp::new("org.techmore.mseries.Torrential");
 
-    gio::resources_register_include!("com.github.davidmhewitt.torrential.gresource").unwrap();
+    gio::resources_register_include!("org.techmore.mseries.Torrential.gresource").unwrap();
 
     let display = gdk::Display::default().unwrap();
     let theme = gtk::IconTheme::for_display(&display);
-    theme.add_resource_path("/com/github/davidmhewitt/torrential/icons");
+    theme.add_resource_path("/org/techmore/mseries/Torrential/icons");
+
+    mseries_pantheon_kit::chrome::install_about_action(
+        &relm4::main_application(),
+        mseries_pantheon_kit::chrome::About {
+            program_name: "Torrential".into(),
+            icon: "org.techmore.mseries.Torrential".into(),
+            comments: fl!("app-description"),
+            menu_label: fl!("action-about"),
+            website: None,
+        },
+    );
 
     app.run::<App>(());
 }

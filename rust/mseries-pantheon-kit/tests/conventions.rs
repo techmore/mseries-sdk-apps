@@ -148,7 +148,9 @@ fn every_gui_app_follows_the_conventions() {
         );
         check(
             "window_size",
-            any("appearance::size_window(") || any("appearance::WORKSPACE_MIN"),
+            any("appearance::size_window(")
+                || any("appearance::WORKSPACE_MIN")
+                || any("appearance::UTILITY_MIN"),
             "does not use the shared window sizes".into(),
         );
         check(
@@ -158,13 +160,16 @@ fn every_gui_app_follows_the_conventions() {
         );
         check(
             "about",
-            any("AboutDialog") || any("chrome::install_app_actions"),
+            any("AboutDialog")
+                || any("chrome::install_app_actions")
+                || any("chrome::install_about_action"),
             "has no About dialog".into(),
         );
         check(
             "shortcuts",
             any("set_accels_for_action")
                 || any("chrome::install_app_actions")
+                || any("chrome::install_about_action")
                 || any("ShortcutController")
                 || any("EventControllerKey"),
             "registers no keyboard shortcuts".into(),

@@ -1,5 +1,5 @@
 {
-    "id": "com.github.davidmhewitt.torrential",
+    "id": "org.techmore.mseries.Torrential",
     "runtime": "io.elementary.Platform",
     "runtime-version": "8.2",
     "sdk": "io.elementary.Sdk",
