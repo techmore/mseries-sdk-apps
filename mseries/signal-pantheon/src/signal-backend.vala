@@ -106,6 +106,27 @@ namespace SignalNative {
                 string history_path = Path.build_filename (data_directory, "message-history.db");
                 history_store = signal_history_store_open (history_path);
             }
+            // A daemon left running by an earlier session (closed abruptly)
+            // still holds the account. Deleting its socket would leave it holding the
+            // lock where no app can reach it, and a new daemon would wait forever.
+            try {
+                var existing = yield new SocketClient ().connect_async (
+                    new UnixSocketAddress (socket_path), null
+                );
+                if (generation != startup_generation) {
+                    existing.close (null);
+                    throw new IOError.CANCELLED ("Signal startup canceled");
+                }
+                connection = existing;
+                input = new DataInputStream (connection.input_stream);
+                output = connection.output_stream;
+                read_messages.begin (input);
+                return;
+            } catch (IOError.CANCELLED error) {
+                throw error;
+            } catch (Error error) {
+                // Nothing answers there: start our own daemon below.
+            }
             FileUtils.remove (socket_path);
 
             string executable = Environment.get_variable ("SIGNAL_CLI_PATH") ?? "signal-cli";
