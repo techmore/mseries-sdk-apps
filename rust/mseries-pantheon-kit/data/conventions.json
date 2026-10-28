@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "about": "The conventions every first-party Rust Pantheon GUI app follows. docs/APP-CONVENTIONS.md explains them; mseries-pantheon-kit/tests/conventions.rs checks them. An entry under `exempt` is a known gap or a deliberate exception: it names the rule and says why. Fix the gap and delete the entry, never the reverse.",
+  "namespace": "org.techmore.mseries.",
+  "rules": {
+    "id": "Every desktop entry is <namespace><Name>.desktop; its Icon and StartupWMClass equal that id, an <id>.svg ships next to it, and the id is the application id the code registers.",
+    "colors": "No hex colour literals in the app's Rust or CSS; use theme/Granite named colours or the tokens in msdk/data/tokens.json.",
+    "color_scheme": "The app follows the Granite colour scheme (mseries_pantheon_kit::appearance::follow_color_scheme).",
+    "window_size": "The main window uses appearance::size_window with the shared default and minimum sizes.",
+    "accessible_labels": "Icon-only controls get labels through mseries_pantheon_kit::set_accessible_label.",
+    "about": "The app has an About dialog.",
+    "shortcuts": "The app registers keyboard shortcuts (set_accels_for_action).",
+    "toasts": "The app reports results with Granite/Adw toasts, not silent state changes.",
+    "gettext": "User-visible strings go through an app-owned gettext domain."
+  },
+  "apps": [
+    {
+      "name": "T3",
+      "dir": "claude-pantheon-rs",
+      "desktop": ["org.techmore.mseries.T3.desktop", "org.techmore.mseries.T3Sdk.desktop"],
+      "exempt": {
+        "colors": "terminal and web view palettes, provider accents (documented in the audit)",
+        "color_scheme": "has its own light/dark/system Appearance setting",
+        "gettext": "gap: no translation domain yet"
+      }
+    },
+    {
+      "name": "Messages",
+      "dir": "mseries-messages",
+      "desktop": ["org.techmore.mseries.Messages.desktop", "org.techmore.mseries.MessagesPreview.desktop"],
+      "icon_alias": {
+        "org.techmore.mseries.MessagesPreview.desktop": "org.techmore.mseries.Messages"
+      },
+      "exempt": {
+        "about": "gap: no About dialog",
+        "shortcuts": "gap: no keyboard shortcuts",
+        "toasts": "gap: no toasts"
+      }
+    },
+    {
+      "name": "Image Studio",
+      "dir": "mseries-image-studio",
+      "desktop": ["org.techmore.mseries.ImageStudio.desktop"],
+      "exempt": {
+        "colors": "glass HUD is always dark (@is_hud_*)",
+        "color_scheme": "follows the desktop colour scheme through its own dconf watcher",
+        "gettext": "gap: no translation domain yet"
+      }
+    },
+    {
+      "name": "Apple Dev",
+      "dir": "mseries-apple-dev",
+      "desktop": ["org.techmore.mseries.AppleDev.desktop"],
+      "exempt": {
+        "colors": "terminal palette in the console",
+        "gettext": "gap: no translation domain yet"
+      }
+    },
+    {
+      "name": "Disk Space",
+      "dir": "mseries-diskspace",
+      "desktop": ["org.techmore.mseries.DiskSpace.desktop"],
+      "exempt": {
+        "about": "gap: no About dialog",
+        "shortcuts": "gap: no keyboard shortcuts",
+        "gettext": "gap: no translation domain yet"
+      }
+    },
+    {
+      "name": "System Monitor",
+      "dir": "mseries-system-monitor",
+      "desktop": ["org.techmore.mseries.SystemMonitor.desktop"],
+      "exempt": {
+        "about": "gap: no About dialog",
+        "shortcuts": "gap: no keyboard shortcuts",
+        "toasts": "gap: no toasts",
+        "gettext": "gap: no translation domain yet"
+      }
+    },
+    {
+      "name": "Software Updates",
+      "dir": "mseries-updates",
+      "desktop": ["org.techmore.mseries.Updates.desktop"],
+      "exempt": {
+        "about": "gap: no About dialog",
+        "shortcuts": "gap: no keyboard shortcuts",
+        "gettext": "gap: strings.rs is prepared but no domain is bound yet"
+      }
+    }
+  ]
+}
