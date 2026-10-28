@@ -4,6 +4,7 @@
 
 use crate::activity::{Item, Kind, Report, Source, State, Window};
 use crate::activity_collect::{self, Repo, Request};
+use crate::strings::tr;
 use gtk::{gio, glib, prelude::*};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -125,11 +126,11 @@ impl ActivityPage {
             return;
         }
         if std::env::var_os("CLAUDE_PANTHEON_OFFLINE").is_some() {
-            self.status.set_text("Offline preview: activity collection is disabled.");
+            self.status.set_text(&tr("Offline preview: activity collection is disabled."));
             return;
         }
         let Some(window) = today() else {
-            self.status.set_text("Could not determine today's local calendar window.");
+            self.status.set_text(&tr("Could not determine today's local calendar window."));
             return;
         };
         let repos = crate::workflow::load_config()
@@ -141,7 +142,7 @@ impl ActivityPage {
         self.refresh_button.set_sensitive(false);
         self.github.set_sensitive(false);
         self.copy_button.set_sensitive(false);
-        self.status.set_text("Reading activity… Previous records remain visible while sources refresh.");
+        self.status.set_text(&tr("Reading activity… Previous records remain visible while sources refresh."));
         let generation = self.generation.get().wrapping_add(1);
         self.generation.set(generation);
         let weak = Rc::downgrade(self);
@@ -162,7 +163,7 @@ impl ActivityPage {
                     page.display(report);
                 }
                 Err(_) => {
-                    page.status.set_text("Activity collection stopped unexpectedly. Choose Refresh to retry.");
+                    page.status.set_text(&tr("Activity collection stopped unexpectedly. Choose Refresh to retry."));
                     page.copy_button.set_sensitive(page.report.borrow().is_some());
                 }
             }

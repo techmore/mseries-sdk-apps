@@ -10,6 +10,7 @@ use crate::devices::{self, Device};
 use crate::distro;
 use crate::project::{self, Kind, Project};
 use crate::settings::{Settings, home};
+use crate::strings::tr;
 use crate::testflight::{self, Builds, Level};
 use crate::toolkit::{self, CheckId, CheckState, Report};
 use granite::prelude::{PlaceholderExt, ToastExt};
@@ -124,7 +125,7 @@ impl AppWindow {
         let settings = Settings::load();
         let window = gtk::ApplicationWindow::builder()
             .application(app)
-            .title("Apple Dev")
+            .title(tr("Apple Dev"))
             .icon_name(APP_ID)
             .default_width(settings.width.max(720))
             .default_height(settings.height.max(520))
@@ -155,14 +156,14 @@ impl AppWindow {
         header.pack_start(&stop_btn);
 
         let target = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        let target_label = gtk::Label::builder().label("No project").ellipsize(pango::EllipsizeMode::End).build();
+        let target_label = gtk::Label::builder().label(tr("No project")).ellipsize(pango::EllipsizeMode::End).build();
         target_label.add_css_class("apple-dev-target");
         let chevron = gtk::Image::from_icon_name("go-next-symbolic");
         chevron.add_css_class("dim-label");
         chevron.set_accessible_role(gtk::AccessibleRole::Presentation);
         let device_model = gtk::StringList::new(&["No iPhone"]);
         let device_dd = gtk::DropDown::new(Some(device_model.clone()), None::<gtk::Expression>);
-        device_dd.set_tooltip_text(Some("The phone Run and Debug install on"));
+        device_dd.set_tooltip_text(Some(&tr("The phone Run and Debug install on")));
         set_accessible_label(&device_dd, "Run target");
         device_dd.add_css_class("flat");
         target.append(&target_label);
@@ -181,10 +182,10 @@ impl AppWindow {
         section_b.append(Some("Quit"), Some("app.quit"));
         menu.append_section(None, &section_b);
         let menu_btn = gtk::MenuButton::builder().icon_name("open-menu-symbolic").menu_model(&menu).build();
-        menu_btn.set_tooltip_text(Some("Menu"));
+        menu_btn.set_tooltip_text(Some(&tr("Menu")));
         set_accessible_label(&menu_btn, "Main menu");
         let console_toggle = gtk::ToggleButton::builder().icon_name("utilities-terminal-symbolic").build();
-        console_toggle.set_tooltip_text(Some("Show Activity (Ctrl+`)"));
+        console_toggle.set_tooltip_text(Some(&tr("Show Activity (Ctrl+`)")));
         set_accessible_label(&console_toggle, "Show the Activity terminal");
         header.pack_end(&menu_btn);
         header.pack_end(&console_toggle);
@@ -218,7 +219,7 @@ impl AppWindow {
         add_menu.append(Some("Import Xcode Project…"), Some("win.import-xcode"));
         let add = gtk::MenuButton::builder().icon_name("list-add-symbolic").menu_model(&add_menu).build();
         add.add_css_class("flat");
-        add.set_tooltip_text(Some("Add a project"));
+        add.set_tooltip_text(Some(&tr("Add a project")));
         set_accessible_label(&add, "Add a project");
         let footer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         footer.add_css_class("apple-dev-sidebar-footer");
@@ -254,7 +255,7 @@ impl AppWindow {
             "Phone's tailnet address",
             "iOS 27 with Wi-Fi and Tailscale on; tailscale status shows it as 100.x.y.z. Used by Install over Tailscale.",
         );
-        let tailnet_entry = gtk::Entry::builder().placeholder_text("100.x.y.z").width_chars(16).build();
+        let tailnet_entry = gtk::Entry::builder().placeholder_text(tr("100.x.y.z")).width_chars(16).build();
         set_accessible_label(&tailnet_entry, "Phone's tailnet address");
         address_trailing.append(&tailnet_entry);
         tailnet_rows.append(&address_row);
@@ -650,7 +651,7 @@ impl AppWindow {
     }
 
     fn job_finished(self: &Rc<Self>, job: &Job, outcome: Outcome) {
-        self.window.set_title(Some("Apple Dev"));
+        self.window.set_title(Some(&tr("Apple Dev")));
         let summary = match outcome {
             Outcome::Succeeded => format!("{} finished", job.title),
             Outcome::Failed(code) => format!("{} failed (exit {code})", job.title),
@@ -881,7 +882,7 @@ impl AppWindow {
                 let (r, t, _, _) = row(Some("folder-symbolic"), &tilde(tk), &detail);
                 let update = button("Update", &[]);
                 update.set_sensitive(report.revision.is_some());
-                update.set_tooltip_text(Some("git pull --ff-only"));
+                update.set_tooltip_text(Some(&tr("git pull --ff-only")));
                 let tk_c = tk.clone();
                 let weak = Rc::downgrade(self);
                 update.connect_clicked(move |_| {
@@ -1016,7 +1017,8 @@ impl AppWindow {
         let weak = Rc::downgrade(self);
         b.connect_clicked(move |_| {
             let Some(w) = weak.upgrade() else { return };
-            let dialog = gtk::FileDialog::builder().title("Choose the omarchy-apple-dev Folder").modal(true).build();
+            let dialog =
+                gtk::FileDialog::builder().title(tr("Choose the omarchy-apple-dev Folder")).modal(true).build();
             let weak = Rc::downgrade(&w);
             dialog.select_folder(Some(&w.window), None::<&gio::Cancellable>, move |result| {
                 let (Some(w), Some(path)) = (weak.upgrade(), result.ok().and_then(|f| f.path())) else { return };
@@ -1293,7 +1295,7 @@ impl AppWindow {
                     }
                 }
                 let open = button("Open", &["flat"]);
-                open.set_tooltip_text(Some("Open TestFlight in App Store Connect"));
+                open.set_tooltip_text(Some(&tr("Open TestFlight in App Store Connect")));
                 let url = builds.testflight_url();
                 let weak = Rc::downgrade(self);
                 open.connect_clicked(move |_| {
@@ -1632,7 +1634,7 @@ fn side_row(icon: &str, title: &str, subtitle: Option<&str>) -> (gtk::ListBoxRow
     let ok = gtk::Image::from_icon_name("emblem-ok-symbolic");
     ok.add_css_class("apple-dev-ok");
     ok.set_visible(false);
-    ok.set_tooltip_text(Some("Ready"));
+    ok.set_tooltip_text(Some(&tr("Ready")));
     content.append(&image);
     content.append(&text);
     content.append(&badge);

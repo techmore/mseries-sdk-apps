@@ -3,6 +3,7 @@
 
 use crate::app::App;
 use crate::chat::label;
+use crate::strings::tr;
 use crate::t3::Rpc;
 use crate::t3::model::{Provider, ServerConfig, UsageBucket, UsageSummary, UsageTotals};
 use granite::prelude::HeaderLabelExt;
@@ -110,7 +111,7 @@ pub fn fold(summary: &UsageSummary, last_days: &[String]) -> Vec<ProviderUsage> 
 fn sparkline(days: Vec<(String, u64)>, color: &str) -> gtk::DrawingArea {
     let tint = gtk::gdk::RGBA::parse(color).ok();
     let area = gtk::DrawingArea::builder().content_width(140).content_height(28).hexpand(true).build();
-    area.set_tooltip_text(Some("Tokens per day, last 7 days"));
+    area.set_tooltip_text(Some(&tr("Tokens per day, last 7 days")));
     area.set_draw_func(move |w, cr, width, height| {
         let max = days.iter().map(|(_, v)| *v).max().unwrap_or(0).max(1) as f64;
         let n = days.len().max(1) as f64;
@@ -278,7 +279,8 @@ impl UsagePage {
         let refresh = gtk::Button::from_icon_name("view-refresh-symbolic");
         refresh.add_css_class(granite::STYLE_CLASS_FLAT);
         refresh.set_action_name(Some("win.usage"));
-        refresh.set_tooltip_text(Some("Refresh T3 server history, account plan windows and computer-local reports"));
+        refresh
+            .set_tooltip_text(Some(&tr("Refresh T3 server history, account plan windows and computer-local reports")));
         refresh.update_property(&[gtk::accessible::Property::Label("Refresh usage monitor")]);
         toolbar.append(&refresh);
         toolbar.prepend(&context);
@@ -333,14 +335,14 @@ impl UsagePage {
     pub fn invalidate(&self) {
         self.generation.set(self.generation.get().wrapping_add(1));
         for label in self.history_states.borrow().iter() {
-            label.set_text("Last-known historical scan; refresh to check freshness");
+            label.set_text(&tr("Last-known historical scan; refresh to check freshness"));
         }
     }
 
     pub(crate) fn history_failed(&self, message: &str) {
         let retained = self.summary.borrow().is_some();
         for label in self.history_states.borrow().iter() {
-            label.set_text("Stale last-known history · latest refresh failed");
+            label.set_text(&tr("Stale last-known history · latest refresh failed"));
         }
         if !retained {
             while let Some(child) = self.content.first_child() {
@@ -393,7 +395,7 @@ impl UsagePage {
         self.received_at.set(None);
         self.last_providers.borrow_mut().clear();
         self.history_states.borrow_mut().clear();
-        self.context.set_text("Not connected to a T3 server");
+        self.context.set_text(&tr("Not connected to a T3 server"));
         self.status.set_text(
             "Connect to a T3 server to see plan limits and token history. Reports from this computer are below.",
         );
@@ -539,7 +541,7 @@ impl UsagePage {
             .unwrap_or("Default environment");
         self.context.set_text(&format!("T3 server: {environment} · {}", app.current_server()));
         for label in self.history_states.borrow().iter() {
-            label.set_text("Last-known historical scan · refreshing; freshness not yet confirmed");
+            label.set_text(&tr("Last-known historical scan · refreshing; freshness not yet confirmed"));
         }
         self.status.set_text(if self.summary.borrow().is_some() {
             "T3 server token history · refreshing; showing last-known history"
@@ -731,7 +733,7 @@ impl UsagePage {
                     }
                 }
                 details.append(&grid);
-                let expander = gtk::Expander::builder().label("Models and token mix").child(&details).build();
+                let expander = gtk::Expander::builder().label(tr("Models and token mix")).child(&details).build();
                 expander.add_css_class("caption");
                 body.append(&expander);
                 let row = gtk::ListBoxRow::builder().activatable(false).child(&body).build();

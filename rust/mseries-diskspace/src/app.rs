@@ -85,10 +85,10 @@ impl App {
         // Header bar.
         let header = gtk::HeaderBar::new();
         let up = gtk::Button::from_icon_name("go-up-symbolic");
-        up.set_tooltip_text(Some("Up one folder (Backspace)"));
+        up.set_tooltip_text(Some(&tr("Up one folder (Backspace)")));
         set_accessible_label(&up, "Up one folder");
         let rescan = gtk::Button::from_icon_name("view-refresh-symbolic");
-        rescan.set_tooltip_text(Some("Scan again (Ctrl+R)"));
+        rescan.set_tooltip_text(Some(&tr("Scan again (Ctrl+R)")));
         set_accessible_label(&rescan, "Scan again");
         header.pack_start(&up);
         header.pack_start(&rescan);
@@ -174,7 +174,7 @@ impl App {
         view_page.append(&legend);
 
         let empty = granite::Placeholder::new("Find what is using your disk");
-        empty.set_description("Pick a filesystem on the left, or choose a folder, to see where the space went.");
+        empty.set_description(&tr("Pick a filesystem on the left, or choose a folder, to see where the space went."));
         empty.set_icon(&gio::ThemedIcon::new("drive-harddisk"));
 
         let spinner = gtk::Spinner::builder().spinning(true).width_request(32).height_request(32).build();
@@ -202,10 +202,10 @@ impl App {
 
         // Right: sort bar, contents, actions.
         let sort_dd = gtk::DropDown::from_strings(&["Size", "Name", "Items", "Modified"]);
-        sort_dd.set_tooltip_text(Some("Sort the list and the circle"));
+        sort_dd.set_tooltip_text(Some(&tr("Sort the list and the circle")));
         let sort_icon = gtk::ToggleButton::builder()
             .icon_name("view-sort-descending-symbolic")
-            .tooltip_text("Reverse order")
+            .tooltip_text(tr("Reverse order"))
             .build();
         set_accessible_label(&sort_icon, "Reverse sort order");
         let sort_bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -226,13 +226,13 @@ impl App {
         let selection = label("Select items to review them", &["dim-label", "ds-selection"]);
         selection.set_hexpand(true);
         let btn_copy = gtk::Button::from_icon_name("edit-copy-symbolic");
-        btn_copy.set_tooltip_text(Some("Copy path"));
+        btn_copy.set_tooltip_text(Some(&tr("Copy path")));
         set_accessible_label(&btn_copy, "Copy selected path");
         let btn_show = gtk::Button::with_label("Show in Files");
         let btn_trash = gtk::Button::with_label("Move to Trash");
         let btn_delete = gtk::Button::with_label("Delete…");
         btn_delete.add_css_class("destructive-action");
-        btn_delete.set_tooltip_text(Some("Delete permanently and free the space now"));
+        btn_delete.set_tooltip_text(Some(&tr("Delete permanently and free the space now")));
         let selection_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         set_box_spacing_text_units(&selection_row, 0.35);
         selection_row.append(&selection);
@@ -308,7 +308,7 @@ impl App {
 
         let window = gtk::ApplicationWindow::builder()
             .application(application)
-            .title("Disk Space")
+            .title(tr("Disk Space"))
             .child(&overlay)
             .build();
         mseries_pantheon_kit::appearance::size_window(
@@ -868,7 +868,7 @@ impl App {
             for b in [&self.btn_copy, &self.btn_show, &self.btn_trash, &self.btn_delete] {
                 b.set_sensitive(false);
             }
-            self.selection.set_text("Select items to review them");
+            self.selection.set_text(&tr("Select items to review them"));
             return;
         };
         let total: u64 = top.iter().map(|id| tree.node(*id).size).sum();
@@ -987,7 +987,7 @@ impl App {
     fn choose_folder(self: &Rc<Self>) {
         let app = self.clone();
         glib::spawn_future_local(async move {
-            let dialog = gtk::FileDialog::builder().title("Choose a folder to analyze").modal(true).build();
+            let dialog = gtk::FileDialog::builder().title(tr("Choose a folder to analyze")).modal(true).build();
             if let Ok(file) = dialog.select_folder_future(Some(&app.window)).await
                 && let Some(path) = file.path()
             {
@@ -1021,7 +1021,7 @@ impl App {
             "Scanning {}",
             path.file_name().map_or_else(|| path.to_string_lossy().into_owned(), |n| n.to_string_lossy().into_owned())
         ));
-        self.scan_detail.set_text("Starting…");
+        self.scan_detail.set_text(&tr("Starting…"));
         self.scan_path.set_text("");
         let (tx, rx) = mpsc::channel();
         scan::spawn(path, cross_fs, progress.clone(), tx);

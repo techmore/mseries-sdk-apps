@@ -6,6 +6,7 @@
 //! follows light and dark.
 
 use crate::chat::label;
+use crate::strings::tr;
 use gtk::{gdk, gio, glib, prelude::*};
 use serde_json::Value;
 use std::cell::RefCell;
@@ -98,12 +99,12 @@ impl PageView {
         head.append(&show);
         let expand = gtk::Button::from_icon_name("view-fullscreen-symbolic");
         expand.update_property(&[gtk::accessible::Property::Label("Open full screen")]);
-        expand.set_tooltip_text(Some("Open full screen"));
+        expand.set_tooltip_text(Some(&tr("Open full screen")));
         expand.set_visible(false);
         head.append(&expand);
         let close = gtk::Button::from_icon_name("window-close-symbolic");
         close.update_property(&[gtk::accessible::Property::Label("Close the page")]);
-        close.set_tooltip_text(Some("Close the page (frees its web process)"));
+        close.set_tooltip_text(Some(&tr("Close the page (frees its web process)")));
         close.set_visible(false);
         head.append(&close);
         root.append(&head);
@@ -127,7 +128,7 @@ impl PageView {
                         e.set_visible(true);
                         c.set_visible(true);
                     }
-                    None => b.set_label("Page unavailable"),
+                    None => b.set_label(&tr("Page unavailable")),
                 }
             }));
         });

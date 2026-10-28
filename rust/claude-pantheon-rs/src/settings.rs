@@ -5,6 +5,7 @@
 //! read by `main()` before GTK starts.
 
 use crate::chat::label;
+use crate::strings::tr;
 use gtk::{gio, glib, pango, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -207,7 +208,7 @@ impl SettingsWindow {
     pub fn open(parent: &gtk::ApplicationWindow, settings: Rc<RefCell<Settings>>, ctx: Context) -> Rc<SettingsWindow> {
         let window = gtk::Window::builder()
             .transient_for(parent)
-            .title("Settings")
+            .title(tr("Settings"))
             .default_width(760)
             .default_height(520)
             .build();
@@ -439,7 +440,7 @@ impl SettingsWindow {
         ));
         let model = gtk::Entry::builder()
             .text(&s.borrow().voice_model)
-            .placeholder_text("auto: ~/.local/share/claude-pantheon-rs/models/ggml-*.bin")
+            .placeholder_text(tr("auto: ~/.local/share/claude-pantheon-rs/models/ggml-*.bin"))
             .hexpand(true)
             .build();
         model.update_property(&[gtk::accessible::Property::Label("Whisper model path")]);

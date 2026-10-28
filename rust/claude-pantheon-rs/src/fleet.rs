@@ -1,4 +1,5 @@
 //! Native Fleet Shepherd adapter: explicit aliases, on-demand read-only snapshots.
+use crate::strings::tr;
 use futures_util::future::{Either, select};
 use gtk::{gio, glib, prelude::*};
 use serde_json::Value;
@@ -169,9 +170,9 @@ impl FleetPage {
         root.append(&label("Read-only agent status and OMP usage over SSH. Uses this computer's SSH aliases and verified host keys, separately from the paired T3 server. Refresh contacts the configured machines; there is no background polling.", false));
         let controls = gtk::Box::new(gtk::Orientation::Vertical, 6);
         let form = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        let label_entry = gtk::Entry::builder().placeholder_text("Machine label").max_length(96).build();
+        let label_entry = gtk::Entry::builder().placeholder_text(tr("Machine label")).max_length(96).build();
         label_entry.update_property(&[gtk::accessible::Property::Label("Machine label")]);
-        let alias_entry = gtk::Entry::builder().placeholder_text("Existing SSH alias").max_length(96).build();
+        let alias_entry = gtk::Entry::builder().placeholder_text(tr("Existing SSH alias")).max_length(96).build();
         alias_entry.update_property(&[gtk::accessible::Property::Label("Existing SSH alias")]);
         form.append(&label_entry);
         form.append(&alias_entry);
@@ -222,7 +223,7 @@ impl FleetPage {
                 let alias = page.alias_entry.text();
                 let name = page.label_entry.text();
                 if !valid_id(&alias) || name.trim().is_empty() {
-                    page.status.set_text("Enter a machine label and a simple SSH alias, such as build-server.");
+                    page.status.set_text(&tr("Enter a machine label and a simple SSH alias, such as build-server."));
                     return;
                 }
                 page.load(vec!["add".into(), name.trim().into(), alias.into()]);
@@ -238,7 +239,7 @@ impl FleetPage {
         cancel.connect_clicked(move |_| {
             if let Some(page) = weak.upgrade() {
                 page.cancel();
-                page.status.set_text("Refresh cancelled. Data shown below is last-known.");
+                page.status.set_text(&tr("Refresh cancelled. Data shown below is last-known."));
             }
         });
         let cancel_weak = cancel.downgrade();
@@ -254,7 +255,7 @@ impl FleetPage {
                 && page.snapshot_running.get()
             {
                 page.cancel();
-                page.status.set_text("Refresh cancelled while this page was hidden. Data below is last-known.");
+                page.status.set_text(&tr("Refresh cancelled while this page was hidden. Data below is last-known."));
             }
         });
         page
@@ -307,7 +308,8 @@ impl FleetPage {
                 Ok(value) if snapshot => page.render_snapshot(&value),
                 Ok(value) => {
                     page.render_settings(&value);
-                    page.status.set_text("Connector settings loaded. Choose Refresh Status to contact these machines.");
+                    page.status
+                        .set_text(&tr("Connector settings loaded. Choose Refresh Status to contact these machines."));
                     clear(&page.content);
                     if args[0] != "list" {
                         page.label_entry.set_text("");
@@ -368,7 +370,7 @@ impl FleetPage {
             }
         };
         self.status
-            .set_text("Snapshot received. Source times below show freshness; missing sources remain unavailable.");
+            .set_text(&tr("Snapshot received. Source times below show freshness; missing sources remain unavailable."));
         let generated = value["generatedAt"].as_str().unwrap_or("");
         let mut ordered: Vec<_> = rows.iter().collect();
         ordered.sort_by_key(|row| (row["mode"] != "local", row["id"].as_str().unwrap_or("")));
@@ -475,7 +477,9 @@ impl FleetPage {
                             OsStr::new(&alias),
                         ];
                         if gio::Subprocess::newv(&argv, gio::SubprocessFlags::NONE).is_err() {
-                            status.set_text("Could not open a terminal. Check xdg-terminal-exec and SSH installation.");
+                            status.set_text(&tr(
+                                "Could not open a terminal. Check xdg-terminal-exec and SSH installation.",
+                            ));
                         }
                     });
                     card.append(&terminal);

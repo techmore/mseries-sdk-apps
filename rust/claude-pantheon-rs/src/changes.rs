@@ -5,6 +5,7 @@
 
 use crate::chat::label;
 use crate::render::apply_scheme;
+use crate::strings::tr;
 use crate::t3::Rpc;
 use gtk::{gio, glib, pango, prelude::*};
 use serde_json::{Value, json};
@@ -174,7 +175,7 @@ impl ChangesPage {
         modes.append(&inline);
         modes.append(&side_by_side);
         bar.append(&modes);
-        let restore_btn = gtk::MenuButton::builder().label("Restore to checkpoint…").build();
+        let restore_btn = gtk::MenuButton::builder().label(tr("Restore to checkpoint…")).build();
         restore_btn.set_sensitive(false);
         bar.append(&restore_btn);
         let pr_bar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -250,7 +251,7 @@ impl ChangesPage {
         *self.rpc.borrow_mut() = Some(rpc.clone());
         *self.thread_id.borrow_mut() = Some(thread_id.clone());
         *self.checkpoints.borrow_mut() = checkpoints;
-        self.status.set_text("Reading the thread's diff…");
+        self.status.set_text(&tr("Reading the thread's diff…"));
         self.fill_restore_menu();
         let page = self.clone();
         glib::spawn_future_local(async move {
@@ -338,7 +339,8 @@ impl ChangesPage {
             let title = label(&format!("Hunk {}", i + 1), &["caption", "dim-label"]);
             title.set_hexpand(true);
             bar.append(&title);
-            let copy = gtk::Button::builder().icon_name("edit-copy-symbolic").tooltip_text("Copy this hunk").build();
+            let copy =
+                gtk::Button::builder().icon_name("edit-copy-symbolic").tooltip_text(tr("Copy this hunk")).build();
             copy.add_css_class("flat");
             let text = hunk.clone();
             copy.connect_clicked(move |b| b.clipboard().set_text(&text));

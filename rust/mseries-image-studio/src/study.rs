@@ -1,4 +1,5 @@
 //! Native review and sequential comparison workspaces.
+use crate::strings::tr;
 use crate::style;
 use crate::{Recipe, recipe::load_outputs};
 use gtk::prelude::*;
@@ -59,12 +60,12 @@ fn text(view: &gtk::TextView) -> String {
 fn run(script: &'static str, arguments: Vec<String>, status: &gtk::Label, button: &gtk::Button) {
     let directory = base();
     if directory.join("generation.lock").exists() || directory.join("batch.lock").exists() {
-        status.set_text("A workflow is active. Stop it or wait before starting another.");
+        status.set_text(&tr("A workflow is active. Stop it or wait before starting another."));
         return;
     }
     let _ = std::fs::remove_file(directory.join("cancel.request"));
     button.set_sensitive(false);
-    status.set_text("Starting local workflow…");
+    status.set_text(&tr("Starting local workflow…"));
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let result = std::process::Command::new("python3")
@@ -96,7 +97,7 @@ fn run(script: &'static str, arguments: Vec<String>, status: &gtk::Label, button
             gtk::glib::ControlFlow::Break
         }
         Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-            status.set_text("Workflow worker disconnected.");
+            status.set_text(&tr("Workflow worker disconnected."));
             button.set_sensitive(true);
             gtk::glib::ControlFlow::Break
         }
@@ -193,7 +194,7 @@ pub fn review(on_reuse: Reuse) -> gtk::Widget {
                 source.set_text(&recipe.prompt);
             } else {
                 picture.set_filename(None::<&str>);
-                source.set_text("No saved images yet.");
+                source.set_text(&tr("No saved images yet."));
             }
             *images.borrow_mut() = values;
         }
@@ -222,7 +223,7 @@ pub fn review(on_reuse: Reuse) -> gtk::Widget {
     rubric.set_right_margin(10);
     rubric.set_top_margin(8);
     rubric.set_bottom_margin(8);
-    rubric.buffer().set_text("Natural adult expression, accurate cozy knitwear, warm comfortable lighting, coherent composition and believable hands. Preserve the subject and intent.");
+    rubric.buffer().set_text(&tr("Natural adult expression, accurate cozy knitwear, warm comfortable lighting, coherent composition and believable hands. Preserve the subject and intent."));
     let rubric_scroll = gtk::ScrolledWindow::builder()
         .child(&rubric)
         .min_content_height(90)
@@ -278,7 +279,7 @@ pub fn review(on_reuse: Reuse) -> gtk::Widget {
             use_suggestion.set_sensitive(false);
             report
                 .buffer()
-                .set_text("No saved review for this image yet.");
+                .set_text(&tr("No saved review for this image yet."));
             if let Some(recipe) = images.borrow().get(selection.selected() as usize) {
                 let path = Path::new(&recipe.image_path).with_extension("review.json");
                 if let Ok(raw) = std::fs::read(&path) {
@@ -304,7 +305,7 @@ pub fn review(on_reuse: Reuse) -> gtk::Widget {
         review.connect_clicked(move |button| {
             let values = images.borrow();
             let Some(recipe) = values.get(selection.selected() as usize) else {
-                status.set_text("Select a saved image first.");
+                status.set_text(&tr("Select a saved image first."));
                 return;
             };
             let reference_path = reference

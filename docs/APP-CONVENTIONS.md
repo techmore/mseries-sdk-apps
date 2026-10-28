@@ -15,7 +15,7 @@ A generator can read the same JSON for the rule text and the app list.
 | `about` | An About dialog, reachable from the header's menu. | `chrome::install_app_actions` (registers `app.about`, `app.quit`) and `chrome::primary_menu`. |
 | `shortcuts` | Keyboard shortcuts for the main actions, including Ctrl+Q and Ctrl+? where it applies. | `chrome::install_app_actions` (Ctrl+Q), plus app-specific `set_accels_for_action` / key controllers. |
 | `toasts` | Results and errors are reported with toasts. | `chrome::toast_overlay` and `chrome::show_toast`. |
-| `gettext` | User-visible strings go through an app-owned gettext domain. | A `strings.rs` per app (`DOMAIN` = app id, `tr()` over `mseries_pantheon_kit::i18n`). **Coverage is partial:** the domain is bound and the window chrome (About, menus, toasts) is translated; converting every remaining literal in T3, Image Studio, Apple Dev, Disk Space and System Monitor is still owed. Messages and Updates route their strings already. |
+| `gettext` | User-visible strings go through an app-owned gettext domain. | A `strings.rs` per app (`DOMAIN` = app id, `tr()` over `mseries_pantheon_kit::i18n`). Plain literals passed to labels, titles, tooltips, placeholders and text setters go through `tr()` in every app (T3, Image Studio, Apple Dev, Disk Space, System Monitor, Messages, Updates). Still literal: strings built with `format!`, markup, dialog buttons and values assembled in code; no `.pot` catalogs exist yet for the newer domains. |
 | (config) | Per-app settings are JSON under the user config dir. | `mseries_pantheon_kit::settings`. |
 
 ## Exceptions

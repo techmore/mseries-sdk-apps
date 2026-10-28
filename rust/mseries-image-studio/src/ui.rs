@@ -1,4 +1,5 @@
 use crate::assistant;
+use crate::strings::tr;
 use crate::host::HostCapabilities;
 use crate::recipe::{Recipe, RecipeStore, load_outputs};
 use crate::style::{self, caption, chip, dot, icon_button};
@@ -50,7 +51,7 @@ impl ImageStudioWindow {
     pub fn build(application: &gtk::Application) -> Self {
         let window = gtk::ApplicationWindow::builder()
             .application(application)
-            .title("Image Studio")
+            .title(tr("Image Studio"))
             .build();
         // Three panes: opens wider than the workspace default so the regular layout (not the compact one,
         // below about 76 text units) is what a new window shows. The minimum is the shared one.
@@ -60,7 +61,7 @@ impl ImageStudioWindow {
 
         let header = gtk::HeaderBar::builder().show_title_buttons(true).build();
         header.add_css_class(granite::STYLE_CLASS_FLAT);
-        let title = gtk::Label::new(Some("Create"));
+        let title = gtk::Label::new(Some(&tr("Create")));
         title.add_css_class("is-title-text");
         header.set_title_widget(Some(&title));
         let menu = gio::Menu::new();
@@ -139,7 +140,7 @@ impl ImageStudioWindow {
                 if turbo {
                     set_text(&create.negative, "");
                 }
-                inspector.recipe_status.set_text("Selected model and starter settings loaded. Local memory admission still applies.");
+                inspector.recipe_status.set_text(&tr("Selected model and starter settings loaded. Local memory admission still applies."));
                 stack.set_visible_child_name("create");
             })
         };
@@ -174,7 +175,7 @@ impl ImageStudioWindow {
                 } else if !silent {
                     inspector
                         .recipe_status
-                        .set_text("No readable generation recipe is available yet.");
+                        .set_text(&tr("No readable generation recipe is available yet."));
                 }
             })
         };
@@ -213,10 +214,10 @@ impl ImageStudioWindow {
         settings_popover.set_size_request(340, 560);
         let settings_label = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         settings_label.append(&gtk::Image::from_icon_name("preferences-system-symbolic"));
-        settings_label.append(&gtk::Label::new(Some("Settings")));
+        settings_label.append(&gtk::Label::new(Some(&tr("Settings"))));
         let settings_button = gtk::MenuButton::builder()
             .child(&settings_label)
-            .tooltip_text("Generation settings")
+            .tooltip_text(tr("Generation settings"))
             .popover(&settings_popover)
             .build();
         settings_button.set_visible(false);
@@ -719,7 +720,7 @@ fn build_sidebar(stack: &gtk::Stack, create: &CreatePage, inspector: &Inspector)
     inner.set_margin_end(12);
     let device_head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let device_dot = dot("");
-    let device_title = gtk::Label::new(Some("This device"));
+    let device_title = gtk::Label::new(Some(&tr("This device")));
     device_title.add_css_class("is-card-title");
     device_title.set_xalign(0.0);
     device_title.set_hexpand(true);
@@ -887,7 +888,7 @@ fn install_recipe_chips(create: &CreatePage, settings: &Inspector) {
 }
 
 fn build_create_page() -> CreatePage {
-    let queue_status = gtk::Label::new(Some("Ready"));
+    let queue_status = gtk::Label::new(Some(&tr("Ready")));
     queue_status.set_ellipsize(gtk::pango::EllipsizeMode::End);
     queue_status.set_max_width_chars(48);
 
@@ -922,7 +923,7 @@ fn build_create_page() -> CreatePage {
     let empty_icon = gtk::Image::from_icon_name("applications-graphics-symbolic");
     empty_icon.set_pixel_size(64);
     empty_icon.add_css_class("is-empty-icon");
-    let empty_title = gtk::Label::new(Some("Describe an image"));
+    let empty_title = gtk::Label::new(Some(&tr("Describe an image")));
     empty_title.add_css_class("is-empty-title");
     empty_title.set_wrap(true);
     empty_title.set_justify(gtk::Justification::Center);
@@ -1049,7 +1050,7 @@ fn build_create_page() -> CreatePage {
     negative.set_bottom_margin(8);
     negative
         .buffer()
-        .set_text("text, watermark, logo, extra fingers, inconsistent person, sexualized styling");
+        .set_text(&tr("text, watermark, logo, extra fingers, inconsistent person, sexualized styling"));
     negative.update_property(&[gtk::accessible::Property::Label("Negative prompt")]);
     let negative_scroll = gtk::ScrolledWindow::builder()
         .child(&negative)
@@ -1065,7 +1066,7 @@ fn build_create_page() -> CreatePage {
     negative_box.set_margin_bottom(10);
     negative_box.append(
         &gtk::Label::builder()
-            .label("Negative prompt · what to avoid")
+            .label(tr("Negative prompt · what to avoid"))
             .xalign(0.0)
             .css_classes(["is-field-label"])
             .build(),
@@ -1092,7 +1093,7 @@ fn build_create_page() -> CreatePage {
     let intent = gtk::DropDown::from_strings(INTENTS);
     intent.set_selected(1);
     intent.add_css_class("is-pill");
-    intent.set_tooltip_text(Some("Prompt type"));
+    intent.set_tooltip_text(Some(&tr("Prompt type")));
     intent.update_property(&[gtk::accessible::Property::Label("Prompt type")]);
     actions.append(&intent);
     // Secondary actions are icon-only so the dock stays compact; each has a tooltip
@@ -1115,7 +1116,7 @@ fn build_create_page() -> CreatePage {
     negative_toggle.set_icon_name("action-unavailable-symbolic");
     negative_toggle.add_css_class("flat");
     negative_toggle.add_css_class("is-pill");
-    negative_toggle.set_tooltip_text(Some("Negative prompt: describe what to avoid"));
+    negative_toggle.set_tooltip_text(Some(&tr("Negative prompt: describe what to avoid")));
     negative_toggle.update_property(&[gtk::accessible::Property::Label("Negative prompt")]);
     let negative_revealer_for_toggle = negative_revealer.clone();
     negative_toggle.connect_toggled(move |toggle| {
@@ -1410,7 +1411,7 @@ fn load_recipe(recipe: &Recipe, page: &CreatePage, settings: &Inspector) {
     settings.tags.set_text(&recipe.tags.join(", "));
     settings
         .recipe_status
-        .set_text("Recipe loaded from Library.");
+        .set_text(&tr("Recipe loaded from Library."));
 }
 
 fn load_recipes(
@@ -1602,7 +1603,7 @@ fn build_inspector() -> Inspector {
     // ----- Model -----
     let (model_section, model_body) = style::collapsible("Model", "drive-harddisk-symbolic", true);
     let model = gtk::Entry::new();
-    model.set_placeholder_text(Some("Model name or checkpoint"));
+    model.set_placeholder_text(Some(&tr("Model name or checkpoint")));
     model.update_property(&[gtk::accessible::Property::Label(
         "Model name or checkpoint for recipe",
     )]);
@@ -1708,7 +1709,7 @@ fn build_inspector() -> Inspector {
     let batch_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     batch_row.append(
         &gtk::Label::builder()
-            .label("Images in this run")
+            .label(tr("Images in this run"))
             .xalign(0.0)
             .hexpand(true)
             .css_classes(["is-field-label"])
@@ -1732,13 +1733,13 @@ fn build_inspector() -> Inspector {
     sampling_body.append(&sampler_row);
     let steps = gtk::SpinButton::with_range(1.0, 50.0, 1.0);
     steps.set_value(20.0);
-    steps.set_tooltip_text(Some("Denoising steps"));
+    steps.set_tooltip_text(Some(&tr("Denoising steps")));
     steps.update_property(&[gtk::accessible::Property::Label("Denoising steps")]);
     sampling_body.append(&style::slider_row("Steps", &steps));
     let cfg = gtk::SpinButton::with_range(0.0, 15.0, 0.5);
     cfg.set_digits(1);
     cfg.set_value(7.0);
-    cfg.set_tooltip_text(Some("Prompt guidance strength (CFG)"));
+    cfg.set_tooltip_text(Some(&tr("Prompt guidance strength (CFG)")));
     cfg.update_property(&[gtk::accessible::Property::Label("Prompt guidance CFG")]);
     sampling_body.append(&style::slider_row("Prompt guidance", &cfg));
     panel.append(&sampling_section);
@@ -1754,7 +1755,7 @@ fn build_inspector() -> Inspector {
         "Seed, minus one means random",
     )]);
     let random_seed = gtk::Button::from_icon_name("media-playlist-shuffle-symbolic");
-    random_seed.set_tooltip_text(Some("Use a random seed for every run (−1)"));
+    random_seed.set_tooltip_text(Some(&tr("Use a random seed for every run (−1)")));
     random_seed.update_property(&[gtk::accessible::Property::Label("Random seed")]);
     let seed_spin = seed.clone();
     random_seed.connect_clicked(move |_| seed_spin.set_value(-1.0));
@@ -1771,7 +1772,7 @@ fn build_inspector() -> Inspector {
     let (reference_section, reference_body) =
         style::collapsible("Reference image", "insert-image-symbolic", false);
     let reference_image = gtk::Entry::new();
-    reference_image.set_placeholder_text(Some("No reference · prompt only"));
+    reference_image.set_placeholder_text(Some(&tr("No reference · prompt only")));
     reference_image.update_property(&[gtk::accessible::Property::Label("Reference image path")]);
     let thumb = gtk::Picture::new();
     thumb.set_content_fit(gtk::ContentFit::Cover);
@@ -1794,7 +1795,7 @@ fn build_inspector() -> Inspector {
     choose_reference.connect_clicked(move |button| {
         let parent = button.root().and_downcast::<gtk::Window>();
         let chooser = gtk::FileDialog::builder()
-            .title("Choose reference image")
+            .title(tr("Choose reference image"))
             .accept_label("Use reference")
             .build();
         let filter = gtk::FileFilter::new();
@@ -1842,7 +1843,7 @@ fn build_inspector() -> Inspector {
     // ----- LoRA -----
     let (lora_section, lora_body) = style::collapsible("LoRA", "emblem-system-symbolic", false);
     let lora = gtk::Entry::new();
-    lora.set_placeholder_text(Some("LoRA name (optional)"));
+    lora.set_placeholder_text(Some(&tr("LoRA name (optional)")));
     lora.update_property(&[gtk::accessible::Property::Label("LoRA name for recipe")]);
     lora_body.append(&lora);
     let lora_weight = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.5, 0.05);
@@ -1859,7 +1860,7 @@ fn build_inspector() -> Inspector {
     let (advanced_section, advanced_body) =
         style::collapsible("Advanced", "preferences-other-symbolic", false);
     let vae = gtk::Entry::new();
-    vae.set_placeholder_text(Some("Built into checkpoint, or VAE file path"));
+    vae.set_placeholder_text(Some(&tr("Built into checkpoint, or VAE file path")));
     vae.update_property(&[gtk::accessible::Property::Label("VAE decoder file")]);
     let installed_vae = gtk::glib::user_data_dir()
         .join("mseries-image-studio/models/vae-ft-mse-840000-ema-pruned.safetensors");
@@ -1869,7 +1870,7 @@ fn build_inspector() -> Inspector {
     advanced_body.append(&style::field("VAE decoder", &vae));
     let vae_on_cpu = gtk::CheckButton::with_label("Decode VAE on CPU (lower GPU use)");
     vae_on_cpu.set_active(true);
-    vae_on_cpu.set_tooltip_text(Some("CPU decoding uses less GPU memory. Disable to try faster GPU decoding when memory allows. Saved with each recipe."));
+    vae_on_cpu.set_tooltip_text(Some(&tr("CPU decoding uses less GPU memory. Disable to try faster GPU decoding when memory allows. Saved with each recipe.")));
     advanced_body.append(&vae_on_cpu);
     let vae_tile_size = gtk::SpinButton::with_range(64.0, 512.0, 64.0);
     vae_tile_size.set_value(256.0);
@@ -1908,7 +1909,7 @@ fn build_inspector() -> Inspector {
     let vram_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     vram_row.append(
         &gtk::Label::builder()
-            .label("GPU memory budget · GiB")
+            .label(tr("GPU memory budget · GiB"))
             .xalign(0.0)
             .hexpand(true)
             .css_classes(["is-field-label"])
@@ -1917,7 +1918,7 @@ fn build_inspector() -> Inspector {
     vram_row.append(&max_vram_gib);
     advanced_body.append(&vram_row);
     let tags = gtk::Entry::new();
-    tags.set_placeholder_text(Some("portrait, streamer, study"));
+    tags.set_placeholder_text(Some(&tr("portrait, streamer, study")));
     tags.update_property(&[gtk::accessible::Property::Label(
         "Comma-separated image tags",
     )]);
@@ -2023,8 +2024,8 @@ fn apply_workflow(workflow: &str, page: &CreatePage, settings: &Inspector) {
             settings.dimensions.set_selected(0);
             settings.batch.set_value(1.0);
             settings.seed.set_value(424242.0);
-            page.workflow_status.set_text("Model readiness · one conservative 512 × 512 image, batch 1, fixed seed. Save the recipe while the image runtime is being qualified.");
-            page.assistant_status.set_text("Start with one model and one image. The app will not send a job until the runtime is connected and this size has a measured memory budget.");
+            page.workflow_status.set_text(&tr("Model readiness · one conservative 512 × 512 image, batch 1, fixed seed. Save the recipe while the image runtime is being qualified."));
+            page.assistant_status.set_text(&tr("Start with one model and one image. The app will not send a job until the runtime is connected and this size has a measured memory budget."));
         }
         "LoRA comparison" => {
             set_text(
@@ -2038,8 +2039,8 @@ fn apply_workflow(workflow: &str, page: &CreatePage, settings: &Inspector) {
             settings.dimensions.set_selected(0);
             settings.batch.set_value(1.0);
             settings.seed.set_value(424242.0);
-            page.workflow_status.set_text("LoRA comparison · save the same prompt and seed with LoRA strength 0, then save again with the chosen weight after a compatible LoRA is available.");
-            page.assistant_status.set_text("Keep the base model, prompt, dimensions and seed fixed; change only LoRA strength between recipe copies. The LoRA name and weight are saved as notes.");
+            page.workflow_status.set_text(&tr("LoRA comparison · save the same prompt and seed with LoRA strength 0, then save again with the chosen weight after a compatible LoRA is available."));
+            page.assistant_status.set_text(&tr("Keep the base model, prompt, dimensions and seed fixed; change only LoRA strength between recipe copies. The LoRA name and weight are saved as notes."));
         }
         _ => {
             set_text(&page.prompt, SAMPLE_SERIES);
@@ -2051,8 +2052,8 @@ fn apply_workflow(workflow: &str, page: &CreatePage, settings: &Inspector) {
             settings.batch.set_value(1.0);
             settings.seed.set_value(424242.0);
             page.intent.set_selected(1);
-            page.workflow_status.set_text("Prompt type study · ask the local assistant to recommend a type, review prompt wording, and save variants with the same subject and seed.");
-            page.assistant_status.set_text("This recipe describes a three-scene series. A connected image engine will need a qualified multi-image workflow before it can render the set.");
+            page.workflow_status.set_text(&tr("Prompt type study · ask the local assistant to recommend a type, review prompt wording, and save variants with the same subject and seed."));
+            page.assistant_status.set_text(&tr("This recipe describes a three-scene series. A connected image engine will need a qualified multi-image workflow before it can render the set."));
         }
     }
 }
@@ -2083,7 +2084,7 @@ fn wire_actions(
         let _ = std::fs::remove_file(base.join("cancel.request"));
         generation_settings
             .recipe_status
-            .set_text("Submitting supervised local calibration…");
+            .set_text(&tr("Submitting supervised local calibration…"));
         std::thread::spawn(move || {
             let mut command = std::process::Command::new("python3");
             command.arg("-c");
@@ -2111,7 +2112,7 @@ fn wire_actions(
         let recipe = current_recipe(&page, &settings);
         match store.save(&recipe) {
             Ok(_) => {
-                settings.recipe_status.set_text("Recipe saved to Library.");
+                settings.recipe_status.set_text(&tr("Recipe saved to Library."));
                 add_recipe_row(
                     &library_list,
                     recipe,
@@ -2136,7 +2137,7 @@ fn wire_actions(
     suggest_type.connect_clicked(move |_| {
         let prompt = text_of(&page.prompt).trim().to_string();
         if prompt.is_empty() {
-            status.set_text("Add a subject or idea first, then ask for a prompt-type suggestion.");
+            status.set_text(&tr("Add a subject or idea first, then ask for a prompt-type suggestion."));
             return;
         }
         status.set_text(
@@ -2163,7 +2164,7 @@ fn wire_actions(
             }
             Err(TryRecvError::Empty) => glib::ControlFlow::Continue,
             Err(TryRecvError::Disconnected) => {
-                status_done.set_text("Prompt-type helper stopped unexpectedly.");
+                status_done.set_text(&tr("Prompt-type helper stopped unexpectedly."));
                 glib::ControlFlow::Break
             }
         });
@@ -2176,7 +2177,7 @@ fn wire_actions(
     help_prompt.connect_clicked(move |_| {
         let prompt = text_of(&page.prompt).trim().to_string();
         if prompt.is_empty() {
-            status.set_text("Add a subject or idea first, then ask for prompt help.");
+            status.set_text(&tr("Add a subject or idea first, then ask for prompt help."));
             return;
         }
         let index = intent.selected() as usize;
@@ -2185,7 +2186,7 @@ fn wire_actions(
             .copied()
             .unwrap_or("Portrait")
             .to_string();
-        status.set_text("Asking the already-running M-Series local assistant…");
+        status.set_text(&tr("Asking the already-running M-Series local assistant…"));
         let status_done = status.clone();
         let prompt_view = page.prompt.clone();
         let window = prompt_dialog_parent.clone();
@@ -2195,7 +2196,7 @@ fn wire_actions(
         });
         glib::timeout_add_local(Duration::from_millis(80), move || match rx.try_recv() {
             Ok(Ok(suggestion)) => {
-                status_done.set_text("Suggestion ready. Review it before replacing your prompt.");
+                status_done.set_text(&tr("Suggestion ready. Review it before replacing your prompt."));
                 show_prompt_dialog(&window, &prompt_view, &suggestion);
                 glib::ControlFlow::Break
             }
@@ -2205,7 +2206,7 @@ fn wire_actions(
             }
             Err(TryRecvError::Empty) => glib::ControlFlow::Continue,
             Err(TryRecvError::Disconnected) => {
-                status_done.set_text("Prompt helper stopped unexpectedly.");
+                status_done.set_text(&tr("Prompt helper stopped unexpectedly."));
                 glib::ControlFlow::Break
             }
         });
@@ -2444,7 +2445,7 @@ fn show_library_detail(
     let image_path = recipe.image_path.clone();
     view.connect_clicked(move |button| {
         let viewer = gtk::Window::builder()
-            .title("Image Studio · Image")
+            .title(tr("Image Studio · Image"))
             .default_width(1100)
             .default_height(760)
             .build();
@@ -2753,7 +2754,7 @@ fn refresh_hardware(inspector: &Inspector) {
 
 fn show_intent_dialog(parent: &gtk::ApplicationWindow, dropdown: &gtk::DropDown, suggestion: &str) {
     let dialog = gtk::Window::builder()
-        .title("Review prompt type")
+        .title(tr("Review prompt type"))
         .transient_for(parent)
         .modal(true)
         .default_width(440)
@@ -2762,7 +2763,7 @@ fn show_intent_dialog(parent: &gtk::ApplicationWindow, dropdown: &gtk::DropDown,
     let body = dialog_body();
     body.append(
         &gtk::Label::builder()
-            .label("The local assistant recommends")
+            .label(tr("The local assistant recommends"))
             .xalign(0.0)
             .css_classes(["is-caption"])
             .build(),
@@ -2770,7 +2771,7 @@ fn show_intent_dialog(parent: &gtk::ApplicationWindow, dropdown: &gtk::DropDown,
     body.append(&chip(suggestion, "is-accent", None));
     body.append(
         &gtk::Label::builder()
-            .label("Your prompt will stay unchanged. Choose whether to use this type.")
+            .label(tr("Your prompt will stay unchanged. Choose whether to use this type."))
             .xalign(0.0)
             .wrap(true)
             .build(),
@@ -2800,7 +2801,7 @@ fn show_intent_dialog(parent: &gtk::ApplicationWindow, dropdown: &gtk::DropDown,
 
 fn show_prompt_dialog(parent: &gtk::ApplicationWindow, prompt: &gtk::TextView, suggestion: &str) {
     let dialog = gtk::Window::builder()
-        .title("Review prompt suggestion")
+        .title(tr("Review prompt suggestion"))
         .transient_for(parent)
         .modal(true)
         .default_width(560)
@@ -2919,7 +2920,7 @@ fn test_hooks(
         let recipe = current_recipe(create, inspector);
         match store.save(&recipe) {
             Ok(_) => {
-                inspector.recipe_status.set_text("Recipe saved to Library.");
+                inspector.recipe_status.set_text(&tr("Recipe saved to Library."));
                 add_recipe_row(&library.recipes, recipe, create, inspector, stack, true);
             }
             Err(error) => inspector
@@ -3079,7 +3080,7 @@ fn build_model_guide(
         let create = create.clone_refs();
         let inspector = inspector.clone_refs();
         let stack = stack.clone();
-        button.connect_clicked(move |_|{inspector.steps.set_value(steps);inspector.cfg.set_value(cfg);inspector.seed.set_value(424242.0);inspector.batch.set_value(1.0);inspector.dimensions.set_selected(0);inspector.lora.set_text("");inspector.model.set_text(&gtk::glib::user_data_dir().join("mseries-image-studio/models/stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf").to_string_lossy());create.workflow.replace("SD 1.5 starter".into());inspector.recipe_status.set_text("Starter defaults loaded. Local calibration and memory admission still apply.");stack.set_visible_child_name("create");});
+        button.connect_clicked(move |_|{inspector.steps.set_value(steps);inspector.cfg.set_value(cfg);inspector.seed.set_value(424242.0);inspector.batch.set_value(1.0);inspector.dimensions.set_selected(0);inspector.lora.set_text("");inspector.model.set_text(&gtk::glib::user_data_dir().join("mseries-image-studio/models/stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf").to_string_lossy());create.workflow.replace("SD 1.5 starter".into());inspector.recipe_status.set_text(&tr("Starter defaults loaded. Local calibration and memory admission still apply."));stack.set_visible_child_name("create");});
         actions.append(&button);
     }
     page.append(&actions);
@@ -3087,12 +3088,12 @@ fn build_model_guide(
     let review_body = style::card_content(&review);
     review_body.append(
         &gtk::Label::builder()
-            .label("Compare fairly")
+            .label(tr("Compare fairly"))
             .xalign(0.0)
             .css_classes(["is-card-title"])
             .build(),
     );
-    review_body.append(&gtk::Label::builder().label("Keep seed, dimensions and steps fixed; change one prompt phrase or model at a time. A vision grade should store the rubric, evaluator identity, explanations and run settings. It is advisory, not a guarantee of likeness or commercial image quality.").xalign(0.0).wrap(true).build());
+    review_body.append(&gtk::Label::builder().label(tr("Keep seed, dimensions and steps fixed; change one prompt phrase or model at a time. A vision grade should store the rubric, evaluator identity, explanations and run settings. It is advisory, not a guarantee of likeness or commercial image quality.")).xalign(0.0).wrap(true).build());
     page.append(&review);
     page.append(&style::section_caption("Sources"));
     let links = gtk::Box::new(gtk::Orientation::Vertical, 2);

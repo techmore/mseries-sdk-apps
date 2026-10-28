@@ -1,4 +1,5 @@
 //! Supplemental local subscription reports within the existing Usage page.
+use crate::strings::tr;
 use crate::{chat::label as base_label, quota};
 use granite::prelude::HeaderLabelExt;
 use gtk::{gio, glib, prelude::*};
@@ -37,7 +38,7 @@ impl QuotaView {
         refresh.add_css_class(granite::STYLE_CLASS_FLAT);
         refresh.set_valign(gtk::Align::Center);
         refresh.update_property(&[gtk::accessible::Property::Label("Read local reports")]);
-        refresh.set_tooltip_text(Some("Read existing local quota files; does not contact providers"));
+        refresh.set_tooltip_text(Some(&tr("Read existing local quota files; does not contact providers")));
         header.append(&refresh);
         root.append(&header);
         let status = label("", &["caption", "dim-label"]);
@@ -63,7 +64,7 @@ impl QuotaView {
         let generation = self.generation.get().wrapping_add(1);
         self.generation.set(generation);
         self.refresh.set_sensitive(false);
-        self.status.set_text("Reading reports on this computer…");
+        self.status.set_text(&tr("Reading reports on this computer…"));
         let weak = Rc::downgrade(self);
         glib::spawn_future_local(async move {
             let result = gio::spawn_blocking(move || {
@@ -79,7 +80,9 @@ impl QuotaView {
             view.refresh.set_sensitive(true);
             match result {
                 Ok(snapshot) => view.render(&snapshot),
-                Err(_) => view.status.set_text("Could not read local subscription reports. Try Read reports again."),
+                Err(_) => {
+                    view.status.set_text(&tr("Could not read local subscription reports. Try Read reports again."))
+                }
             }
         });
     }
@@ -88,7 +91,7 @@ impl QuotaView {
         while let Some(child) = self.content.first_child() {
             self.content.remove(&child);
         }
-        self.status.set_text("This computer only · separate from the paired T3 server · display only");
+        self.status.set_text(&tr("This computer only · separate from the paired T3 server · display only"));
         if snapshot.reports.is_empty() {
             let empty = label(
                 "No local subscription reports. Configure a supported collector on this computer to see subscription limits and prepaid balances here.",

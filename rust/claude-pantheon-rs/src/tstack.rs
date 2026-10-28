@@ -1,4 +1,5 @@
 //! Pinned tstack request preparation. This UI never sends a turn or invokes a workflow.
+use crate::strings::tr;
 use gtk::prelude::*;
 
 pub const WORKFLOWS: &[(&str, &str)] = &[
@@ -19,7 +20,7 @@ pub fn prepare(name: &str, draft: &str) -> String {
 
 pub fn show(parent: &gtk::ApplicationWindow, on_choose: impl Fn(&str) + 'static) -> gtk::Window {
     let window = gtk::Window::builder()
-        .title("Tstack Workflows")
+        .title(tr("Tstack Workflows"))
         .transient_for(parent)
         .modal(true)
         .default_width(500)

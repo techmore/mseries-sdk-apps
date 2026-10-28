@@ -2,6 +2,7 @@
 //! CodexBar Wingpanel indicator uses (`codexbar-accounts.py`), so there is one source of truth.
 
 use crate::plugin::{Plugin, StatusLine};
+use crate::strings::tr;
 use gtk::glib;
 use gtk::prelude::*;
 use serde_json::Value;
@@ -95,7 +96,7 @@ impl Accounts {
             text.append(&plan);
             row.append(&text);
             if a.active {
-                let badge = gtk::Label::new(Some("Active"));
+                let badge = gtk::Label::new(Some(&tr("Active")));
                 badge.add_css_class("accent");
                 row.append(&badge);
             } else {
@@ -161,7 +162,8 @@ impl Plugin for Accounts {
                     let accounts = parse_accounts(&v);
                     *cache.borrow_mut() = accounts.clone();
                     if accounts.is_empty() {
-                        status.set_text("No saved accounts. Sign in to Codex, then run codexbar-accounts.py save.");
+                        status
+                            .set_text(&tr("No saved accounts. Sign in to Codex, then run codexbar-accounts.py save."));
                     }
                     Accounts::fill(&list, &status, &accounts);
                 }

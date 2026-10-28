@@ -1,4 +1,5 @@
 //! On-demand native read-only overview, independent of the issue automation page and paired server.
+use crate::strings::tr;
 use crate::{
     chat::label as base_label,
     look,
@@ -43,7 +44,8 @@ impl RepoMonitorView {
         title.set_hexpand(true);
         header.append(&title);
         let refresh_button = gtk::Button::with_label("Refresh");
-        refresh_button.set_tooltip_text(Some("Ask the installed RepoBar helper for a fresh read-only GitHub snapshot"));
+        refresh_button
+            .set_tooltip_text(Some(&tr("Ask the installed RepoBar helper for a fresh read-only GitHub snapshot")));
         header.append(&refresh_button);
         root.append(&header);
         root.append(&label(
@@ -52,10 +54,12 @@ impl RepoMonitorView {
         ));
         let status = label("Open this overview to read RepoBar. No background polling.", &["caption"]);
         root.append(&status);
-        let search = gtk::SearchEntry::builder().placeholder_text("Search repositories").hexpand(true).build();
+        let search = gtk::SearchEntry::builder().placeholder_text(tr("Search repositories")).hexpand(true).build();
         root.append(&search);
         let scope = gtk::DropDown::from_strings(&["Visible repositories", "Pinned repositories"]);
-        scope.set_tooltip_text(Some("Filter using existing RepoBar visibility and pins; never changes preferences"));
+        scope.set_tooltip_text(Some(&tr(
+            "Filter using existing RepoBar visibility and pins; never changes preferences",
+        )));
         scope.set_halign(gtk::Align::Start);
         root.append(&scope);
         let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
@@ -109,7 +113,7 @@ impl RepoMonitorView {
                 let was_loading = view.task.borrow().is_some();
                 view.cancel();
                 if was_loading {
-                    view.status.set_text("Refresh cancelled while overview was hidden. Previous data is last-known; choose Refresh to read again.");
+                    view.status.set_text(&tr("Refresh cancelled while overview was hidden. Previous data is last-known; choose Refresh to read again."));
                 }
             }
         });
@@ -137,7 +141,8 @@ impl RepoMonitorView {
         self.cancel();
         let generation = self.generation.get();
         self.refresh_button.set_sensitive(false);
-        self.status.set_text("Reading GitHub through RepoBar… Existing data below is last-known until this finishes.");
+        self.status
+            .set_text(&tr("Reading GitHub through RepoBar… Existing data below is last-known until this finishes."));
         let weak = Rc::downgrade(self);
         let task = glib::spawn_future_local(async move {
             let result = repo_monitor::read_snapshot(force).await;
