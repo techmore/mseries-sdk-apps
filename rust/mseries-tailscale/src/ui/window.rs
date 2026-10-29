@@ -854,6 +854,11 @@ impl AppWindow {
             {
                 vpn.all_traffic = out.trim() == "no";
             }
+            if let Ok((true, out, _)) =
+                cli::run_program(&["nmcli", "-g", "vpn.data", "connection", "show", &vpn.uuid], 8).await
+            {
+                vpn.secrets_saved = model::secrets_saved(&out);
+            }
         }
         let pending = self.vpn_pending.borrow().clone();
         let key = format!("{vpns:?}|{pending:?}");
@@ -892,6 +897,30 @@ impl AppWindow {
             format!("{} {}", tr("Off: only its own networks go through"), vpn.name)
         };
         card.append(&setting_row(&tr("Send all traffic over VPN connection"), Some(&mode), &all));
+        if !vpn.secrets_saved {
+            let line = gtk::Box::builder().spacing(12).build();
+            let note = gtk::Label::builder()
+                .label(tr(
+                    "Passwords aren't saved, so connecting from here can't work. Save them once in the VPN's settings.",
+                ))
+                .xalign(0.0)
+                .hexpand(true)
+                .wrap(true)
+                .build();
+            note.add_css_class(granite::CssClassWARNING);
+            let save = gtk::Button::with_label(&tr("Save Passwords…"));
+            save.set_valign(gtk::Align::Center);
+            line.append(&note);
+            line.append(&save);
+            card.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+            card.append(&line);
+            let (weak, uuid) = (Rc::downgrade(self), vpn.uuid.clone());
+            save.connect_clicked(move |_| {
+                if let Some(this) = weak.upgrade() {
+                    this.edit_vpn(&uuid);
+                }
+            });
+        }
         if needs_reconnect {
             let line = gtk::Box::builder().spacing(12).build();
             let note = gtk::Label::builder()
@@ -910,9 +939,10 @@ impl AppWindow {
             reconnect.connect_clicked(move |_| {
                 if let Some(this) = weak.upgrade() {
                     this.vpn_command(
+                        &uuid,
                         vec!["sh", "-c", "nmcli connection down uuid \"$0\" && nmcli connection up uuid \"$0\"", &uuid],
                         format!("{} {name}", tr("Reconnected")),
-                        Some(uuid.clone()),
+                        true,
                     );
                 }
             });
@@ -923,7 +953,12 @@ impl AppWindow {
             if let Some(this) = weak.upgrade() {
                 let verb = if active { "up" } else { "down" };
                 let done = if active { tr("Connected to") } else { tr("Disconnected from") };
-                this.vpn_command(vec!["nmcli", "connection", verb, "uuid", &uuid], format!("{done} {name}"), None);
+                this.vpn_command(
+                    &uuid,
+                    vec!["nmcli", "connection", verb, "uuid", &uuid],
+                    format!("{done} {name}"),
+                    false,
+                );
             }
             glib::Propagation::Stop
         });
@@ -940,6 +975,7 @@ impl AppWindow {
                     this.vpn_pending.borrow_mut().insert(uuid.clone());
                 }
                 this.vpn_command(
+                    &uuid,
                     vec![
                         "nmcli",
                         "connection",
@@ -952,7 +988,7 @@ impl AppWindow {
                         never_default,
                     ],
                     done,
-                    None,
+                    false,
                 );
             }
             glib::Propagation::Stop
@@ -960,8 +996,19 @@ impl AppWindow {
         card
     }
 
+    /// Opens NetworkManager's editor for one connection, where "Store the password for all users" lives.
+    fn edit_vpn(&self, uuid: &str) {
+        if let Err(e) = gio::Subprocess::newv(
+            &[std::ffi::OsStr::new("nm-connection-editor"), "--edit".as_ref(), uuid.as_ref()],
+            gio::SubprocessFlags::NONE,
+        ) {
+            chrome::show_toast(&self.toast, &format!("{} {}", tr("Couldn't open VPN settings:"), e.message()));
+        }
+    }
+
     /// Runs an `nmcli` change (which may ask for a password through polkit), then refreshes.
-    fn vpn_command(self: &Rc<Self>, argv: Vec<&str>, done: String, clears_pending: Option<String>) {
+    fn vpn_command(self: &Rc<Self>, uuid: &str, argv: Vec<&str>, done: String, clears_pending: bool) {
+        let uuid = uuid.to_string();
         let argv: Vec<String> = argv.into_iter().map(String::from).collect();
         let this = self.clone();
         glib::spawn_future_local(async move {
@@ -969,10 +1016,17 @@ impl AppWindow {
             // Connecting an L2TP/IPsec VPN takes a while; a polkit prompt waits for the user.
             match cli::run_program(&refs, 90).await {
                 Ok((true, _, _)) => {
-                    if let Some(uuid) = clears_pending {
+                    if clears_pending {
                         this.vpn_pending.borrow_mut().remove(&uuid);
                     }
                     chrome::show_toast(&this.toast, &done);
+                }
+                Ok((false, _, err)) if model::needs_secrets(&err) => {
+                    chrome::show_toast(
+                        &this.toast,
+                        &tr("This VPN needs its passwords saved first. Opening its settings…"),
+                    );
+                    this.edit_vpn(&uuid);
                 }
                 Ok((false, _, err)) => {
                     let first = err.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("The VPN change failed.");

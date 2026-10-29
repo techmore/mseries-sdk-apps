@@ -103,6 +103,13 @@ pub async fn run_program(argv: &[&str], limit_secs: u64) -> Result<(bool, String
                 let uuid = argv.last().copied().unwrap_or_default();
                 Ok((true, if split.lines().any(|l| l == uuid) { "yes" } else { "no" }.into(), String::new()))
             }
+            // `unsaved-passwords.txt` lists VPNs whose secrets are "always ask".
+            Some(["-g", "vpn.data", _]) => {
+                let unsaved = std::fs::read_to_string(dir.join("unsaved-passwords.txt")).unwrap_or_default();
+                let uuid = argv.last().copied().unwrap_or_default();
+                let flags = if unsaved.lines().any(|l| l == uuid) { 2 } else { 0 };
+                Ok((true, format!("password-flags = {flags}, ipsec-psk-flags = {flags}"), String::new()))
+            }
             _ => Ok((false, String::new(), "Error: not allowed in fixture mode".into())),
         };
     }

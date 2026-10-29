@@ -317,6 +317,23 @@ pub struct Vpn {
     pub uuid: String,
     pub active: bool,
     pub all_traffic: bool,
+    /// False when a secret is "always ask" (flag 2) and so is never stored.
+    pub secrets_saved: bool,
+}
+
+/// Reads the `*-flags` entries from `nmcli -g vpn.data` (flags only; secrets are not in vpn.data).
+/// Flag 2 means "not saved, ask every time".
+pub fn secrets_saved(vpn_data: &str) -> bool {
+    !vpn_data
+        .split(',')
+        .filter_map(|kv| kv.split_once('='))
+        .any(|(k, v)| k.trim().ends_with("-flags") && v.trim().parse::<u32>().is_ok_and(|f| f & 2 != 0))
+}
+
+/// Whether an `nmcli connection up` failure means the VPN's passwords are missing.
+pub fn needs_secrets(stderr: &str) -> bool {
+    let l = stderr.to_lowercase();
+    l.contains("secrets were required") || l.contains("no agents were available") || l.contains("no secrets")
 }
 
 /// Splits one `nmcli -t` line on unescaped colons and unescapes `\:` and `\\`.
@@ -342,7 +359,13 @@ pub fn parse_vpn_list(text: &str) -> Vec<Vpn> {
     text.lines()
         .map(nmcli_fields)
         .filter(|f| f.len() >= 4 && (f[2] == "vpn" || f[2] == "wireguard") && f[0] != "tailscale0")
-        .map(|f| Vpn { name: f[0].clone(), uuid: f[1].clone(), active: f[3] == "yes", all_traffic: false })
+        .map(|f| Vpn {
+            name: f[0].clone(),
+            uuid: f[1].clone(),
+            active: f[3] == "yes",
+            all_traffic: false,
+            secrets_saved: true,
+        })
         .collect()
 }
 
@@ -358,5 +381,10 @@ mod vpn_tests {
         assert_eq!((vpns[0].name.as_str(), vpns[0].uuid.as_str(), vpns[0].active), ("BFS", "4a1d", false));
         assert_eq!((vpns[1].name.as_str(), vpns[1].active), ("Work\\VPN", true));
         assert_eq!(nmcli_fields("a\\:b:c"), vec!["a:b", "c"]);
+        assert!(!secrets_saved("gateway = x, ipsec-psk-flags = 2, password-flags = 2, user = a"));
+        assert!(!secrets_saved("password-flags = 0, ipsec-psk-flags = 2"));
+        assert!(secrets_saved("password-flags = 0, ipsec-psk-flags = 0, user = a"));
+        assert!(secrets_saved(""));
+        assert!(needs_secrets("Error: Connection activation failed: Secrets were required, but not provided"));
     }
 }
