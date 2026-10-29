@@ -108,7 +108,11 @@ pub async fn run_program(argv: &[&str], limit_secs: u64) -> Result<(bool, String
                 let unsaved = std::fs::read_to_string(dir.join("unsaved-passwords.txt")).unwrap_or_default();
                 let uuid = argv.last().copied().unwrap_or_default();
                 let flags = if unsaved.lines().any(|l| l == uuid) { 2 } else { 0 };
-                Ok((true, format!("password-flags = {flags}, ipsec-psk-flags = {flags}"), String::new()))
+                let data = format!(
+                    "gateway = vpn.example.com, ipsec-enabled = yes, ipsec-psk-flags = {flags}, \
+                     password-flags = {flags}, user = name@example.com"
+                );
+                Ok((true, data, String::new()))
             }
             _ => Ok((false, String::new(), "Error: not allowed in fixture mode".into())),
         };

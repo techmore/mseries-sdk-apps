@@ -3,5 +3,6 @@
 
 pub mod cli;
 pub mod model;
+pub mod nm;
 pub mod strings;
 pub mod ui;

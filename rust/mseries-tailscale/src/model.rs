@@ -369,6 +369,15 @@ pub fn parse_vpn_list(text: &str) -> Vec<Vpn> {
         .collect()
 }
 
+/// `nmcli -g vpn.data` ("key = value, key = value") as a map. Values with ", " inside are not expected here.
+pub fn parse_vpn_data(text: &str) -> std::collections::HashMap<String, String> {
+    text.trim()
+        .split(", ")
+        .filter_map(|kv| kv.split_once('='))
+        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        .collect()
+}
+
 #[cfg(test)]
 mod vpn_tests {
     use super::*;
@@ -385,6 +394,9 @@ mod vpn_tests {
         assert!(!secrets_saved("password-flags = 0, ipsec-psk-flags = 2"));
         assert!(secrets_saved("password-flags = 0, ipsec-psk-flags = 0, user = a"));
         assert!(secrets_saved(""));
+        let d = parse_vpn_data("gateway = vpn.example.com, ipsec-enabled = yes, password-flags = 0, user = a@b.org\n");
+        assert_eq!(d.get("gateway").map(String::as_str), Some("vpn.example.com"));
+        assert_eq!(d.get("user").map(String::as_str), Some("a@b.org"));
         assert!(needs_secrets("Error: Connection activation failed: Secrets were required, but not provided"));
     }
 }

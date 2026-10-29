@@ -25,6 +25,13 @@ A native Pantheon window for Tailscale. It replaces the old launcher that opened
   **Send all traffic over VPN connection** switch (`ipv4.never-default` / `ipv6.never-default` = no). The card says
   which mode is active; a connected VPN shows **Reconnect** after the mode changes. **Add VPN…** opens Network
   settings, where new VPNs are created.
+- **VPN settings (gear button):** each VPN row has a gear that opens an edit sheet: server, username, password,
+  IPsec pre-shared key, "Send all traffic over VPN connection" and **Remember passwords** (on by default; stored
+  system-wide, readable only by root; off means ask every time). Secret boxes start empty; empty keeps what is
+  stored. Saving goes through NetworkManager's D-Bus `Update2`, so secrets never appear on a command line or in a
+  log. A connected VPN offers Reconnect afterwards.
+
+  ![VPN row](docs/vpn-row-light.png) ![VPN settings sheet](docs/vpn-edit-light.png)
 - **Devices:** every device on the tailnet, online first, with IP, OS and when it was last seen. Search with
   Ctrl+F. Click a row or the copy button to copy its IP; the terminal button copies `ssh <name>`
   (the MagicDNS name, e.g. `ssh sdolbec-ser8`).

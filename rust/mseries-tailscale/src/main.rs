@@ -52,6 +52,21 @@ fn main() -> glib::ExitCode {
         win.window.connect_destroy(move |_| {
             s.borrow_mut().take();
         });
+        // MSERIES_TAILSCALE_SNAPSHOT_EDIT=1 opens the first VPN's edit sheet and renders it to <snapshot>-sheet.png.
+        if std::env::var("MSERIES_TAILSCALE_SNAPSHOT_EDIT").as_deref() == Ok("1") {
+            let w = win.clone();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(800), move || w.open_first_vpn_sheet());
+            let w = win.clone();
+            if let Ok(path) = std::env::var("MSERIES_TAILSCALE_SNAPSHOT") {
+                let delay: u64 =
+                    std::env::var("MSERIES_TAILSCALE_SNAPSHOT_DELAY").ok().and_then(|d| d.parse().ok()).unwrap_or(2500);
+                glib::timeout_add_local_once(std::time::Duration::from_millis(delay.saturating_sub(300)), move || {
+                    if let Some(sheet) = w.sheet() {
+                        render(&sheet, &path.replace(".png", "-sheet.png"));
+                    }
+                });
+            }
+        }
         maybe_snapshot(app, &win.window);
         *slot.borrow_mut() = Some(win);
     });
@@ -73,16 +88,7 @@ fn maybe_snapshot(app: &gtk::Application, window: &gtk::ApplicationWindow) {
     let window = window.clone();
     let app = app.clone();
     glib::timeout_add_local_once(std::time::Duration::from_millis(delay), move || {
-        let paintable = gtk::WidgetPaintable::new(Some(&window));
-        let snapshot = gtk::Snapshot::new();
-        paintable.snapshot(&snapshot, window.width() as f64, window.height() as f64);
-        match (snapshot.to_node(), window.native().and_then(|n| n.renderer())) {
-            (Some(node), Some(renderer)) => match renderer.render_texture(&node, None).save_to_png(&path) {
-                Ok(()) => eprintln!("snapshot written to {path}"),
-                Err(e) => eprintln!("snapshot failed: {e}"),
-            },
-            _ => eprintln!("nothing to render for the snapshot"),
-        }
+        render(window.upcast_ref(), &path);
         app.quit();
     });
 }
@@ -99,4 +105,17 @@ fn find_switch(widget: &gtk::Widget) -> Option<gtk::Switch> {
         child = c.next_sibling();
     }
     None
+}
+
+fn render(window: &gtk::Window, path: &str) {
+    let paintable = gtk::WidgetPaintable::new(Some(window));
+    let snapshot = gtk::Snapshot::new();
+    paintable.snapshot(&snapshot, window.width() as f64, window.height() as f64);
+    match (snapshot.to_node(), window.native().and_then(|n| n.renderer())) {
+        (Some(node), Some(renderer)) => match renderer.render_texture(&node, None).save_to_png(path) {
+            Ok(()) => eprintln!("snapshot written to {path}"),
+            Err(e) => eprintln!("snapshot failed: {e}"),
+        },
+        _ => eprintln!("nothing to render for the snapshot"),
+    }
 }
