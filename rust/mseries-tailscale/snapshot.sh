@@ -14,9 +14,9 @@ for f in "$here"/data/*.svg; do
   install -Dm644 "$f" "$data/icons/hicolor/$dir/apps/$(basename "$f")"
 done
 for scheme in light dark; do
-  xvfb-run -a -s "-screen 0 1000x1300x24" env GSK_RENDERER=cairo GDK_BACKEND=x11 \
+  xvfb-run -a -s "-screen 0 1000x1700x24" env GSK_RENDERER=cairo GDK_BACKEND=x11 \
     XDG_DATA_DIRS="$data:/usr/local/share:/usr/share" \
-    MSERIES_TAILSCALE_FIXTURES="$fixtures" MSERIES_TAILSCALE_DARK=$([[ $scheme == dark ]] && echo 1 || echo 0) \
+    MSERIES_TAILSCALE_FIXTURES="$fixtures" ${SIZE:+MSERIES_TAILSCALE_SNAPSHOT_SIZE=$SIZE} MSERIES_TAILSCALE_DARK=$([[ $scheme == dark ]] && echo 1 || echo 0) \
     MSERIES_TAILSCALE_SNAPSHOT="$out/${PREFIX:-main}-$scheme.png" MSERIES_TAILSCALE_SNAPSHOT_DELAY=${DELAY:-2500} \
     dbus-run-session -- "$bin" 2>&1 | grep -viE "egl|mesa|dri3|dbus" || true
 done

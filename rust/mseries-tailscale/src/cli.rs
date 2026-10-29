@@ -14,6 +14,8 @@ pub enum CliError {
     NotRunning,
     /// Changing settings needs root or the operator setting.
     AccessDenied,
+    /// The command did not finish in time and was stopped.
+    TimedOut(String),
     Failed(String),
 }
 
@@ -23,6 +25,7 @@ impl CliError {
             Self::NotInstalled => "Tailscale isn't installed.".into(),
             Self::NotRunning => "The Tailscale service isn't running.".into(),
             Self::AccessDenied => "Changing Tailscale settings needs a one-time setup.".into(),
+            Self::TimedOut(what) => format!("{what} didn't answer in time. Check your network and try again."),
             Self::Failed(text) => text.clone(),
         }
     }
@@ -69,9 +72,42 @@ pub async fn run(args: &[&str]) -> Result<String, CliError> {
         };
     }
     let bin = binary();
-    let mut argv: Vec<&std::ffi::OsStr> = vec![bin.as_ref()];
-    argv.extend(args.iter().map(|a| std::ffi::OsStr::new(*a)));
-    let proc = gio::Subprocess::newv(&argv, gio::SubprocessFlags::STDOUT_PIPE | gio::SubprocessFlags::STDERR_PIPE)
+    let mut argv: Vec<&str> = vec![&bin];
+    argv.extend_from_slice(args);
+    // Changes can wait on the network (`up` after a link change); reads should be instant.
+    let limit = match args.first() {
+        Some(&"up") | Some(&"down") => 25,
+        Some(&"set") => 15,
+        _ => 8,
+    };
+    match run_program(&argv, limit).await {
+        Ok((true, out, _)) => Ok(out),
+        // `status --json` exits non-zero when stopped or logged out but still prints the state.
+        Ok((false, out, _)) if args.first() == Some(&"status") && !out.trim().is_empty() => Ok(out),
+        Ok((false, _, err)) => Err(classify(&err)),
+        Err(CliError::TimedOut(_)) => Err(CliError::TimedOut("Tailscale".into())),
+        Err(e) => Err(e),
+    }
+}
+
+/// Runs ARGV with a time limit in seconds; returns (succeeded, stdout, stderr). Stops the process on timeout.
+pub async fn run_program(argv: &[&str], limit_secs: u64) -> Result<(bool, String, String), CliError> {
+    if let (Some(dir), Some(&"nmcli")) = (fixtures(), argv.first()) {
+        // Fixture VPNs: `nmcli.txt` is the connection list; every VPN sends all traffic unless listed in
+        // `split-tunnel.txt`; changes are refused like Tailscale's.
+        let list = std::fs::read_to_string(dir.join("nmcli.txt")).unwrap_or_default();
+        return match argv.get(1..4) {
+            Some(["-t", "-f", _]) => Ok((true, list, String::new())),
+            Some(["-g", "ipv4.never-default", _]) => {
+                let split = std::fs::read_to_string(dir.join("split-tunnel.txt")).unwrap_or_default();
+                let uuid = argv.last().copied().unwrap_or_default();
+                Ok((true, if split.lines().any(|l| l == uuid) { "yes" } else { "no" }.into(), String::new()))
+            }
+            _ => Ok((false, String::new(), "Error: not allowed in fixture mode".into())),
+        };
+    }
+    let os: Vec<&std::ffi::OsStr> = argv.iter().map(std::ffi::OsStr::new).collect();
+    let proc = gio::Subprocess::newv(&os, gio::SubprocessFlags::STDOUT_PIPE | gio::SubprocessFlags::STDERR_PIPE)
         .map_err(|e| {
             if e.matches(gio::IOErrorEnum::NotFound) || e.message().contains("No such file") {
                 CliError::NotInstalled
@@ -79,16 +115,18 @@ pub async fn run(args: &[&str]) -> Result<String, CliError> {
                 CliError::Failed(e.message().to_string())
             }
         })?;
-    let (out, err) = proc.communicate_utf8_future(None).await.map_err(|e| CliError::Failed(e.message().to_string()))?;
-    let out = out.map(|s| s.to_string()).unwrap_or_default();
-    let err = err.map(|s| s.to_string()).unwrap_or_default();
-    if proc.is_successful() {
-        Ok(out)
-    } else if args.first() == Some(&"status") && !out.trim().is_empty() {
-        // `status --json` exits non-zero when stopped or logged out but still prints the state.
-        Ok(out)
-    } else {
-        Err(classify(&err))
+    let running = proc.communicate_utf8_future(None);
+    match gtk::glib::future_with_timeout(std::time::Duration::from_secs(limit_secs), running).await {
+        Err(_) => {
+            proc.force_exit();
+            Err(CliError::TimedOut(argv.first().copied().unwrap_or_default().to_string()))
+        }
+        Ok(Err(e)) => Err(CliError::Failed(e.message().to_string())),
+        Ok(Ok((out, err))) => Ok((
+            proc.is_successful(),
+            out.map(|s| s.to_string()).unwrap_or_default(),
+            err.map(|s| s.to_string()).unwrap_or_default(),
+        )),
     }
 }
 

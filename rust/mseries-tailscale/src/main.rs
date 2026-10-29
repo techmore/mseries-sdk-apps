@@ -40,6 +40,13 @@ fn main() -> glib::ExitCode {
             return;
         }
         let win = AppWindow::new(app);
+        // MSERIES_TAILSCALE_SNAPSHOT_SIZE=560x1500 renders the whole page for screenshots.
+        if let Some((w, h)) = std::env::var("MSERIES_TAILSCALE_SNAPSHOT_SIZE").ok().and_then(|v| {
+            let (w, h) = v.split_once('x')?;
+            Some((w.parse().ok()?, h.parse().ok()?))
+        }) {
+            win.window.set_default_size(w, h);
+        }
         win.window.present();
         let s = slot.clone();
         win.window.connect_destroy(move |_| {
