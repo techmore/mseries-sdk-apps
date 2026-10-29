@@ -59,6 +59,8 @@ pub struct AppWindow {
     route_now: gtk::Label,
     sessions: Sessions,
     ts_timer: gtk::Label,
+    header_sub: gtk::Label,
+    vpn_names: RefCell<HashMap<String, String>>,
     remote_list: gtk::Box,
     remote_key: RefCell<String>,
     ticker: RefCell<Option<mseries_pantheon_kit::Polling>>,
@@ -99,6 +101,17 @@ impl AppWindow {
         set_accessible_label(&refresh, &tr("Refresh"));
         header.pack_start(&refresh);
         header.pack_end(&chrome::primary_menu(&tr("About Tailscale"), &tr("Quit")));
+        // Title with a live subtitle: "BFS · 00:12:34" while a VPN is up, "BFS · Connecting…" while it starts.
+        let header_title = gtk::Label::new(Some(&tr("Tailscale")));
+        header_title.add_css_class("title");
+        let header_sub = gtk::Label::builder().visible(false).build();
+        header_sub.add_css_class(granite::CssClassSMALL);
+        header_sub.add_css_class(granite::CssClassNUMERIC);
+        header_sub.add_css_class(granite::CssClassDIM);
+        let titles_box = gtk::Box::builder().orientation(gtk::Orientation::Vertical).valign(gtk::Align::Center).build();
+        titles_box.append(&header_title);
+        titles_box.append(&header_sub);
+        header.set_title_widget(Some(&titles_box));
         window.set_titlebar(Some(&header));
 
         // ---- Status card ------------------------------------------------------------------------------------
@@ -366,6 +379,8 @@ impl AppWindow {
             route_now,
             sessions: Sessions::load(),
             ts_timer,
+            header_sub,
+            vpn_names: RefCell::new(HashMap::new()),
             remote_list,
             remote_key: RefCell::new(String::new()),
             ticker: RefCell::new(None),
@@ -991,6 +1006,7 @@ impl AppWindow {
                 self.sessions.stop(&vpn.uuid);
             }
             self.vpn_live.borrow_mut().insert(vpn.uuid.clone(), live.clone());
+            self.vpn_names.borrow_mut().insert(vpn.uuid.clone(), model::display_name(&vpn.name));
             lives.push(live);
         }
         self.sessions.save();
@@ -1090,6 +1106,8 @@ impl AppWindow {
         controls.append(&gear);
         controls.append(&on);
         set_accessible_label(&on, &format!("{} {name}", tr("Connect")));
+        // No second click until the first one has an answer.
+        on.set_sensitive(!matches!(live, Live::Connecting));
         let (status_text, status_class) = match live {
             Live::Connected(iface) => (format!("{} · {iface}", tr("Connected")), Some(granite::CssClassSUCCESS)),
             Live::Connecting => (tr("Connecting…"), None),
@@ -1218,8 +1236,18 @@ impl AppWindow {
         }
 
         let (weak, uuid) = (Rc::downgrade(self), vpn.uuid.clone());
-        on.connect_state_set(move |_, active| {
+        let desc = row.first_child().and_then(|t| t.last_child()).and_downcast::<gtk::Label>();
+        let controls_now = controls.clone();
+        on.connect_state_set(move |switch, active| {
             if let Some(this) = weak.upgrade() {
+                // Instant feedback: spinner, "Connecting…", switch locked until nmcli answers.
+                switch.set_sensitive(false);
+                controls_now.prepend(&gtk::Spinner::builder().spinning(true).valign(gtk::Align::Center).build());
+                if let Some(desc) = &desc {
+                    desc.set_label(&if active { tr("Connecting…") } else { tr("Disconnecting…") });
+                    desc.remove_css_class(granite::CssClassERROR);
+                    desc.remove_css_class(granite::CssClassSUCCESS);
+                }
                 let verb = if active { "up" } else { "down" };
                 let done = if active { tr("Connected to") } else { tr("Disconnected from") };
                 this.vpn_failures.borrow_mut().remove(&uuid);
@@ -1255,6 +1283,29 @@ impl AppWindow {
                 t.bytes.set_label(&format!("↓ {}   ↑ {}", net::bytes_text(rx), net::bytes_text(tx)));
             }
         }
+        let names = self.vpn_names.borrow();
+        let mut parts: Vec<String> = Vec::new();
+        for t in self.vpn_ticks.borrow().iter() {
+            if let (Some(start), Some(name)) = (self.sessions.started(&t.key), names.get(&t.key)) {
+                parts.push(format!("{name} · {}", net::duration_text(now - start)));
+            }
+        }
+        let connecting: HashSet<String> = self
+            .vpn_live
+            .borrow()
+            .iter()
+            .filter(|(_, l)| matches!(l, Live::Connecting))
+            .map(|(u, _)| u.clone())
+            .chain(self.vpn_connecting.borrow().iter().cloned())
+            .collect();
+        for uuid in &connecting {
+            if let Some(name) = names.get(uuid) {
+                parts.push(format!("{name} · {}", tr("Connecting…")));
+            }
+        }
+        drop(names);
+        self.header_sub.set_visible(!parts.is_empty());
+        self.header_sub.set_label(&parts.join("   "));
         match self.sessions.started("tailscale") {
             Some(start) if self.status_is_running() => {
                 self.ts_timer.set_label(&format!("{} {}", tr("Connected for"), net::duration_text(now - start)));
