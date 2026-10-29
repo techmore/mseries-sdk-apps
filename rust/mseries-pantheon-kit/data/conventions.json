@@ -92,6 +92,14 @@
       "exempt": {
         "gettext": "uses Fluent catalogs (i18n-embed; de, en-GB) rather than gettext"
       }
+    },
+    {
+      "name": "Tailscale",
+      "dir": "mseries-tailscale",
+      "desktop": [
+        "org.techmore.mseries.Tailscale.desktop"
+      ],
+      "exempt": {}
     }
   ]
 }

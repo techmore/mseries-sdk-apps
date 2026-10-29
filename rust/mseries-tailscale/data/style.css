@@ -1,0 +1,26 @@
+/* Tailscale window. Theme colours only (APP-CONVENTIONS: no hex literals). */
+.mseries-tailscale .mseries-tailscale-card {
+  padding: 12px 15px;
+}
+
+.mseries-tailscale .mseries-tailscale-setup {
+  background-color: alpha(@warning_color, 0.12);
+  box-shadow: inset 0 0 0 1px alpha(@warning_color, 0.35);
+}
+
+.mseries-tailscale .mseries-tailscale-badge {
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.8em;
+  font-weight: 700;
+  color: @accent_color;
+  background-color: alpha(@accent_color, 0.18);
+}
+
+.mseries-tailscale .mseries-tailscale-devices > row {
+  min-height: 48px;
+}
+
+.mseries-tailscale .mseries-tailscale-dot {
+  font-size: 0.7em;
+}

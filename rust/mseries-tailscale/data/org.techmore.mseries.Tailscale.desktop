@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Tailscale
+GenericName=VPN
+Comment=Connect to your tailnet, pick an exit node, and copy any device's IP or ssh command
+Exec=mseries-tailscale
+Icon=org.techmore.mseries.Tailscale
+Terminal=false
+Categories=GTK;Network;
+Keywords=tailscale;vpn;tailnet;ssh;exit node;network;
+StartupNotify=true
+StartupWMClass=org.techmore.mseries.Tailscale

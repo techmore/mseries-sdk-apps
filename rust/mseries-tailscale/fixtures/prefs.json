@@ -1,0 +1,11 @@
+{
+ "ControlURL": "https://controlplane.tailscale.com",
+ "RouteAll": false,
+ "ExitNodeID": "",
+ "ExitNodeIP": "",
+ "ExitNodeAllowLANAccess": false,
+ "CorpDNS": true,
+ "RunSSH": false,
+ "WantRunning": true,
+ "ShieldsUp": false
+}
