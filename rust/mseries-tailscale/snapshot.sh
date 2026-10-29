@@ -8,7 +8,8 @@ fixtures=${2:-$here/fixtures}
 (cd "$here/.." && cargo build -q -p mseries-tailscale)
 bin="$(cd "$here/.." && cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')/debug/mseries-tailscale"
 # Icons come from a private data dir so the snapshot does not depend on what is installed.
-data=$(mktemp -d "${XDG_CACHE_HOME:-$HOME/.cache}/tailscale-snapshot.XXXXXX"); trap 'rm -rf "$data"' EXIT
+cache=${XDG_CACHE_HOME:-$HOME/.cache}; mkdir -p "$cache"  # CI runners have no ~/.cache yet
+data=$(mktemp -d "$cache/tailscale-snapshot.XXXXXX"); trap 'rm -rf "$data"' EXIT
 for f in "$here"/data/*.svg; do
   case $f in *-symbolic.svg) dir=symbolic ;; *) dir=scalable ;; esac
   install -Dm644 "$f" "$data/icons/hicolor/$dir/apps/$(basename "$f")"
