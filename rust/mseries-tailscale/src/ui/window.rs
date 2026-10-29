@@ -65,6 +65,7 @@ pub struct AppWindow {
     busy: Cell<bool>,
     refreshing: Cell<bool>,
     network: RefCell<Option<glib::SignalHandlerId>>,
+    sheet: RefCell<Option<gtk::Window>>,
     poll: RefCell<Option<mseries_pantheon_kit::Polling>>,
 }
 
@@ -334,6 +335,7 @@ impl AppWindow {
             busy: Cell::new(false),
             refreshing: Cell::new(false),
             network: RefCell::new(None),
+            sheet: RefCell::new(None),
             poll: RefCell::new(None),
         });
 
@@ -883,11 +885,22 @@ impl AppWindow {
     fn vpn_card(self: &Rc<Self>, vpn: &model::Vpn, needs_reconnect: bool) -> gtk::Box {
         let card = card_box();
         let on = gtk::Switch::builder().valign(gtk::Align::Center).active(vpn.active).state(vpn.active).build();
+        let gear = icon_button("emblem-system-symbolic", &format!("{} {}", vpn.name, tr("Settings")));
+        let controls = gtk::Box::builder().spacing(6).valign(gtk::Align::Center).build();
+        controls.append(&gear);
+        controls.append(&on);
+        set_accessible_label(&on, &format!("{} {}", tr("Connect"), vpn.name));
         card.append(&setting_row(
             &vpn.name,
             Some(&if vpn.active { tr("Connected") } else { tr("Not connected") }),
-            &on,
+            &controls,
         ));
+        let (weak, edit_vpn) = (Rc::downgrade(self), vpn.clone());
+        gear.connect_clicked(move |_| {
+            if let Some(this) = weak.upgrade() {
+                this.open_vpn_sheet(&edit_vpn);
+            }
+        });
         card.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         let all =
             gtk::Switch::builder().valign(gtk::Align::Center).active(vpn.all_traffic).state(vpn.all_traffic).build();
@@ -900,9 +913,7 @@ impl AppWindow {
         if !vpn.secrets_saved {
             let line = gtk::Box::builder().spacing(12).build();
             let note = gtk::Label::builder()
-                .label(tr(
-                    "Passwords aren't saved, so connecting from here can't work. Save them once in the VPN's settings.",
-                ))
+                .label(tr("Passwords aren't saved, so connecting from here can't work. Save them once."))
                 .xalign(0.0)
                 .hexpand(true)
                 .wrap(true)
@@ -914,10 +925,10 @@ impl AppWindow {
             line.append(&save);
             card.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
             card.append(&line);
-            let (weak, uuid) = (Rc::downgrade(self), vpn.uuid.clone());
+            let (weak, edit_vpn) = (Rc::downgrade(self), vpn.clone());
             save.connect_clicked(move |_| {
                 if let Some(this) = weak.upgrade() {
-                    this.edit_vpn(&uuid);
+                    this.open_vpn_sheet(&edit_vpn);
                 }
             });
         }
@@ -994,6 +1005,39 @@ impl AppWindow {
             glib::Propagation::Stop
         });
         card
+    }
+
+    pub fn open_vpn_sheet(self: &Rc<Self>, vpn: &model::Vpn) {
+        let weak = Rc::downgrade(self);
+        let uuid = vpn.uuid.clone();
+        let sheet = super::vpn_edit::open(self.window.upcast_ref(), &self.toast, vpn, move |active| {
+            if let Some(this) = weak.upgrade() {
+                if active {
+                    // New settings apply on the next connect; offer Reconnect on the card.
+                    this.vpn_pending.borrow_mut().insert(uuid.clone());
+                }
+                this.vpn_key.borrow_mut().clear();
+                this.refresh();
+            }
+        });
+        *self.sheet.borrow_mut() = Some(sheet);
+    }
+
+    /// The first VPN, for fixture screenshots of the edit sheet.
+    pub fn open_first_vpn_sheet(self: &Rc<Self>) {
+        let this = self.clone();
+        glib::spawn_future_local(async move {
+            if let Ok((true, out, _)) =
+                cli::run_program(&["nmcli", "-t", "-f", "NAME,UUID,TYPE,ACTIVE", "connection", "show"], 8).await
+                && let Some(vpn) = model::parse_vpn_list(&out).into_iter().next()
+            {
+                this.open_vpn_sheet(&vpn);
+            }
+        });
+    }
+
+    pub fn sheet(&self) -> Option<gtk::Window> {
+        self.sheet.borrow().clone()
     }
 
     /// Opens NetworkManager's editor for one connection, where "Store the password for all users" lives.
