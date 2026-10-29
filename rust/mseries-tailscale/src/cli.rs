@@ -96,8 +96,21 @@ pub async fn run_program(argv: &[&str], limit_secs: u64) -> Result<(bool, String
         // Fixture VPNs: `nmcli.txt` is the connection list; every VPN sends all traffic unless listed in
         // `split-tunnel.txt`; changes are refused like Tailscale's.
         let list = std::fs::read_to_string(dir.join("nmcli.txt")).unwrap_or_default();
+        let read = |f: &str| std::fs::read_to_string(dir.join(f)).unwrap_or_default();
         return match argv.get(1..4) {
+            Some(["-t", "-f", fields]) if fields.starts_with("UUID,STATE") => {
+                Ok((true, read("active.txt"), String::new()))
+            }
             Some(["-t", "-f", _]) => Ok((true, list, String::new())),
+            // `ip4.txt` lines: "uuid address".
+            Some(["-g", "IP4.ADDRESS", _]) => {
+                let uuid = argv.last().copied().unwrap_or_default();
+                let addr = read("ip4.txt")
+                    .lines()
+                    .find_map(|l| l.strip_prefix(uuid).map(|a| a.trim().to_string()))
+                    .unwrap_or_default();
+                Ok((true, addr, String::new()))
+            }
             Some(["-g", "ipv4.never-default", _]) => {
                 let split = std::fs::read_to_string(dir.join("split-tunnel.txt")).unwrap_or_default();
                 let uuid = argv.last().copied().unwrap_or_default();

@@ -319,6 +319,55 @@ pub struct Vpn {
     pub all_traffic: bool,
     /// False when a secret is "always ask" (flag 2) and so is never stored.
     pub secrets_saved: bool,
+    /// "vpn" (NetworkManager VPN plugin) or "wireguard".
+    pub kind: String,
+}
+
+impl Vpn {
+    /// Only plugin VPNs get the "Send all traffic" switch; WireGuard routes by its allowed IPs.
+    pub fn kind_has_routing(&self) -> bool {
+        self.kind == "vpn"
+    }
+}
+
+/// A friendlier name for connections other apps create.
+pub fn display_name(name: &str) -> String {
+    match name {
+        "utun" => "WiFiman (utun)".into(),
+        other => other.into(),
+    }
+}
+
+/// `nmcli -t -f UUID,STATE,DEVICE,TYPE connection show --active` → uuid → (state, device, type).
+pub fn parse_active(text: &str) -> std::collections::HashMap<String, (String, String, String)> {
+    text.lines()
+        .map(nmcli_fields)
+        .filter(|f| f.len() >= 4)
+        .map(|f| (f[0].clone(), (f[1].clone(), f[2].clone(), f[3].clone())))
+        .collect()
+}
+
+/// Why a VPN dropped, from recent NetworkManager / pppd / IPsec log lines, in plain words.
+/// `others` are tunnels from other apps that are up now.
+pub fn classify_vpn_failure(log: &str, others: &[String]) -> String {
+    if let Some(other) = others.first() {
+        return format!("{other} took over the connection");
+    }
+    let l = log.to_lowercase();
+    let has = |words: &[&str]| words.iter().any(|w| l.contains(w));
+    if has(&["authentication failed", "auth failed"]) {
+        "the server rejected the username or password".into()
+    } else if has(&["no agents were available", "secrets were required"]) {
+        "passwords aren't saved".into()
+    } else if has(&["modem hangup", "hung up", "lcp terminated", "peer closed"]) {
+        "the server hung up".into()
+    } else if has(&["timed out", "timeout"]) {
+        "the server didn't answer".into()
+    } else if has(&["ipsec"]) && has(&["shut", "terminat", "deleting ike", "closing"]) {
+        "the IPsec tunnel closed".into()
+    } else {
+        "the connection stopped".into()
+    }
 }
 
 /// Reads the `*-flags` entries from `nmcli -g vpn.data` (flags only; secrets are not in vpn.data).
@@ -365,6 +414,7 @@ pub fn parse_vpn_list(text: &str) -> Vec<Vpn> {
             active: f[3] == "yes",
             all_traffic: false,
             secrets_saved: true,
+            kind: f[2].clone(),
         })
         .collect()
 }
@@ -397,6 +447,19 @@ mod vpn_tests {
         let d = parse_vpn_data("gateway = vpn.example.com, ipsec-enabled = yes, password-flags = 0, user = a@b.org\n");
         assert_eq!(d.get("gateway").map(String::as_str), Some("vpn.example.com"));
         assert_eq!(d.get("user").map(String::as_str), Some("a@b.org"));
+        let a = parse_active("4a1d:activated:enx60:vpn\nutun-1:activated:utun:wireguard\n");
+        assert_eq!(a.get("4a1d").map(|t| t.0.as_str()), Some("activated"));
+        assert_eq!(a.get("utun-1").map(|t| t.1.as_str()), Some("utun"));
+        assert_eq!(display_name("utun"), "WiFiman (utun)");
+        assert_eq!(
+            classify_vpn_failure("", &["WiFiman (Ubiquiti Teleport)".into()]),
+            "WiFiman (Ubiquiti Teleport) took over the connection"
+        );
+        assert_eq!(classify_vpn_failure("pppd: Modem hangup", &[]), "the server hung up");
+        assert_eq!(
+            classify_vpn_failure("PAP authentication failed", &[]),
+            "the server rejected the username or password"
+        );
         assert!(needs_secrets("Error: Connection activation failed: Secrets were required, but not provided"));
     }
 }
