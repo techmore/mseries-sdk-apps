@@ -29,6 +29,7 @@ pub struct AppWindow {
     status_icon: gtk::Image,
     status_title: gtk::Label,
     status_detail: gtk::Label,
+    route_line: gtk::Label,
     connect: gtk::Switch,
     this_name: gtk::Label,
     this_ip: gtk::Label,
@@ -42,6 +43,10 @@ pub struct AppWindow {
     exit_ids: RefCell<Vec<String>>,
     exit_note: gtk::Label,
     lan_access: gtk::Switch,
+    // NetworkManager VPNs
+    vpn_list: gtk::Box,
+    vpn_key: RefCell<String>,
+    vpn_pending: RefCell<std::collections::HashSet<String>>,
     // Devices
     devices_header: granite::HeaderLabel,
     search: gtk::SearchEntry,
@@ -58,6 +63,8 @@ pub struct AppWindow {
     prefs: RefCell<Prefs>,
     updating: Cell<bool>,
     busy: Cell<bool>,
+    refreshing: Cell<bool>,
+    network: RefCell<Option<glib::SignalHandlerId>>,
     poll: RefCell<Option<mseries_pantheon_kit::Polling>>,
 }
 
@@ -90,6 +97,9 @@ impl AppWindow {
         titles.set_valign(gtk::Align::Center);
         titles.append(&status_title);
         titles.append(&status_detail);
+        let route_line = gtk::Label::builder().xalign(0.0).wrap(true).visible(false).build();
+        route_line.add_css_class(granite::CssClassACCENT);
+        titles.append(&route_line);
         let connect = gtk::Switch::builder().valign(gtk::Align::Center).build();
         set_accessible_label(&connect, &tr("Connected"));
         let top = gtk::Box::builder().spacing(12).build();
@@ -155,8 +165,8 @@ impl AppWindow {
         health.add_css_class(granite::CssClassWARNING);
 
         // ---- Exit node --------------------------------------------------------------------------------------
-        let exit_header = granite::HeaderLabel::new(&tr("Exit Node"));
-        exit_header.set_secondary_text(Some(&tr("Send all internet traffic through another device")));
+        let exit_header = granite::HeaderLabel::new(&tr("Route All Traffic Through"));
+        exit_header.set_secondary_text(Some(&tr("Send all internet traffic through another device on your tailnet")));
         let exit_choice = gtk::DropDown::from_strings(&[&tr("None")]);
         exit_choice.set_valign(gtk::Align::Center);
         set_accessible_label(&exit_choice, &tr("Exit node"));
@@ -164,7 +174,7 @@ impl AppWindow {
         exit_note.add_css_class(granite::CssClassDIM);
         let lan_access = gtk::Switch::builder().valign(gtk::Align::Center).build();
         let exit_card = card_box();
-        exit_card.append(&setting_row(&tr("Use exit node"), None, &exit_choice));
+        exit_card.append(&setting_row(&tr("Exit node"), None, &exit_choice));
         exit_card.append(&exit_note);
         exit_card.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         exit_card.append(&setting_row(
@@ -185,6 +195,22 @@ impl AppWindow {
         devices_box.append(&search);
         devices_box.append(&device_list);
         let devices_section = section(&devices_header, &devices_box);
+
+        // ---- Other VPNs (NetworkManager) ---------------------------------------------------------------------
+        let vpn_header = granite::HeaderLabel::new(&tr("VPN Connections"));
+        vpn_header.set_secondary_text(Some(&tr("Other VPNs on this computer")));
+        let vpn_list = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(9).build();
+        let add_vpn = gtk::Button::with_label(&tr("Add VPN…"));
+        add_vpn.set_halign(gtk::Align::Start);
+        add_vpn.set_tooltip_text(Some(&tr("Opens Network settings")));
+        add_vpn.connect_clicked(|b| {
+            let window = b.root().and_downcast::<gtk::Window>();
+            gtk::UriLauncher::new("settings://network").launch(window.as_ref(), gio::Cancellable::NONE, |_| {});
+        });
+        let vpn_body = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(9).build();
+        vpn_body.append(&vpn_list);
+        vpn_body.append(&add_vpn);
+        let vpn_section = section(&vpn_header, &vpn_body);
 
         // ---- Settings ---------------------------------------------------------------------------------------
         let accept_dns = gtk::Switch::builder().valign(gtk::Align::Center).build();
@@ -239,6 +265,7 @@ impl AppWindow {
         column.append(&health);
         column.append(&exit_section);
         column.append(&devices_section);
+        column.append(&vpn_section);
         column.append(&settings_section);
         column.append(&footer);
         let scroller = gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never).child(&column).build();
@@ -277,6 +304,7 @@ impl AppWindow {
             status_icon,
             status_title,
             status_detail,
+            route_line,
             connect,
             this_name,
             this_ip,
@@ -288,6 +316,9 @@ impl AppWindow {
             exit_ids: RefCell::new(Vec::new()),
             exit_note,
             lan_access,
+            vpn_list,
+            vpn_key: RefCell::new(String::new()),
+            vpn_pending: RefCell::new(Default::default()),
             devices_header,
             search,
             device_list,
@@ -301,6 +332,8 @@ impl AppWindow {
             prefs: RefCell::new(Prefs::default()),
             updating: Cell::new(false),
             busy: Cell::new(false),
+            refreshing: Cell::new(false),
+            network: RefCell::new(None),
             poll: RefCell::new(None),
         });
 
@@ -315,6 +348,14 @@ impl AppWindow {
         });
         poll.bind_to_widget_mapped(&this.window);
         *this.poll.borrow_mut() = Some(poll);
+        // Wi-Fi changes make tailscaled reconnect; show it at once instead of waiting for the next poll.
+        let weak = Rc::downgrade(&this);
+        let id = gio::NetworkMonitor::default().connect_network_changed(move |_, _| {
+            if let Some(this) = weak.upgrade() {
+                this.refresh();
+            }
+        });
+        *this.network.borrow_mut() = Some(id);
         this.refresh();
         this
     }
@@ -433,6 +474,11 @@ impl AppWindow {
             return;
         }
         let args: Vec<String> = args.into_iter().map(String::from).collect();
+        if args.first().map(String::as_str) == Some("up") {
+            self.status_title.set_label(&tr("Connecting…"));
+        } else if args.first().map(String::as_str) == Some("down") {
+            self.status_title.set_label(&tr("Disconnecting…"));
+        }
         let this = self.clone();
         glib::spawn_future_local(async move {
             let argv: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -455,7 +501,8 @@ impl AppWindow {
     }
 
     pub fn refresh(self: &Rc<Self>) {
-        if self.busy.get() {
+        // A change in flight refreshes when it ends; never stack refreshes behind a slow command.
+        if self.busy.get() || self.refreshing.get() {
             return;
         }
         let this = self.clone();
@@ -463,7 +510,10 @@ impl AppWindow {
     }
 
     async fn refresh_now(self: &Rc<Self>) {
+        self.refreshing.set(true);
+        self.refresh_vpns().await;
         let status = cli::run(&["status", "--json"]).await;
+        self.refreshing.set(false);
         let prefs = cli::run(&["debug", "prefs"]).await.ok().and_then(|p| model::parse_prefs(&p).ok());
         match status.map(|json| model::parse_status(&json)) {
             Ok(Ok(status)) => {
@@ -474,6 +524,18 @@ impl AppWindow {
             }
             Ok(Err(_)) => {
                 self.show_problem(&tr("Couldn't read Tailscale's status"), &tr("Try again in a moment."), None)
+            }
+            Err(CliError::TimedOut(_)) => {
+                // Keep the last good view; say why it is not updating.
+                if self.status.borrow().is_some() {
+                    self.status_detail.set_label(&tr("Tailscale isn't answering. Retrying…"));
+                } else {
+                    self.show_problem(
+                        &tr("Tailscale isn't answering"),
+                        &tr("The Tailscale service is slow to respond. This window keeps trying."),
+                        None,
+                    );
+                }
             }
             Err(CliError::NotInstalled) => self.show_problem(
                 &tr("Tailscale isn't installed"),
@@ -574,6 +636,11 @@ impl AppWindow {
             detail.insert(0, tr("Turn on to reach your devices"));
         }
         self.status_detail.set_label(&detail.join(" · "));
+        let route = status.current_exit_node().filter(|_| connected).map(|d| d.name.clone());
+        self.route_line.set_visible(route.is_some());
+        if let Some(name) = &route {
+            self.route_line.set_label(&format!("{} {name}", tr("All internet traffic goes through")));
+        }
         self.connect.set_active(connected || status.backend == Backend::Starting);
         self.connect.set_state(connected);
 
@@ -609,7 +676,8 @@ impl AppWindow {
         self.exit_choice.set_sensitive(connected && !options.is_empty());
         self.exit_note.set_visible(options.is_empty());
         self.exit_note.set_label(&tr(
-            "No device on your tailnet offers itself as an exit node yet. Turn it on in that device's Tailscale settings.",
+            "No device on your tailnet offers to route traffic yet. On an always-on device, like sdolbec-ser8, run \
+             “sudo tailscale set --advertise-exit-node”, then approve it under Edit route settings in the Admin Console.",
         ));
         let prefs = self.prefs.borrow().clone();
         self.lan_access.set_active(prefs.allow_lan_access);
@@ -772,6 +840,149 @@ impl AppWindow {
             }
         });
         row
+    }
+
+    async fn refresh_vpns(self: &Rc<Self>) {
+        let listed = cli::run_program(&["nmcli", "-t", "-f", "NAME,UUID,TYPE,ACTIVE", "connection", "show"], 8).await;
+        let mut vpns = match listed {
+            Ok((true, out, _)) => model::parse_vpn_list(&out),
+            _ => Vec::new(),
+        };
+        for vpn in &mut vpns {
+            if let Ok((true, out, _)) =
+                cli::run_program(&["nmcli", "-g", "ipv4.never-default", "connection", "show", &vpn.uuid], 8).await
+            {
+                vpn.all_traffic = out.trim() == "no";
+            }
+        }
+        let pending = self.vpn_pending.borrow().clone();
+        let key = format!("{vpns:?}|{pending:?}");
+        if *self.vpn_key.borrow() == key {
+            return;
+        }
+        *self.vpn_key.borrow_mut() = key;
+        while let Some(child) = self.vpn_list.first_child() {
+            self.vpn_list.remove(&child);
+        }
+        if vpns.is_empty() {
+            let none = gtk::Label::builder().label(tr("No other VPNs set up")).xalign(0.0).build();
+            none.add_css_class(granite::CssClassDIM);
+            self.vpn_list.append(&none);
+        }
+        for vpn in vpns {
+            let needs_reconnect = pending.contains(&vpn.uuid) && vpn.active;
+            self.vpn_list.append(&self.vpn_card(&vpn, needs_reconnect));
+        }
+    }
+
+    fn vpn_card(self: &Rc<Self>, vpn: &model::Vpn, needs_reconnect: bool) -> gtk::Box {
+        let card = card_box();
+        let on = gtk::Switch::builder().valign(gtk::Align::Center).active(vpn.active).state(vpn.active).build();
+        card.append(&setting_row(
+            &vpn.name,
+            Some(&if vpn.active { tr("Connected") } else { tr("Not connected") }),
+            &on,
+        ));
+        card.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+        let all =
+            gtk::Switch::builder().valign(gtk::Align::Center).active(vpn.all_traffic).state(vpn.all_traffic).build();
+        let mode = if vpn.all_traffic {
+            format!("{} {}", tr("All internet traffic goes through"), vpn.name)
+        } else {
+            format!("{} {}", tr("Off: only its own networks go through"), vpn.name)
+        };
+        card.append(&setting_row(&tr("Send all traffic over VPN connection"), Some(&mode), &all));
+        if needs_reconnect {
+            let line = gtk::Box::builder().spacing(12).build();
+            let note = gtk::Label::builder()
+                .label(tr("Reconnect to use the new setting."))
+                .xalign(0.0)
+                .hexpand(true)
+                .wrap(true)
+                .build();
+            note.add_css_class(granite::CssClassWARNING);
+            let reconnect = gtk::Button::with_label(&tr("Reconnect"));
+            reconnect.add_css_class(granite::CssClassSUGGESTED);
+            line.append(&note);
+            line.append(&reconnect);
+            card.append(&line);
+            let (weak, uuid, name) = (Rc::downgrade(self), vpn.uuid.clone(), vpn.name.clone());
+            reconnect.connect_clicked(move |_| {
+                if let Some(this) = weak.upgrade() {
+                    this.vpn_command(
+                        vec!["sh", "-c", "nmcli connection down uuid \"$0\" && nmcli connection up uuid \"$0\"", &uuid],
+                        format!("{} {name}", tr("Reconnected")),
+                        Some(uuid.clone()),
+                    );
+                }
+            });
+        }
+
+        let (weak, uuid, name) = (Rc::downgrade(self), vpn.uuid.clone(), vpn.name.clone());
+        on.connect_state_set(move |_, active| {
+            if let Some(this) = weak.upgrade() {
+                let verb = if active { "up" } else { "down" };
+                let done = if active { tr("Connected to") } else { tr("Disconnected from") };
+                this.vpn_command(vec!["nmcli", "connection", verb, "uuid", &uuid], format!("{done} {name}"), None);
+            }
+            glib::Propagation::Stop
+        });
+        let (weak, uuid, active) = (Rc::downgrade(self), vpn.uuid.clone(), vpn.active);
+        all.connect_state_set(move |_, everything| {
+            if let Some(this) = weak.upgrade() {
+                let never_default = if everything { "no" } else { "yes" };
+                let done = if everything {
+                    tr("All traffic will go over the VPN")
+                } else {
+                    tr("Only the VPN's own networks will use it")
+                };
+                if active {
+                    this.vpn_pending.borrow_mut().insert(uuid.clone());
+                }
+                this.vpn_command(
+                    vec![
+                        "nmcli",
+                        "connection",
+                        "modify",
+                        "uuid",
+                        &uuid,
+                        "ipv4.never-default",
+                        never_default,
+                        "ipv6.never-default",
+                        never_default,
+                    ],
+                    done,
+                    None,
+                );
+            }
+            glib::Propagation::Stop
+        });
+        card
+    }
+
+    /// Runs an `nmcli` change (which may ask for a password through polkit), then refreshes.
+    fn vpn_command(self: &Rc<Self>, argv: Vec<&str>, done: String, clears_pending: Option<String>) {
+        let argv: Vec<String> = argv.into_iter().map(String::from).collect();
+        let this = self.clone();
+        glib::spawn_future_local(async move {
+            let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
+            // Connecting an L2TP/IPsec VPN takes a while; a polkit prompt waits for the user.
+            match cli::run_program(&refs, 90).await {
+                Ok((true, _, _)) => {
+                    if let Some(uuid) = clears_pending {
+                        this.vpn_pending.borrow_mut().remove(&uuid);
+                    }
+                    chrome::show_toast(&this.toast, &done);
+                }
+                Ok((false, _, err)) => {
+                    let first = err.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("The VPN change failed.");
+                    chrome::show_toast(&this.toast, first.trim_start_matches("Error: "));
+                }
+                Err(e) => chrome::show_toast(&this.toast, &e.message()),
+            }
+            this.vpn_key.borrow_mut().clear();
+            this.refresh_vpns().await;
+        });
     }
 
     fn copy(&self, text: &str, confirmation: &str) {

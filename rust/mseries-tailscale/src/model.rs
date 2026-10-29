@@ -308,3 +308,55 @@ mod tests {
         assert_eq!(presence_text(false, Some(0), 86_400 * 90), "Last seen 3 months ago");
     }
 }
+
+/// A NetworkManager VPN connection (`nmcli`), with macOS's "Send all traffic over VPN" setting
+/// (NetworkManager's `never-default` set to no).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Vpn {
+    pub name: String,
+    pub uuid: String,
+    pub active: bool,
+    pub all_traffic: bool,
+}
+
+/// Splits one `nmcli -t` line on unescaped colons and unescapes `\:` and `\\`.
+pub fn nmcli_fields(line: &str) -> Vec<String> {
+    let mut fields = vec![String::new()];
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => {
+                if let Some(n) = chars.next() {
+                    fields.last_mut().unwrap().push(n);
+                }
+            }
+            ':' => fields.push(String::new()),
+            c => fields.last_mut().unwrap().push(c),
+        }
+    }
+    fields
+}
+
+/// VPNs from `nmcli -t -f NAME,UUID,TYPE,ACTIVE connection show` (WireGuard counts; Tailscale's own does not).
+pub fn parse_vpn_list(text: &str) -> Vec<Vpn> {
+    text.lines()
+        .map(nmcli_fields)
+        .filter(|f| f.len() >= 4 && (f[2] == "vpn" || f[2] == "wireguard") && f[0] != "tailscale0")
+        .map(|f| Vpn { name: f[0].clone(), uuid: f[1].clone(), active: f[3] == "yes", all_traffic: false })
+        .collect()
+}
+
+#[cfg(test)]
+mod vpn_tests {
+    use super::*;
+
+    #[test]
+    fn parses_nmcli() {
+        let text = "Home Wi\\:Fi:aaa:802-11-wireless:yes\nBFS:4a1d:vpn:no\nWork\\\\VPN:bbb:wireguard:yes\nlo:ccc:loopback:yes\n";
+        let vpns = parse_vpn_list(text);
+        assert_eq!(vpns.len(), 2);
+        assert_eq!((vpns[0].name.as_str(), vpns[0].uuid.as_str(), vpns[0].active), ("BFS", "4a1d", false));
+        assert_eq!((vpns[1].name.as_str(), vpns[1].active), ("Work\\VPN", true));
+        assert_eq!(nmcli_fields("a\\:b:c"), vec!["a:b", "c"]);
+    }
+}
