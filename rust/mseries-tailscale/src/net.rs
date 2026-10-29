@@ -135,10 +135,10 @@ pub fn bytes_text(n: u64) -> String {
     }
 }
 
-/// "0:04:09", "12:30:00".
+/// "00:04:09", "12:30:00".
 pub fn duration_text(secs: i64) -> String {
     let s = secs.max(0);
-    format!("{}:{:02}:{:02}", s / 3600, (s / 60) % 60, s % 60)
+    format!("{:02}:{:02}:{:02}", s / 3600, (s / 60) % 60, s % 60)
 }
 
 /// A friendly name for a tunnel interface that is not one of the listed VPNs.
@@ -160,7 +160,7 @@ mod tests {
         assert_eq!(bytes_text(999), "999 B");
         assert_eq!(bytes_text(4_307_842), "4.3 MB");
         assert_eq!(bytes_text(48_300_000), "48 MB");
-        assert_eq!(duration_text(249), "0:04:09");
+        assert_eq!(duration_text(249), "00:04:09");
         assert_eq!(duration_text(45_000), "12:30:00");
         assert_eq!(tunnel_owner("utun"), "WiFiman (Ubiquiti Teleport)");
     }

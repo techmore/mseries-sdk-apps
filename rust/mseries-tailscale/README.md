@@ -40,6 +40,11 @@ A native Pantheon window for Tailscale. It replaces the old launcher that opened
   Connecting…, "Dropped: on, but not carrying any traffic", or "Failed: <reason>" (from NetworkManager, pppd and
   IPsec logs), with Reconnect. "Internet traffic now goes through …" names the interface the kernel really uses
   (`ip route get`, policy routing included).
+- **Connecting and timer in the header:** turning a VPN on shows a spinner and "Connecting…" in its row at once,
+  with the switch locked until there is an answer; the header bar's subtitle reads "BFS · Connecting…", then
+  "BFS · 00:12:34" (the same timer is in the row). A drop or failure stops the timer and the row says why.
+
+  ![Header states](docs/vpn-header-states.png)
 - **Timer and traffic:** each connected VPN, and Tailscale, shows how long it has been up (kept across app
   restarts, reset on reconnect) and bytes down/up.
 - **Two VPNs at once:** a banner when another tunnel (WiFiman's `utun`, any WireGuard/tun/PPP device) is up next
