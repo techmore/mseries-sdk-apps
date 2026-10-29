@@ -1,0 +1,74 @@
+name: Tailscale app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev, main]
+    paths:
+      - "rust/mseries-pantheon-kit/**"
+      - "rust/mseries-tailscale/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - ".github/workflows/mseries-tailscale.yml"
+  pull_request:
+    paths:
+      - "rust/mseries-pantheon-kit/**"
+      - "rust/mseries-tailscale/**"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - ".github/workflows/mseries-tailscale.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Tailscale test/build/render (arm64)
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/fast-apt
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config cargo rustc rustfmt rust-clippy \
+            libgtk-4-dev libgranite-7-dev desktop-file-utils xvfb xauth dbus-x11 python3
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: mseries-tailscale-${{ runner.arch }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: mseries-tailscale-${{ runner.arch }}-
+
+      - name: Formatting and strict lint
+        run: |
+          cargo fmt --manifest-path rust/Cargo.toml -p mseries-tailscale --check
+          cargo clippy --manifest-path rust/Cargo.toml -p mseries-tailscale --locked -- -D warnings
+
+      - name: Unit tests and app conventions
+        run: |
+          cargo test --manifest-path rust/Cargo.toml -p mseries-tailscale --locked
+          cargo test --manifest-path rust/Cargo.toml -p mseries-pantheon-kit --test conventions --locked
+
+      - name: Validate desktop metadata
+        run: desktop-file-validate rust/mseries-tailscale/data/org.techmore.mseries.Tailscale.desktop
+
+      - name: Render the window from fixture status, light and dark
+        run: bash rust/mseries-tailscale/snapshot.sh "$RUNNER_TEMP/tailscale-snapshots"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tailscale-snapshots-${{ github.run_id }}
+          path: ${{ runner.temp }}/tailscale-snapshots/
+          if-no-files-found: error

@@ -1,0 +1,200 @@
+{
+ "Version": "1.104.4-t938213198-gd38c96d6a",
+ "BackendState": "Running",
+ "AuthURL": "",
+ "Self": {
+  "ID": "self",
+  "HostName": "eos",
+  "DNSName": "eos.tail1234.ts.net.",
+  "OS": "linux",
+  "TailscaleIPs": [
+   "100.115.140.33",
+   "fd7a:115c:a1e0::7c32:8c22"
+  ],
+  "Online": true,
+  "LastSeen": "0001-01-01T00:00:00Z",
+  "ExitNode": false,
+  "ExitNodeOption": false,
+  "UserID": 8343998775294178
+ },
+ "Peer": {
+  "nodekey:00": {
+   "ID": "n0",
+   "HostName": "CSP-BFS-mini",
+   "DNSName": "csp-bfs-mini.tail1234.ts.net.",
+   "OS": "macOS",
+   "TailscaleIPs": [
+    "100.82.173.72",
+    "fd7a:115c:a1e0::fc01:ad48"
+   ],
+   "Online": true,
+   "LastSeen": "0001-01-01T00:00:00Z",
+   "ExitNode": false,
+   "ExitNodeOption": false,
+   "UserID": 8343998775294178
+  },
+  "nodekey:01": {
+   "ID": "n1",
+   "HostName": "CSP-Mini",
+   "DNSName": "csp-mini.tail1234.ts.net.",
+   "OS": "macOS",
+   "TailscaleIPs": [
+    "100.117.181.76",
+    "fd7a:115c:a1e0::a001:b553"
+   ],
+   "Online": false,
+   "LastSeen": "2025-09-06T05:26:42.1Z",
+   "ExitNode": false,
+   "ExitNodeOption": false,
+   "UserID": 8343998775294178
+  },
+  "nodekey:02": {
+   "ID": "n2",
+   "HostName": "Techmore-10g",
+   "DNSName": "techmore-10g.tail1234.ts.net.",
+   "OS": "macOS",
+   "TailscaleIPs": [
+    "100.92.228.81",
+    "fd7a:115c:a1e0::1932:e451"
+   ],
+   "Online": false,
+   "LastSeen": "2026-08-24T21:09:21.1Z",
+   "ExitNode": false,
+   "ExitNodeOption": false,
+   "UserID": 8343998775294178
+  },
+  "nodekey:03": {
+   "ID": "n3",
+   "HostName": "admin’s Mac mini",
+   "DNSName": "admins-mac-mini.tail1234.ts.net.",
+   "OS": "macOS",
+   "TailscaleIPs": [
+    "100.116.199.21",
+    "fd7a:115c:a1e0::5a32:c715"
+   ],
+   "Online": false,
+   "LastSeen": "2025-09-29T14:53:09.1Z",
+   "ExitNode": false,
+   "ExitNodeOption": false,
+   "UserID": 8343998775294178
+  },
+  "nodekey:04": {
+   "ID": "n4",
+   "HostName": "elementary-m1",
+   "DNSName": "elementary-m1.tail1234.ts.net.",
+   "OS": "linux",
+   "TailscaleIPs": [
+    "100.110.219.14",
+    "fd7a:115c:a1e0::2432:db0f"
+   ],
+   "Online": false,
+   "LastSeen": "2026-10-14T16:26:08.1Z",
+   "ExitNode": false,
+   "ExitNodeOption": false,
+   "UserID": 8343998775294178
+  },
+  "nodekey:05": {
+   "ID": "n5",
+   "HostName": "localhost",
+   "DNSName": "iphone-14-pro.tail1234.ts.net.",
+   "OS": "iOS",
+   "TailscaleIPs": [
+    "100.96.99.44",
+    "fd7a:115c:a1e0::7d32:632c"
+   ],
+   "Online": true,
+   "LastSeen": "0001-01-01T00:00:00Z",
+   "ExitNode": false,
+   "ExitNodeOption": false,
+   "UserID": 8343998775294178
+  },
+  "nodekey:06": {
+   "ID": "n6",
+   "HostName": "sdolbec-SER8",
+   "DNSName": "sdolbec-ser8.tail1234.ts.net.",
+   "OS": "linux",
+   "TailscaleIPs": [
+    "100.127.99.74",
+    "fd7a:115c:a1e0::a32:634b"
+   ],
+   "Online": true,
+   "LastSeen": "0001-01-01T00:00:00Z",
+   "ExitNode": true,
+   "ExitNodeOption": true,
+   "UserID": 8343998775294178
+  },
+  "nodekey:07": {
+   "ID": "n7",
+   "HostName": "sdolbec’s Mac mini",
+   "DNSName": "sdolbecs-mac-mini.tail1234.ts.net.",
+   "OS": "macOS",
+   "TailscaleIPs": [
+    "100.76.227.61",
+    "fd7a:115c:a1e0::3b32:e33d"
+   ],
+   "Online": false,
+   "LastSeen": "2026-01-31T00:30:30.1Z",
+   "ExitNode": false,
+   "ExitNodeOption": false,
+   "UserID": 8343998775294178
+  },
+  "nodekey:08": {
+   "ID": "n8",
+   "HostName": "techmore (2)",
+   "DNSName": "techmore-2.tail1234.ts.net.",
+   "OS": "macOS",
+   "TailscaleIPs": [
+    "100.69.38.89",
+    "fd7a:115c:a1e0::de01:265a"
+   ],
+   "Online": false,
+   "LastSeen": "2026-10-27T17:21:38.1Z",
+   "ExitNode": false,
+   "ExitNodeOption": false,
+   "UserID": 8343998775294178
+  },
+  "nodekey:09": {
+   "ID": "n9",
+   "HostName": "techmore’s Mac mini",
+   "DNSName": "techmores-mac-mini.tail1234.ts.net.",
+   "OS": "macOS",
+   "TailscaleIPs": [
+    "100.126.148.10",
+    "fd7a:115c:a1e0::6201:940c"
+   ],
+   "Online": false,
+   "LastSeen": "2026-06-06T17:44:47.1Z",
+   "ExitNode": false,
+   "ExitNodeOption": false,
+   "UserID": 8343998775294178
+  },
+  "nodekey:10": {
+   "ID": "n10",
+   "HostName": "techmore’s Mac mini",
+   "DNSName": "techmores-mac-mini-1.tail1234.ts.net.",
+   "OS": "macOS",
+   "TailscaleIPs": [
+    "100.103.145.120",
+    "fd7a:115c:a1e0::6832:9179"
+   ],
+   "Online": false,
+   "LastSeen": "2026-07-04T00:35:09.1Z",
+   "ExitNode": false,
+   "ExitNodeOption": false,
+   "UserID": 8343998775294178
+  }
+ },
+ "CurrentTailnet": {
+  "Name": "example@gmail.com",
+  "MagicDNSSuffix": "tail1234.ts.net",
+  "MagicDNSEnabled": true
+ },
+ "User": {
+  "8343998775294178": {
+   "ID": 8343998775294178,
+   "LoginName": "example@gmail.com",
+   "DisplayName": "Example"
+  }
+ },
+ "Health": []
+}

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- Tailscale logo: dot layout from tailscale/tailscale client/systray/logo.go (BSD-3-Clause).
+       The Tailscale name and logo are trademarks of Tailscale Inc., used here to label Tailscale itself. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a3a3c"/>
+      <stop offset="1" stop-color="#1c1c1e"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#bg)"/>
+  <rect x="8.5" y="8.5" width="111" height="111" rx="25.5" fill="none" stroke="#000000" stroke-opacity="0.25"/>
+  <circle cx="34" cy="34" r="10" fill="#ffffff" fill-opacity="0.35"/>
+  <circle cx="64" cy="34" r="10" fill="#ffffff" fill-opacity="0.35"/>
+  <circle cx="94" cy="34" r="10" fill="#ffffff" fill-opacity="0.35"/>
+  <circle cx="34" cy="64" r="10" fill="#ffffff"/>
+  <circle cx="64" cy="64" r="10" fill="#ffffff"/>
+  <circle cx="94" cy="64" r="10" fill="#ffffff"/>
+  <circle cx="34" cy="94" r="10" fill="#ffffff" fill-opacity="0.35"/>
+  <circle cx="64" cy="94" r="10" fill="#ffffff"/>
+  <circle cx="94" cy="94" r="10" fill="#ffffff" fill-opacity="0.35"/>
+</svg>

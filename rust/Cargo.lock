@@ -2439,6 +2439,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mseries-tailscale"
+version = "0.1.0"
+dependencies = [
+ "granite-rs",
+ "gtk4",
+ "mseries-pantheon-kit",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mseries-update-core"
 version = "0.1.0"
 dependencies = [

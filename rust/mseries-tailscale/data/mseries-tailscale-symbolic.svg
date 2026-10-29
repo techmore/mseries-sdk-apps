@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- Tailscale logo, connected. Geometry from tailscale/tailscale client/systray/logo.go
+       (BSD-3-Clause): dot radius r, centres at (1 + 3i) r; here r = 2. Grey dots at 40%. -->
+  <g fill="#2e3436">
+    <circle cx="2" cy="2" r="2" opacity="0.4"/>
+    <circle cx="8" cy="2" r="2" opacity="0.4"/>
+    <circle cx="14" cy="2" r="2" opacity="0.4"/>
+    <circle cx="2" cy="8" r="2"/>
+    <circle cx="8" cy="8" r="2"/>
+    <circle cx="14" cy="8" r="2"/>
+    <circle cx="2" cy="14" r="2" opacity="0.4"/>
+    <circle cx="8" cy="14" r="2"/>
+    <circle cx="14" cy="14" r="2" opacity="0.4"/>
+  </g>
+</svg>
