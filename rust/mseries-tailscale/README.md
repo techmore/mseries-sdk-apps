@@ -35,6 +35,20 @@ A native Pantheon window for Tailscale. It replaces the old launcher that opened
 - **Devices:** every device on the tailnet, online first, with IP, OS and when it was last seen. Search with
   Ctrl+F. Click a row or the copy button to copy its IP; the terminal button copies `ssh <name>`
   (the MagicDNS name, e.g. `ssh sdolbec-ser8`).
+- **Honest VPN status:** a VPN counts as Connected only when its tunnel interface (ppp0, utun, …) is up; the
+  app finds it by the VPN's own address instead of trusting NetworkManager's "activated". Otherwise it says
+  Connecting…, "Dropped: on, but not carrying any traffic", or "Failed: <reason>" (from NetworkManager, pppd and
+  IPsec logs), with Reconnect. "Internet traffic now goes through …" names the interface the kernel really uses
+  (`ip route get`, policy routing included).
+- **Timer and traffic:** each connected VPN, and Tailscale, shows how long it has been up (kept across app
+  restarts, reset on reconnect) and bytes down/up.
+- **Two VPNs at once:** a banner when another tunnel (WiFiman's `utun`, any WireGuard/tun/PPP device) is up next
+  to a VPN, or knocked it off.
+- **Remote Into a Mac:** the tailnet's Mac mini at BFS plus any online Mac, with Screen Sharing (Remmina,
+  `vnc://<tailscale-ip>`) and Copy ssh. Offers Turn On Tailscale when it is off, and the Remmina install command
+  when Remmina is missing.
+
+  ![Status](docs/vpn-status-light.png) ![Conflict](docs/vpn-conflict-light.png)
 - **Settings:** Tailscale DNS, subnet routes, incoming connections (shields up), and the Tailscale SSH server,
   each a `tailscale set` flag.
 - **Logged out:** "Log In…" starts `tailscale login` and opens the sign-in page.

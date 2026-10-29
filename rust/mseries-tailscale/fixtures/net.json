@@ -1,0 +1,45 @@
+{
+ "internet_iface": "ppp0",
+ "ifaces": [
+  {
+   "name": "lo",
+   "index": 1,
+   "up": true,
+   "rx_bytes": 0,
+   "tx_bytes": 0,
+   "ipv4": [
+    "127.0.0.1"
+   ]
+  },
+  {
+   "name": "wld0",
+   "index": 3,
+   "up": true,
+   "rx_bytes": 0,
+   "tx_bytes": 0,
+   "ipv4": [
+    "10.20.0.120"
+   ]
+  },
+  {
+   "name": "tailscale0",
+   "index": 9,
+   "up": true,
+   "rx_bytes": 0,
+   "tx_bytes": 0,
+   "ipv4": [
+    "100.115.140.33"
+   ]
+  },
+  {
+   "name": "ppp0",
+   "index": 41,
+   "up": true,
+   "rx_bytes": 48300000,
+   "tx_bytes": 6100000,
+   "ipv4": [
+    "192.168.200.20"
+   ]
+  }
+ ]
+}

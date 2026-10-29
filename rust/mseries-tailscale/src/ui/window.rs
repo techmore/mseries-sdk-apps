@@ -6,11 +6,13 @@
 
 use crate::cli::{self, CliError};
 use crate::model::{self, Backend, Device, Prefs, Status};
+use crate::net;
 use crate::strings::tr;
 use granite::prelude::{HeaderLabelExt, PlaceholderExt};
 use gtk::{gio, glib, prelude::*};
 use mseries_pantheon_kit::{appearance, chrome, set_accessible_label};
 use std::cell::{Cell, RefCell};
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -47,6 +49,19 @@ pub struct AppWindow {
     vpn_list: gtk::Box,
     vpn_key: RefCell<String>,
     vpn_pending: RefCell<std::collections::HashSet<String>>,
+    vpn_live: RefCell<HashMap<String, Live>>,
+    vpn_failures: RefCell<HashMap<String, String>>,
+    vpn_connecting: RefCell<HashSet<String>>,
+    vpn_stopping: RefCell<HashSet<String>>,
+    vpn_ticks: RefCell<Vec<Tick>>,
+    vpn_banner: gtk::Box,
+    vpn_banner_text: gtk::Label,
+    route_now: gtk::Label,
+    sessions: Sessions,
+    ts_timer: gtk::Label,
+    remote_list: gtk::Box,
+    remote_key: RefCell<String>,
+    ticker: RefCell<Option<mseries_pantheon_kit::Polling>>,
     // Devices
     devices_header: granite::HeaderLabel,
     search: gtk::SearchEntry,
@@ -101,6 +116,10 @@ impl AppWindow {
         let route_line = gtk::Label::builder().xalign(0.0).wrap(true).visible(false).build();
         route_line.add_css_class(granite::CssClassACCENT);
         titles.append(&route_line);
+        let ts_timer = gtk::Label::builder().xalign(0.0).visible(false).build();
+        ts_timer.add_css_class(granite::CssClassNUMERIC);
+        ts_timer.add_css_class(granite::CssClassDIM);
+        titles.append(&ts_timer);
         let connect = gtk::Switch::builder().valign(gtk::Align::Center).build();
         set_accessible_label(&connect, &tr("Connected"));
         let top = gtk::Box::builder().spacing(12).build();
@@ -208,7 +227,19 @@ impl AppWindow {
             let window = b.root().and_downcast::<gtk::Window>();
             gtk::UriLauncher::new("settings://network").launch(window.as_ref(), gio::Cancellable::NONE, |_| {});
         });
+        let vpn_banner_text = gtk::Label::builder().xalign(0.0).wrap(true).hexpand(true).build();
+        let vpn_banner = card_box();
+        vpn_banner.add_css_class("mseries-tailscale-setup");
+        let banner_line = gtk::Box::builder().spacing(12).build();
+        banner_line.append(&gtk::Image::from_icon_name("dialog-warning-symbolic"));
+        banner_line.append(&vpn_banner_text);
+        vpn_banner.append(&banner_line);
+        vpn_banner.set_visible(false);
+        let route_now = gtk::Label::builder().xalign(0.0).wrap(true).visible(false).build();
+        route_now.add_css_class("heading");
         let vpn_body = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(9).build();
+        vpn_body.append(&vpn_banner);
+        vpn_body.append(&route_now);
         vpn_body.append(&vpn_list);
         vpn_body.append(&add_vpn);
         let vpn_section = section(&vpn_header, &vpn_body);
@@ -262,11 +293,16 @@ impl AppWindow {
             .margin_end(18)
             .build();
         column.append(&card);
+        let remote_header = granite::HeaderLabel::new(&tr("Remote Into a Mac"));
+        remote_header.set_secondary_text(Some(&tr("Screen Sharing over Tailscale, from anywhere")));
+        let remote_list = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(9).build();
+        let remote_section = section(&remote_header, &remote_list);
         column.append(&setup);
         column.append(&health);
+        column.append(&remote_section);
+        column.append(&vpn_section);
         column.append(&exit_section);
         column.append(&devices_section);
-        column.append(&vpn_section);
         column.append(&settings_section);
         column.append(&footer);
         let scroller = gtk::ScrolledWindow::builder().hscrollbar_policy(gtk::PolicyType::Never).child(&column).build();
@@ -320,6 +356,19 @@ impl AppWindow {
             vpn_list,
             vpn_key: RefCell::new(String::new()),
             vpn_pending: RefCell::new(Default::default()),
+            vpn_live: RefCell::new(HashMap::new()),
+            vpn_failures: RefCell::new(HashMap::new()),
+            vpn_connecting: RefCell::new(HashSet::new()),
+            vpn_stopping: RefCell::new(HashSet::new()),
+            vpn_ticks: RefCell::new(Vec::new()),
+            vpn_banner,
+            vpn_banner_text,
+            route_now,
+            sessions: Sessions::load(),
+            ts_timer,
+            remote_list,
+            remote_key: RefCell::new(String::new()),
+            ticker: RefCell::new(None),
             devices_header,
             search,
             device_list,
@@ -350,6 +399,14 @@ impl AppWindow {
         });
         poll.bind_to_widget_mapped(&this.window);
         *this.poll.borrow_mut() = Some(poll);
+        let weak = Rc::downgrade(&this);
+        let ticker = mseries_pantheon_kit::Polling::new(Duration::from_secs(1), move || {
+            if let Some(this) = weak.upgrade() {
+                this.tick();
+            }
+        });
+        ticker.bind_to_widget_mapped(&this.window);
+        *this.ticker.borrow_mut() = Some(ticker);
         // Wi-Fi changes make tailscaled reconnect; show it at once instead of waiting for the next poll.
         let weak = Rc::downgrade(&this);
         let id = gio::NetworkMonitor::default().connect_network_changed(move |_, _| {
@@ -708,8 +765,16 @@ impl AppWindow {
             status.peers.len(),
             tr("total")
         )));
+        if connected {
+            self.sessions.start("tailscale", 1, now_unix());
+        } else {
+            self.sessions.stop("tailscale");
+        }
+        self.sessions.save();
         *self.status.borrow_mut() = Some(status);
         self.show_devices();
+        self.show_remote();
+        self.tick();
     }
 
     fn show_devices(self: &Rc<Self>) {
@@ -850,6 +915,18 @@ impl AppWindow {
             Ok((true, out, _)) => model::parse_vpn_list(&out),
             _ => Vec::new(),
         };
+        let active = match cli::run_program(
+            &["nmcli", "-t", "-f", "UUID,STATE,DEVICE,TYPE", "connection", "show", "--active"],
+            8,
+        )
+        .await
+        {
+            Ok((true, out, _)) => model::parse_active(&out),
+            _ => Default::default(),
+        };
+        let snap = net::probe().await;
+        let now = now_unix();
+        let mut lives = Vec::new();
         for vpn in &mut vpns {
             if let Ok((true, out, _)) =
                 cli::run_program(&["nmcli", "-g", "ipv4.never-default", "connection", "show", &vpn.uuid], 8).await
@@ -861,9 +938,66 @@ impl AppWindow {
             {
                 vpn.secrets_saved = model::secrets_saved(&out);
             }
+            // Never trust NetworkManager's "activated" alone: find the tunnel and check it is up.
+            let (nm_state, device, kind) = active.get(&vpn.uuid).cloned().unwrap_or_default();
+            let mut iface = None;
+            if nm_state == "activated" {
+                if kind == "wireguard" {
+                    iface = snap.iface(&device).filter(|i| i.up && !i.ipv4.is_empty()).map(|i| i.name.clone());
+                } else if let Ok((true, out, _)) =
+                    cli::run_program(&["nmcli", "-g", "IP4.ADDRESS", "connection", "show", &vpn.uuid], 8).await
+                {
+                    let addr = out.lines().next().unwrap_or_default().trim().to_string();
+                    iface = (!addr.is_empty())
+                        .then(|| snap.iface_with_address(&addr))
+                        .flatten()
+                        .filter(|i| i.up)
+                        .map(|i| i.name.clone());
+                }
+            }
+            let connecting = self.vpn_connecting.borrow().contains(&vpn.uuid) || nm_state == "activating";
+            let previous = self.vpn_live.borrow().get(&vpn.uuid).cloned();
+            let live = if let Some(iface) = iface.clone() {
+                self.vpn_failures.borrow_mut().remove(&vpn.uuid);
+                Live::Connected(iface)
+            } else if connecting {
+                Live::Connecting
+            } else if nm_state == "activated" {
+                Live::Dropped
+            } else if let Some(reason) = self.vpn_failures.borrow().get(&vpn.uuid).cloned() {
+                Live::Failed(reason)
+            } else {
+                Live::Off
+            };
+            // It was up and went away without us turning it off: record why.
+            let live = match (&previous, &live) {
+                (Some(Live::Connected(_)) | Some(Live::Connecting) | Some(Live::Dropped), Live::Off)
+                    if !self.vpn_stopping.borrow().contains(&vpn.uuid) =>
+                {
+                    let reason = failure_reason(&vpn.name, &snap, iface.as_deref()).await;
+                    self.vpn_failures.borrow_mut().insert(vpn.uuid.clone(), reason.clone());
+                    Live::Failed(reason)
+                }
+                _ => live,
+            };
+            if matches!(live, Live::Off) {
+                self.vpn_stopping.borrow_mut().remove(&vpn.uuid);
+            }
+            // Session timer: keep the start while the same tunnel interface stays up.
+            if let Live::Connected(name) = &live {
+                let index = snap.iface(name).map(|i| i.index).unwrap_or(0);
+                self.sessions.start(&vpn.uuid, index, now);
+            } else {
+                self.sessions.stop(&vpn.uuid);
+            }
+            self.vpn_live.borrow_mut().insert(vpn.uuid.clone(), live.clone());
+            lives.push(live);
         }
+        self.sessions.save();
+        self.show_vpn_overview(&vpns, &lives, &snap);
+
         let pending = self.vpn_pending.borrow().clone();
-        let key = format!("{vpns:?}|{pending:?}");
+        let key = format!("{vpns:?}|{lives:?}|{pending:?}");
         if *self.vpn_key.borrow() == key {
             return;
         }
@@ -871,60 +1005,185 @@ impl AppWindow {
         while let Some(child) = self.vpn_list.first_child() {
             self.vpn_list.remove(&child);
         }
+        self.vpn_ticks.borrow_mut().clear();
         if vpns.is_empty() {
             let none = gtk::Label::builder().label(tr("No other VPNs set up")).xalign(0.0).build();
             none.add_css_class(granite::CssClassDIM);
             self.vpn_list.append(&none);
         }
-        for vpn in vpns {
-            let needs_reconnect = pending.contains(&vpn.uuid) && vpn.active;
-            self.vpn_list.append(&self.vpn_card(&vpn, needs_reconnect));
+        for (vpn, live) in vpns.iter().zip(lives) {
+            let needs_reconnect = pending.contains(&vpn.uuid) && matches!(live, Live::Connected(_));
+            self.vpn_list.append(&self.vpn_card(vpn, &live, needs_reconnect));
+        }
+        self.tick();
+    }
+
+    /// Where internet traffic goes now, and a warning when two VPNs fight.
+    fn show_vpn_overview(&self, vpns: &[model::Vpn], lives: &[Live], snap: &net::Snapshot) {
+        let ours: Vec<(&model::Vpn, &Live)> = vpns.iter().zip(lives).collect();
+        let iface_name = |iface: &str| -> String {
+            if let Some((vpn, _)) = ours.iter().find(|(_, l)| matches!(l, Live::Connected(i) if i == iface)) {
+                return model::display_name(&vpn.name);
+            }
+            if let Some((vpn, _)) = ours.iter().find(|(v, _)| v.name == iface) {
+                return model::display_name(&vpn.name);
+            }
+            match iface {
+                "tailscale0" => tr("Tailscale exit node"),
+                i if snap.tunnels().any(|t| t.name == i) => net::tunnel_owner(i),
+                _ => tr("this computer's own connection (no VPN)"),
+            }
+        };
+        match &snap.internet_iface {
+            Some(iface) => {
+                self.route_now.set_label(&format!("{} {}", tr("Internet traffic now goes through"), iface_name(iface)));
+                self.route_now.set_visible(true);
+            }
+            None => self.route_now.set_visible(false),
+        }
+
+        // Tunnels up right now: our connected VPNs plus tunnels nobody listed (another app's VPN).
+        let mut up: Vec<String> = ours
+            .iter()
+            .filter(|(_, l)| matches!(l, Live::Connected(_)))
+            .map(|(v, _)| model::display_name(&v.name))
+            .collect();
+        for t in snap.tunnels() {
+            let ours_iface =
+                ours.iter().any(|(v, l)| matches!(l, Live::Connected(i) if *i == t.name) || v.name == t.name);
+            if !ours_iface && t.up {
+                up.push(net::tunnel_owner(&t.name));
+            }
+        }
+        let knocked = ours.iter().find(|(_, l)| matches!(l, Live::Dropped | Live::Failed(_)));
+        let message = match (knocked, up.as_slice()) {
+            (Some((victim, _)), [other, ..]) => Some(format!(
+                "{other} {} {} {}",
+                tr("started its own VPN; it knocked"),
+                model::display_name(&victim.name),
+                tr("off. Use one VPN at a time.")
+            )),
+            (None, [a, b, ..]) => Some(format!(
+                "{a} {} {b} {}",
+                tr("and"),
+                tr("are both on. Two VPNs at once fight over your traffic; use one at a time.")
+            )),
+            _ => None,
+        };
+        self.vpn_banner.set_visible(message.is_some());
+        if let Some(m) = message {
+            self.vpn_banner_text.set_label(&m);
         }
     }
 
-    fn vpn_card(self: &Rc<Self>, vpn: &model::Vpn, needs_reconnect: bool) -> gtk::Box {
+    fn vpn_card(self: &Rc<Self>, vpn: &model::Vpn, live: &Live, needs_reconnect: bool) -> gtk::Box {
         let card = card_box();
-        let on = gtk::Switch::builder().valign(gtk::Align::Center).active(vpn.active).state(vpn.active).build();
-        let gear = icon_button("emblem-system-symbolic", &format!("{} {}", vpn.name, tr("Settings")));
+        let name = model::display_name(&vpn.name);
+        let on_now = !matches!(live, Live::Off | Live::Failed(_));
+        let on = gtk::Switch::builder().valign(gtk::Align::Center).active(on_now).state(on_now).build();
+        let gear = icon_button("emblem-system-symbolic", &format!("{name} {}", tr("Settings")));
         let controls = gtk::Box::builder().spacing(6).valign(gtk::Align::Center).build();
+        if matches!(live, Live::Connecting) {
+            let spinner = gtk::Spinner::builder().spinning(true).valign(gtk::Align::Center).build();
+            controls.append(&spinner);
+        }
         controls.append(&gear);
         controls.append(&on);
-        set_accessible_label(&on, &format!("{} {}", tr("Connect"), vpn.name));
-        card.append(&setting_row(
-            &vpn.name,
-            Some(&if vpn.active { tr("Connected") } else { tr("Not connected") }),
-            &controls,
-        ));
+        set_accessible_label(&on, &format!("{} {name}", tr("Connect")));
+        let (status_text, status_class) = match live {
+            Live::Connected(iface) => (format!("{} · {iface}", tr("Connected")), Some(granite::CssClassSUCCESS)),
+            Live::Connecting => (tr("Connecting…"), None),
+            Live::Dropped => (tr("Dropped: on, but not carrying any traffic"), Some(granite::CssClassERROR)),
+            Live::Failed(reason) => (format!("{}: {reason}", tr("Failed")), Some(granite::CssClassERROR)),
+            Live::Off => (tr("Not connected"), None),
+        };
+        let row = setting_row(&name, Some(&status_text), &controls);
+        if let Some(class) = status_class {
+            // The description label is the second child of the text box.
+            if let Some(desc) = row.first_child().and_then(|t| t.last_child()) {
+                desc.remove_css_class(granite::CssClassDIM);
+                desc.add_css_class(class);
+            }
+        }
+        card.append(&row);
+
+        if let Live::Connected(iface) = live {
+            let timer = gtk::Label::builder().xalign(0.0).hexpand(true).build();
+            timer.add_css_class(granite::CssClassNUMERIC);
+            timer.add_css_class("title-4");
+            let bytes = gtk::Label::builder().xalign(1.0).build();
+            bytes.add_css_class(granite::CssClassNUMERIC);
+            bytes.add_css_class(granite::CssClassDIM);
+            let line = gtk::Box::builder().spacing(12).build();
+            line.append(&timer);
+            line.append(&bytes);
+            card.append(&line);
+            self.vpn_ticks.borrow_mut().push(Tick { key: vpn.uuid.clone(), iface: iface.clone(), timer, bytes });
+        }
+
         let (weak, edit_vpn) = (Rc::downgrade(self), vpn.clone());
         gear.connect_clicked(move |_| {
             if let Some(this) = weak.upgrade() {
-                this.open_vpn_sheet(&edit_vpn);
+                // The sheet covers plugin VPNs (L2TP and friends); WireGuard opens the system editor.
+                if edit_vpn.kind_has_routing() {
+                    this.open_vpn_sheet(&edit_vpn);
+                } else {
+                    this.edit_vpn(&edit_vpn.uuid);
+                }
             }
         });
-        card.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
-        let all =
-            gtk::Switch::builder().valign(gtk::Align::Center).active(vpn.all_traffic).state(vpn.all_traffic).build();
-        let mode = if vpn.all_traffic {
-            format!("{} {}", tr("All internet traffic goes through"), vpn.name)
-        } else {
-            format!("{} {}", tr("Off: only its own networks go through"), vpn.name)
-        };
-        card.append(&setting_row(&tr("Send all traffic over VPN connection"), Some(&mode), &all));
-        if !vpn.secrets_saved {
-            let line = gtk::Box::builder().spacing(12).build();
-            let note = gtk::Label::builder()
-                .label(tr("Passwords aren't saved, so connecting from here can't work. Save them once."))
-                .xalign(0.0)
-                .hexpand(true)
-                .wrap(true)
-                .build();
-            note.add_css_class(granite::CssClassWARNING);
-            let save = gtk::Button::with_label(&tr("Save Passwords…"));
-            save.set_valign(gtk::Align::Center);
-            line.append(&note);
-            line.append(&save);
+        if vpn.kind_has_routing() {
             card.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
-            card.append(&line);
+            let all = gtk::Switch::builder()
+                .valign(gtk::Align::Center)
+                .active(vpn.all_traffic)
+                .state(vpn.all_traffic)
+                .build();
+            let mode = if vpn.all_traffic {
+                format!("{} {name}", tr("On: all internet traffic goes through"))
+            } else {
+                format!("{} {name}", tr("Off: only its own networks go through"))
+            };
+            card.append(&setting_row(&tr("Send all traffic over VPN connection"), Some(&mode), &all));
+            let (weak, uuid, connected) = (Rc::downgrade(self), vpn.uuid.clone(), matches!(live, Live::Connected(_)));
+            all.connect_state_set(move |_, everything| {
+                if let Some(this) = weak.upgrade() {
+                    let never_default = if everything { "no" } else { "yes" };
+                    let done = if everything {
+                        tr("All traffic will go over the VPN")
+                    } else {
+                        tr("Only the VPN's own networks will use it")
+                    };
+                    if connected {
+                        this.vpn_pending.borrow_mut().insert(uuid.clone());
+                    }
+                    this.vpn_command(
+                        &uuid,
+                        vec![
+                            "nmcli",
+                            "connection",
+                            "modify",
+                            "uuid",
+                            &uuid,
+                            "ipv4.never-default",
+                            never_default,
+                            "ipv6.never-default",
+                            never_default,
+                        ],
+                        done,
+                        false,
+                    );
+                }
+                glib::Propagation::Stop
+            });
+        }
+        if !vpn.secrets_saved {
+            card.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+            let save = gtk::Button::with_label(&tr("Save Passwords…"));
+            card.append(&note_line(
+                &tr("Passwords aren't saved, so connecting from here can't work. Save them once."),
+                &save,
+            ));
             let (weak, edit_vpn) = (Rc::downgrade(self), vpn.clone());
             save.connect_clicked(move |_| {
                 if let Some(this) = weak.upgrade() {
@@ -932,79 +1191,224 @@ impl AppWindow {
                 }
             });
         }
-        if needs_reconnect {
-            let line = gtk::Box::builder().spacing(12).build();
-            let note = gtk::Label::builder()
-                .label(tr("Reconnect to use the new setting."))
-                .xalign(0.0)
-                .hexpand(true)
-                .wrap(true)
-                .build();
-            note.add_css_class(granite::CssClassWARNING);
+        let broken = matches!(live, Live::Dropped | Live::Failed(_));
+        if needs_reconnect || broken {
             let reconnect = gtk::Button::with_label(&tr("Reconnect"));
             reconnect.add_css_class(granite::CssClassSUGGESTED);
-            line.append(&note);
-            line.append(&reconnect);
-            card.append(&line);
-            let (weak, uuid, name) = (Rc::downgrade(self), vpn.uuid.clone(), vpn.name.clone());
+            let text = if broken { tr("Reconnect to bring it back.") } else { tr("Reconnect to use the new setting.") };
+            card.append(&note_line(&text, &reconnect));
+            let (weak, uuid, label) = (Rc::downgrade(self), vpn.uuid.clone(), name.clone());
             reconnect.connect_clicked(move |_| {
                 if let Some(this) = weak.upgrade() {
+                    this.vpn_failures.borrow_mut().remove(&uuid);
+                    this.vpn_connecting.borrow_mut().insert(uuid.clone());
                     this.vpn_command(
                         &uuid,
-                        vec!["sh", "-c", "nmcli connection down uuid \"$0\" && nmcli connection up uuid \"$0\"", &uuid],
-                        format!("{} {name}", tr("Reconnected")),
+                        vec![
+                            "sh",
+                            "-c",
+                            "nmcli connection down uuid \"$0\" >/dev/null 2>&1; nmcli connection up uuid \"$0\"",
+                            &uuid,
+                        ],
+                        format!("{} {label}", tr("Reconnected")),
                         true,
                     );
                 }
             });
         }
 
-        let (weak, uuid, name) = (Rc::downgrade(self), vpn.uuid.clone(), vpn.name.clone());
+        let (weak, uuid) = (Rc::downgrade(self), vpn.uuid.clone());
         on.connect_state_set(move |_, active| {
             if let Some(this) = weak.upgrade() {
                 let verb = if active { "up" } else { "down" };
                 let done = if active { tr("Connected to") } else { tr("Disconnected from") };
+                this.vpn_failures.borrow_mut().remove(&uuid);
+                if active {
+                    this.vpn_connecting.borrow_mut().insert(uuid.clone());
+                } else {
+                    this.vpn_stopping.borrow_mut().insert(uuid.clone());
+                }
+                this.vpn_key.borrow_mut().clear();
                 this.vpn_command(
                     &uuid,
                     vec!["nmcli", "connection", verb, "uuid", &uuid],
                     format!("{done} {name}"),
                     false,
                 );
-            }
-            glib::Propagation::Stop
-        });
-        let (weak, uuid, active) = (Rc::downgrade(self), vpn.uuid.clone(), vpn.active);
-        all.connect_state_set(move |_, everything| {
-            if let Some(this) = weak.upgrade() {
-                let never_default = if everything { "no" } else { "yes" };
-                let done = if everything {
-                    tr("All traffic will go over the VPN")
-                } else {
-                    tr("Only the VPN's own networks will use it")
-                };
-                if active {
-                    this.vpn_pending.borrow_mut().insert(uuid.clone());
-                }
-                this.vpn_command(
-                    &uuid,
-                    vec![
-                        "nmcli",
-                        "connection",
-                        "modify",
-                        "uuid",
-                        &uuid,
-                        "ipv4.never-default",
-                        never_default,
-                        "ipv6.never-default",
-                        never_default,
-                    ],
-                    done,
-                    false,
-                );
+                // Show "Connecting…" right away instead of waiting for nmcli.
+                let this2 = this.clone();
+                glib::spawn_future_local(async move { this2.refresh_vpns().await });
             }
             glib::Propagation::Stop
         });
         card
+    }
+
+    /// One-second update of session timers and traffic counters (no rebuilds).
+    fn tick(&self) {
+        let now = now_unix();
+        for t in self.vpn_ticks.borrow().iter() {
+            if let Some(start) = self.sessions.started(&t.key) {
+                t.timer.set_label(&net::duration_text(now - start));
+            }
+            if let Some((rx, tx)) = net::counters(&t.iface) {
+                t.bytes.set_label(&format!("↓ {}   ↑ {}", net::bytes_text(rx), net::bytes_text(tx)));
+            }
+        }
+        match self.sessions.started("tailscale") {
+            Some(start) if self.status_is_running() => {
+                self.ts_timer.set_label(&format!("{} {}", tr("Connected for"), net::duration_text(now - start)));
+                self.ts_timer.set_visible(true);
+            }
+            _ => self.ts_timer.set_visible(false),
+        }
+    }
+
+    fn status_is_running(&self) -> bool {
+        self.status.borrow().as_ref().is_some_and(|s| s.backend == Backend::Running)
+    }
+
+    /// "Remote Into a Mac": the tailnet's Macs with Screen Sharing (VNC over Tailscale).
+    fn show_remote(self: &Rc<Self>) {
+        let status = self.status.borrow();
+        let running = status.as_ref().is_some_and(|s| s.backend == Backend::Running);
+        let macs: Vec<Device> = status
+            .as_ref()
+            .map(|s| {
+                // The Mac mini at BFS always; other Macs only while online (the full list is under Devices).
+                let mut m: Vec<Device> = s
+                    .peers
+                    .iter()
+                    .filter(|d| d.os == "macOS" && (d.online || d.ssh_host == "csp-bfs-mini"))
+                    .cloned()
+                    .collect();
+                // The Mac mini at BFS first, then online ones.
+                m.sort_by_key(|d| (d.ssh_host != "csp-bfs-mini", !d.online, d.name.to_lowercase()));
+                m
+            })
+            .unwrap_or_default();
+        drop(status);
+        let have_viewer = glib::find_program_in_path("remmina").is_some();
+        let key = format!(
+            "{running}|{have_viewer}|{}",
+            macs.iter().map(|d| format!("{}:{}", d.id, d.online)).collect::<Vec<_>>().join(",")
+        );
+        if *self.remote_key.borrow() == key {
+            return;
+        }
+        *self.remote_key.borrow_mut() = key;
+        while let Some(child) = self.remote_list.first_child() {
+            self.remote_list.remove(&child);
+        }
+        if !running {
+            let turn_on = gtk::Button::with_label(&tr("Turn On Tailscale"));
+            turn_on.add_css_class(granite::CssClassSUGGESTED);
+            let card = card_box();
+            card.append(&note_line(&tr("Tailscale is off. Turn it on to reach your Macs from anywhere."), &turn_on));
+            self.remote_list.append(&card);
+            let weak = Rc::downgrade(self);
+            turn_on.connect_clicked(move |_| {
+                if let Some(this) = weak.upgrade() {
+                    this.change(vec!["up"], tr("Connected"));
+                }
+            });
+        }
+        if !have_viewer {
+            let copy = gtk::Button::with_label(&tr("Copy Command"));
+            let card = card_box();
+            card.append(&note_line(
+                &tr("Screen Sharing needs the Remmina app. Install it once: sudo apt install remmina remmina-plugin-vnc"),
+                &copy,
+            ));
+            self.remote_list.append(&card);
+            let weak = Rc::downgrade(self);
+            copy.connect_clicked(move |_| {
+                if let Some(this) = weak.upgrade() {
+                    this.copy(
+                        "sudo apt install remmina remmina-plugin-vnc",
+                        &tr("Copied. Paste it in Terminal, then come back."),
+                    );
+                }
+            });
+        }
+        if macs.is_empty() {
+            return;
+        }
+        let list = gtk::ListBox::builder().selection_mode(gtk::SelectionMode::None).build();
+        list.add_css_class("boxed-list");
+        list.add_css_class(granite::CssClassCARD);
+        list.add_css_class("mseries-tailscale-devices");
+        let now = now_unix();
+        for mac in macs {
+            let dot = gtk::Label::new(Some("●"));
+            dot.add_css_class("mseries-tailscale-dot");
+            dot.add_css_class(if mac.online && running { granite::CssClassSUCCESS } else { granite::CssClassDIM });
+            let name =
+                gtk::Label::builder().label(&mac.name).xalign(0.0).ellipsize(gtk::pango::EllipsizeMode::End).build();
+            name.add_css_class("heading");
+            let seen =
+                mac.last_seen.as_deref().and_then(|s| glib::DateTime::from_iso8601(s, None).ok()).map(|t| t.to_unix());
+            let detail = gtk::Label::builder()
+                .label(format!(
+                    "{} · {}",
+                    mac.ip(),
+                    if running { tr(&model::presence_text(mac.online, seen, now)) } else { tr("Tailscale is off") }
+                ))
+                .xalign(0.0)
+                .ellipsize(gtk::pango::EllipsizeMode::End)
+                .build();
+            detail.add_css_class(granite::CssClassDIM);
+            detail.add_css_class(granite::CssClassSMALL);
+            let text = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(2).hexpand(true).build();
+            text.append(&name);
+            text.append(&detail);
+            let share = gtk::Button::with_label(&tr("Screen Sharing"));
+            share.set_valign(gtk::Align::Center);
+            if mac.online && running {
+                share.add_css_class(granite::CssClassSUGGESTED);
+            }
+            share.set_tooltip_text(Some(&format!("vnc://{}", mac.ip())));
+            let ssh = icon_button("utilities-terminal-symbolic", &format!("{} “{}”", tr("Copy"), mac.ssh_command()));
+            let line =
+                gtk::Box::builder().spacing(12).margin_top(9).margin_bottom(9).margin_start(12).margin_end(6).build();
+            line.append(&dot);
+            line.append(&text);
+            line.append(&share);
+            line.append(&ssh);
+            list.append(&gtk::ListBoxRow::builder().child(&line).activatable(false).build());
+            let (weak, ip, label) = (Rc::downgrade(self), mac.ip().to_string(), mac.name.clone());
+            share.connect_clicked(move |_| {
+                if let Some(this) = weak.upgrade() {
+                    this.screen_share(&ip, &label);
+                }
+            });
+            let (weak, cmd) = (Rc::downgrade(self), mac.ssh_command());
+            ssh.connect_clicked(move |_| {
+                if let Some(this) = weak.upgrade() {
+                    this.copy(&cmd, &format!("{} “{cmd}”", tr("Copied")));
+                }
+            });
+        }
+        self.remote_list.append(&list);
+    }
+
+    fn screen_share(&self, ip: &str, name: &str) {
+        if !self.status_is_running() {
+            chrome::show_toast(&self.toast, &tr("Turn on Tailscale first."));
+            return;
+        }
+        if glib::find_program_in_path("remmina").is_none() {
+            self.copy(
+                "sudo apt install remmina remmina-plugin-vnc",
+                &tr("Remmina isn't installed. Copied the install command."),
+            );
+            return;
+        }
+        let uri = format!("vnc://{ip}");
+        match gio::Subprocess::newv(&["remmina".as_ref(), "-c".as_ref(), uri.as_ref()], gio::SubprocessFlags::NONE) {
+            Ok(_) => chrome::show_toast(&self.toast, &format!("{} {name}…", tr("Opening Screen Sharing on"))),
+            Err(e) => chrome::show_toast(&self.toast, e.message()),
+        }
     }
 
     pub fn open_vpn_sheet(self: &Rc<Self>, vpn: &model::Vpn) {
@@ -1058,7 +1462,9 @@ impl AppWindow {
         glib::spawn_future_local(async move {
             let refs: Vec<&str> = argv.iter().map(String::as_str).collect();
             // Connecting an L2TP/IPsec VPN takes a while; a polkit prompt waits for the user.
-            match cli::run_program(&refs, 90).await {
+            let result = cli::run_program(&refs, 90).await;
+            this.vpn_connecting.borrow_mut().remove(&uuid);
+            match result {
                 Ok((true, _, _)) => {
                     if clears_pending {
                         this.vpn_pending.borrow_mut().remove(&uuid);
@@ -1074,7 +1480,19 @@ impl AppWindow {
                 }
                 Ok((false, _, err)) => {
                     let first = err.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("The VPN change failed.");
-                    chrome::show_toast(&this.toast, first.trim_start_matches("Error: "));
+                    let first = first.trim_start_matches("Error: ").to_string();
+                    if refs.iter().any(|a| *a == "up" || a.contains("connection up")) {
+                        let snap = net::probe().await;
+                        let others: Vec<String> = snap
+                            .tunnels()
+                            .filter(|t| t.up && !t.name.starts_with("ppp"))
+                            .map(|t| net::tunnel_owner(&t.name))
+                            .collect();
+                        let reason =
+                            if others.is_empty() { first.clone() } else { model::classify_vpn_failure("", &others) };
+                        this.vpn_failures.borrow_mut().insert(uuid.clone(), reason);
+                    }
+                    chrome::show_toast(&this.toast, &first);
                 }
                 Err(e) => chrome::show_toast(&this.toast, &e.message()),
             }
@@ -1149,4 +1567,116 @@ fn icon_button(icon: &str, label: &str) -> gtk::Button {
     b.set_tooltip_text(Some(label));
     set_accessible_label(&b, label);
     b
+}
+
+/// What a VPN is really doing, from the kernel's point of view.
+#[derive(Debug, Clone, PartialEq)]
+enum Live {
+    /// Its tunnel interface is up.
+    Connected(String),
+    Connecting,
+    /// NetworkManager says on, but no tunnel carries traffic.
+    Dropped,
+    Failed(String),
+    Off,
+}
+
+/// Labels the one-second timer updates.
+struct Tick {
+    key: String,
+    iface: String,
+    timer: gtk::Label,
+    bytes: gtk::Label,
+}
+
+/// Session start times, kept across app restarts (keyed by connection and tunnel interface index, so a
+/// reconnect starts a new session).
+struct Sessions {
+    path: std::path::PathBuf,
+    map: RefCell<HashMap<String, (u32, i64)>>,
+    dirty: Cell<bool>,
+}
+
+impl Sessions {
+    fn load() -> Self {
+        let path = mseries_pantheon_kit::settings::app_config_dir(APP_ID).join("sessions.json");
+        let map = if std::env::var_os("MSERIES_TAILSCALE_FIXTURES").is_some() {
+            // Fixture screenshots show a session that has been up for a while.
+            HashMap::new()
+        } else {
+            mseries_pantheon_kit::settings::load_json(&path)
+        };
+        Self { path, map: RefCell::new(map), dirty: Cell::new(false) }
+    }
+
+    fn start(&self, key: &str, index: u32, now: i64) {
+        let mut map = self.map.borrow_mut();
+        if map.get(key).is_some_and(|(i, _)| *i == index) {
+            return;
+        }
+        let start = if std::env::var_os("MSERIES_TAILSCALE_FIXTURES").is_some() { now - 4 * 3600 - 249 } else { now };
+        map.insert(key.into(), (index, start));
+        self.dirty.set(true);
+    }
+
+    fn stop(&self, key: &str) {
+        if self.map.borrow_mut().remove(key).is_some() {
+            self.dirty.set(true);
+        }
+    }
+
+    fn started(&self, key: &str) -> Option<i64> {
+        self.map.borrow().get(key).map(|(_, s)| *s)
+    }
+
+    fn save(&self) {
+        if self.dirty.replace(false) && std::env::var_os("MSERIES_TAILSCALE_FIXTURES").is_none() {
+            let _ = mseries_pantheon_kit::settings::save_json(&self.path, &*self.map.borrow());
+        }
+    }
+}
+
+fn now_unix() -> i64 {
+    glib::DateTime::now_utc().map(|t| t.to_unix()).unwrap_or(0)
+}
+
+/// Reason for a VPN that dropped on its own, from the last few minutes of logs.
+async fn failure_reason(_name: &str, snap: &net::Snapshot, _iface: Option<&str>) -> String {
+    let others: Vec<String> =
+        snap.tunnels().filter(|t| t.up && !t.name.starts_with("ppp")).map(|t| net::tunnel_owner(&t.name)).collect();
+    let log = cli::run_program(
+        &[
+            "journalctl",
+            "--since",
+            "-3min",
+            "--no-pager",
+            "-o",
+            "cat",
+            "-t",
+            "NetworkManager",
+            "-t",
+            "pppd",
+            "-t",
+            "nm-l2tp-service",
+            "-t",
+            "charon",
+            "-t",
+            "ipsec",
+        ],
+        5,
+    )
+    .await
+    .map(|(_, out, _)| out)
+    .unwrap_or_default();
+    model::classify_vpn_failure(&log, &others)
+}
+
+/// A wrapped note with a button at the end.
+fn note_line(text: &str, button: &gtk::Button) -> gtk::Box {
+    let note = gtk::Label::builder().label(text).xalign(0.0).hexpand(true).wrap(true).build();
+    button.set_valign(gtk::Align::Center);
+    let line = gtk::Box::builder().spacing(12).build();
+    line.append(&note);
+    line.append(button);
+    line
 }
